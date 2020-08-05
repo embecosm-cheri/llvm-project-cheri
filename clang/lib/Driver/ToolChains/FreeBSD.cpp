@@ -8,6 +8,7 @@
 
 #include "FreeBSD.h"
 #include "Arch/ARM.h"
+#include "Arch/AArch64.h"
 #include "Arch/Mips.h"
 #include "Arch/Sparc.h"
 #include "CommonArgs.h"
@@ -165,6 +166,9 @@ void freebsd::Linker::ConstructJob(Compilation &C, const JobAction &JA,
       (LastPIEArg ? ExplicitPIE : IsPIEDefault) && !ConflictsWithPie;
 
   ArgStringList CmdArgs;
+
+  if (Arch == llvm::Triple::aarch64)
+    aarch64::addMorelloLinkerFlags(Args, CmdArgs);
 
   // Silence warning for -cheri=NNN
   Args.ClaimAllArgs(options::OPT_cheri_EQ);
@@ -442,6 +446,14 @@ FreeBSD::FreeBSD(const Driver &D, const llvm::Triple &Triple,
     getFilePaths().push_back(getDriver().SysRoot + "/usr/libcheri");
   else
     getFilePaths().push_back(getDriver().SysRoot + "/usr/lib");
+
+  if (Triple.getArch() == llvm::Triple::aarch64) {
+    bool A64, C64, PureCap, ReducedCaps;
+    tools::aarch64::getMorelloMode(D, Triple, Args, A64, C64, PureCap,
+                                 ReducedCaps);
+    if (PureCap)
+      getFilePaths().push_back(getDriver().SysRoot + "/usr/libcheri");
+  }
 }
 
 ToolChain::CXXStdlibType FreeBSD::GetDefaultCXXStdlibType() const {

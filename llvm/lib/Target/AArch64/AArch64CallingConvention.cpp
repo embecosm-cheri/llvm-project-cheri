@@ -23,6 +23,24 @@ using namespace llvm;
 static const MCPhysReg XRegList[] = {AArch64::X0, AArch64::X1, AArch64::X2,
                                      AArch64::X3, AArch64::X4, AArch64::X5,
                                      AArch64::X6, AArch64::X7};
+static const MCPhysReg CRegList[] = {AArch64::C0, AArch64::C1, AArch64::C2,
+                                     AArch64::C3, AArch64::C4, AArch64::C5,
+                                     AArch64::C6, AArch64::C7};
+static const MCPhysReg XPureCapRegList[] =
+                                    {AArch64::X0, AArch64::X1, AArch64::X2,
+                                     AArch64::X3, AArch64::X4, AArch64::X5};
+static const MCPhysReg CPureCapRegList[] =
+                                    {AArch64::C0, AArch64::C1, AArch64::C2,
+                                     AArch64::C3, AArch64::C4, AArch64::C5};
+static const MCPhysReg CCCallRegList[] =
+                                    {AArch64::C9, AArch64::C10, AArch64::C0,
+                                     AArch64::C1, AArch64::C2, AArch64::C3,
+                                     AArch64::C4, AArch64::C5, AArch64::C6,
+                                     AArch64::C7};
+static const MCPhysReg XCCallRegList[] =
+                                    {AArch64::X11, AArch64::X0, AArch64::X1,
+                                     AArch64::X2, AArch64::X3, AArch64::X4,
+                                     AArch64::X5, AArch64::X6, AArch64::X7};
 static const MCPhysReg HRegList[] = {AArch64::H0, AArch64::H1, AArch64::H2,
                                      AArch64::H3, AArch64::H4, AArch64::H5,
                                      AArch64::H6, AArch64::H7};
@@ -87,9 +105,12 @@ static bool finishStackBlock(SmallVectorImpl<CCValAssign> &PendingMembers,
     return true;
   }
 
-  unsigned Size = LocVT.getSizeInBits() / 8;
   for (auto &It : PendingMembers) {
-    It.convertToMem(State.AllocateStack(Size, SlotAlign));
+    unsigned Size = It.getLocVT().getSizeInBits() / 8;
+    if (It.getLocVT() == MVT::iFATPTR128)
+      SlotAlign = Align(std::max(SlotAlign.value(), (uint64_t) 16));
+    It.convertToMem(State.AllocateStack(
+        Size, SlotAlign));
     State.addLoc(It);
     SlotAlign = Align(1);
   }
@@ -114,7 +135,33 @@ static bool CC_AArch64_Custom_Stack_Block(
   if (!ArgFlags.isInConsecutiveRegsLast())
     return true;
 
-  return finishStackBlock(PendingMembers, LocVT, ArgFlags, State, Align(8));
+  const AArch64Subtarget &Subtarget = static_cast<const AArch64Subtarget &>(
+      State.getMachineFunction().getSubtarget());
+  Align StackAlign = Align(Subtarget.hasPureCap() ? 16 : 8);
+  return finishStackBlock(PendingMembers, LocVT, ArgFlags, State, StackAlign);
+}
+
+unsigned getRegisterForPending(const AArch64RegisterInfo *RegInfo,
+                               MVT LocVT, MVT PendingLocVT,
+                               unsigned RegResult) {
+  if (PendingLocVT == LocVT)
+    return RegResult;
+
+  // Allow a mix of i64/iFATPTR128 in the register block.
+  if (PendingLocVT == MVT::iFATPTR128) {
+    assert(LocVT == MVT::i64);
+    for (MCSuperRegIterator AI(RegResult, RegInfo, false); AI.isValid();
+         ++AI)
+      if (AArch64::CapRegClass.contains(*AI))
+        return *AI;
+  }
+
+  if (LocVT == MVT::iFATPTR128) {
+    assert(PendingLocVT == MVT::i64);
+    return RegInfo->getSubReg(RegResult, AArch64::sub_64);
+  }
+
+  return RegResult;
 }
 
 /// Given an [N x Ty] block, it should be passed in a consecutive sequence of
@@ -125,14 +172,24 @@ static bool CC_AArch64_Custom_Block(unsigned &ValNo, MVT &ValVT, MVT &LocVT,
                                     ISD::ArgFlagsTy &ArgFlags, CCState &State) {
   const AArch64Subtarget &Subtarget = static_cast<const AArch64Subtarget &>(
       State.getMachineFunction().getSubtarget());
+  const AArch64RegisterInfo *RegInfo = Subtarget.getRegisterInfo();
   bool IsDarwinILP32 = Subtarget.isTargetILP32() && Subtarget.isTargetMachO();
-
+  bool HasPureCap = Subtarget.hasPureCap();
+  bool Use16CapRegs = Subtarget.use16CapRegs();
   // Try to allocate a contiguous block of registers, each of the correct
   // size to hold one member.
   ArrayRef<MCPhysReg> RegList;
-  if (LocVT.SimpleTy == MVT::i64 || (IsDarwinILP32 && LocVT.SimpleTy == MVT::i32))
+  ArrayRef<MCPhysReg> ReducedList;
+  bool UseReduced = false;
+  if (LocVT.SimpleTy == MVT::i64 || (IsDarwinILP32 && LocVT.SimpleTy == MVT::i32)) {
     RegList = XRegList;
-  else if (LocVT.SimpleTy == MVT::f16)
+    ReducedList = XPureCapRegList;
+    UseReduced = (HasPureCap && Use16CapRegs);
+  } else if (LocVT.SimpleTy == MVT::iFATPTR128) {
+    RegList = CRegList;
+    ReducedList = CPureCapRegList;
+    UseReduced = HasPureCap && Use16CapRegs;
+  } else if (LocVT.SimpleTy == MVT::f16)
     RegList = HRegList;
   else if (LocVT.SimpleTy == MVT::f32 || LocVT.is32BitVector())
     RegList = SRegList;
@@ -161,10 +218,12 @@ static bool CC_AArch64_Custom_Block(unsigned &ValNo, MVT &ValVT, MVT &LocVT,
   // because that's how the armv7k Clang front-end emits small structs.
   unsigned EltsPerReg = (IsDarwinILP32 && LocVT.SimpleTy == MVT::i32) ? 2 : 1;
   unsigned RegResult = State.AllocateRegBlock(
-      RegList, alignTo(PendingMembers.size(), EltsPerReg) / EltsPerReg);
+      UseReduced ? ReducedList : RegList,
+      alignTo(PendingMembers.size(), EltsPerReg) / EltsPerReg);
   if (RegResult && EltsPerReg == 1) {
     for (auto &It : PendingMembers) {
-      It.convertToReg(RegResult);
+      It.convertToReg(getRegisterForPending(RegInfo, LocVT, It.getLocVT(),
+                                            RegResult));
       State.addLoc(It);
       ++RegResult;
     }
@@ -197,9 +256,66 @@ static bool CC_AArch64_Custom_Block(unsigned &ValNo, MVT &ValVT, MVT &LocVT,
   const Align MemAlign = ArgFlags.getNonZeroMemAlign();
   Align SlotAlign = std::min(MemAlign, StackAlign);
   if (!Subtarget.isTargetDarwin())
-    SlotAlign = std::max(SlotAlign, Align(8));
+    SlotAlign = std::max(SlotAlign, Align(Subtarget.hasPureCap() ? 16 : 8));
 
   return finishStackBlock(PendingMembers, LocVT, ArgFlags, State, SlotAlign);
+}
+
+// CCall takes the first two capability arguments in C9 and C10 and the first
+// integer argument in X11.
+static bool CC_AArch64_Custom_CCall_Block(unsigned &ValNo, MVT &ValVT, MVT &LocVT,
+                                    CCValAssign::LocInfo &LocInfo,
+                                    ISD::ArgFlagsTy &ArgFlags, CCState &State) {
+  const AArch64Subtarget &Subtarget = static_cast<const AArch64Subtarget &>(
+      State.getMachineFunction().getSubtarget());
+  const AArch64RegisterInfo *RegInfo = Subtarget.getRegisterInfo();
+  // Try to allocate a contiguous block of registers, each of the correct
+  // size to hold one member.
+  ArrayRef<MCPhysReg> RegList;
+  if (LocVT.SimpleTy == MVT::i64) {
+    RegList = XCCallRegList;
+  } else if (LocVT.SimpleTy == MVT::MVT::iFATPTR128) {
+    RegList = CCCallRegList;
+  } else if (LocVT.SimpleTy == MVT::f16)
+    RegList = HRegList;
+  else if (LocVT.SimpleTy == MVT::f32 || LocVT.is32BitVector())
+    RegList = SRegList;
+  else if (LocVT.SimpleTy == MVT::f64 || LocVT.is64BitVector())
+    RegList = DRegList;
+  else if (LocVT.SimpleTy == MVT::f128 || LocVT.is128BitVector())
+    RegList = QRegList;
+  else {
+    // Not an array we want to split up after all.
+    return false;
+  }
+
+  SmallVectorImpl<CCValAssign> &PendingMembers = State.getPendingLocs();
+
+  // Add the argument to the list to be allocated once we know the size of the
+  // block.
+  PendingMembers.push_back(
+      CCValAssign::getPending(ValNo, ValVT, LocVT, LocInfo));
+
+  if (!ArgFlags.isInConsecutiveRegsLast())
+    return true;
+
+  unsigned RegResult = State.AllocateRegBlock(RegList, PendingMembers.size());
+  if (RegResult) {
+    for (auto &It : PendingMembers) {
+      It.convertToReg(getRegisterForPending(RegInfo, LocVT, It.getLocVT(),
+                                            RegResult));
+      State.addLoc(It);
+      ++RegResult;
+    }
+    PendingMembers.clear();
+    return true;
+  }
+
+  // Mark all regs in the class as unavailable
+  for (auto Reg : RegList)
+    State.AllocateReg(Reg);
+
+  return finishStackBlock(PendingMembers, LocVT, ArgFlags, State, Align(16));
 }
 
 // TableGen provides definitions of the calling convention analysis entry

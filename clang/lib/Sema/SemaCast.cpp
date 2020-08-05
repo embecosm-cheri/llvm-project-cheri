@@ -2555,6 +2555,12 @@ static TryCastResult TryReinterpretCast(Sema &Self, ExprResult &SrcExpr,
 
   // See below for the enumeral issue.
   if (SrcType->isNullPtrType() && DestType->isIntegralType(Self.Context)) {
+    if (SrcType->isCHERICapabilityType(Self.Context) &&
+        Self.Context.getTargetInfo().getIntCapRange() <=
+        Self.Context.getTypeSize(DestType)) {
+      Kind = CK_PointerToIntegral;
+      return TC_Success;
+    }
     // C++0x 5.2.10p4: A pointer can be explicitly converted to any integral
     //   type large enough to hold it. A value of std::nullptr_t can be
     //   converted to an integral type; the conversion has the same meaning
@@ -3002,8 +3008,20 @@ void CastOperation::CheckCXXCStyleCast(bool FunctionalStyle,
                                    /*CStyle*/ true, msg);
   if (SrcExpr.isInvalid())
     return;
-  if (isValidCast(tcr))
+  if (isValidCast(tcr)) {
     Kind = CK_NoOp;
+    // This would be a noop, unless one of the pointers is a capability, in
+    // which case a conversion is needed.
+    QualType SrcType = SrcExpr.get()->getType();
+    if (SrcType->isPointerType() && DestType->isPointerType()) {
+      if (!SrcType->isCHERICapabilityType(Self.Context) &&
+          DestType->isCHERICapabilityType(Self.Context))
+        Kind = CK_PointerToCHERICapability;
+      else if (SrcType->isCHERICapabilityType(Self.Context) &&
+               !DestType->isCHERICapabilityType(Self.Context))
+        Kind = CK_CHERICapabilityToPointer;
+    }
+  }
 
   Sema::CheckedConversionKind CCK =
       FunctionalStyle ? Sema::CCK_FunctionalCast : Sema::CCK_CStyleCast;

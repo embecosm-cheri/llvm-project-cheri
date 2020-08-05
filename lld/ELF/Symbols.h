@@ -199,6 +199,7 @@ public:
   bool isInPlt() const { return getPltIdx() != uint32_t(-1); }
 
   uint64_t getVA(int64_t addend = 0) const;
+  uint64_t getAArch64FuncVA(int64_t addend = 0) const;
 
   uint64_t getGotOffset() const;
   uint64_t getGotVA() const;
@@ -527,6 +528,11 @@ struct ElfSym {
 
   // _TLS_MODULE_BASE_ on targets that support TLSDESC.
   static Defined *tlsModuleBase;
+
+  // Newlib has __bss_start__, __bss_end__ and __end__.
+  static Defined *newLibBss1;
+  static Defined *newLibBss2;
+  static Defined *newLibEnd;
 };
 
 // A buffer class that is large enough to hold any Symbol-derived

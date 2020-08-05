@@ -110,7 +110,7 @@ static MCAsmInfo *createPPCMCAsmInfo(const MCRegisterInfo &MRI,
   unsigned Reg = isPPC64 ? PPC::X1 : PPC::R1;
   MCCFIInstruction Inst =
       MCCFIInstruction::cfiDefCfa(nullptr, MRI.getDwarfRegNum(Reg, true), 0);
-  MAI->addInitialFrameState(Inst);
+  MAI->addInitialFrameState(MCCFIProcType::Normal, Inst);
 
   return MAI;
 }

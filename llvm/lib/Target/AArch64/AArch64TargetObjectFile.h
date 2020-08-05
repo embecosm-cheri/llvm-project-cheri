@@ -22,6 +22,9 @@ public:
   AArch64_ELFTargetObjectFile() {
     PLTRelativeVariantKind = MCSymbolRefExpr::VK_PLT;
   }
+  TailPaddingAmount
+  getTailPaddingForPreciseBounds(uint64_t Size, const TargetMachine &TM) const override;
+  Align getAlignmentForPreciseBounds(uint64_t Size, const TargetMachine &TM) const override;
 };
 
 /// AArch64_MachoTargetObjectFile - This TLOF implementation is used for Darwin.

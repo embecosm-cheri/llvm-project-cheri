@@ -158,6 +158,7 @@ struct Configuration {
   bool armHasBlx = false;
   bool armHasMovtMovw = false;
   bool armJ1J2BranchEncoding = false;
+  bool morelloC64Plt;
   bool asNeeded = false;
   BsymbolicKind bsymbolic = BsymbolicKind::None;
   // make dynamic relocations that are not supported by
@@ -179,6 +180,7 @@ struct Configuration {
   bool enableNewDtags;
   bool executeOnly;
   bool exportDynamic;
+  bool exportUndefDynSyms;
   bool fixCortexA53Errata843419;
   bool fixCortexA8;
   bool formatBinary = false;
@@ -362,6 +364,9 @@ struct Configuration {
 
   // 4 for ELF32, 8 for ELF64.
   int wordsize;
+
+  // Got Entry Size, typically Wordsize
+  int gotEntrySize;
 
   // Size of a CHERI capability
   int capabilitySize = 0;

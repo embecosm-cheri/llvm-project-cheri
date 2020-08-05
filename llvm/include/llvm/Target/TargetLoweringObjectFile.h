@@ -17,6 +17,7 @@
 #include "llvm/MC/MCObjectFileInfo.h"
 #include "llvm/MC/MCRegister.h"
 #include "llvm/MC/MCTargetOptions.h"
+#include "llvm/CodeGen/MachineJumpTableInfo.h"
 #include <cstdint>
 
 namespace llvm {
@@ -192,6 +193,13 @@ public:
                                                const TargetMachine &TM) const {
     return nullptr;
   }
+
+  virtual const MCExpr *
+  getConstantSymbolLowering(const Constant *CV, Mangler &Mang,
+                            const TargetMachine &TM) const {
+    return nullptr;
+  }
+
 
   /// Target supports a native lowering of a dso_local_equivalent constant
   /// without needing to replace it with equivalent IR.

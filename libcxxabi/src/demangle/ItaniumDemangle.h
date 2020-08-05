@@ -3718,6 +3718,9 @@ Node *AbstractManglingParser<Derived, Alloc>::parseQualifiedType() {
     if (Qual.empty())
       return nullptr;
 
+    if (Qual == "cap")
+      Qual = "__capability";
+
     // extension            ::= U <objc-name> <objc-type>  # objc-type<identifier>
     if (Qual.startsWith("objcproto")) {
       StringView ProtoSourceName = Qual.dropFront(std::strlen("objcproto"));

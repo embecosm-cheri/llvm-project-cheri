@@ -445,6 +445,16 @@ class SVE_4_Op_Imm_Pat<ValueType vtd, SDPatternOperator op, ValueType vt1,
 
 def SVEDup0 : ComplexPattern<vAny, 0, "SelectDupZero", []>;
 def SVEDup0Undef : ComplexPattern<vAny, 0, "SelectDupZeroOrUndef", []>;
+def SVEDup0Undef_nxv2i64 : ComplexPattern<nxv2i64, 0, "SelectDupZeroOrUndef<128>", []>;
+def SVEDup0Undef_nxv2f16 : ComplexPattern<nxv2f16, 0, "SelectDupZeroOrUndef<32>", []>;
+def SVEDup0Undef_nxv2f32 : ComplexPattern<nxv2f32, 0, "SelectDupZeroOrUndef<64>", []>;
+def SVEDup0Undef_nxv2f64 : ComplexPattern<nxv2f64, 0, "SelectDupZeroOrUndef<128>", []>;
+def SVEDup0Undef_nxv4i32 : ComplexPattern<nxv4i32, 0, "SelectDupZeroOrUndef<128>", []>;
+def SVEDup0Undef_nxv4f16 : ComplexPattern<nxv4f16, 0, "SelectDupZeroOrUndef<64>", []>;
+def SVEDup0Undef_nxv4f32 : ComplexPattern<nxv4f32, 0, "SelectDupZeroOrUndef<128>", []>;
+def SVEDup0Undef_nxv8i16 : ComplexPattern<nxv8i16, 0, "SelectDupZeroOrUndef<128>", []>;
+def SVEDup0Undef_nxv8f16 : ComplexPattern<nxv8f16, 0, "SelectDupZeroOrUndef<128>", []>;
+def SVEDup0Undef_nxv16i8 : ComplexPattern<nxv16i8, 0, "SelectDupZeroOrUndef<128>", []>;
 
 let AddedComplexity = 1 in {
 class SVE_3_Op_Pat_SelZero<ValueType vtd, SDPatternOperator op, ValueType vt1,

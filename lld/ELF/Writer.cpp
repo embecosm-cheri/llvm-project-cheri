@@ -299,6 +299,10 @@ void elf::addReservedSymbols() {
   ElfSym::etext2 = add("_etext", -1);
   ElfSym::edata1 = add("edata", -1);
   ElfSym::edata2 = add("_edata", -1);
+
+  ElfSym::newLibBss1 = add("__bss_start__", 0);
+  ElfSym::newLibBss2 = add("__bss_end__", -1);
+  ElfSym::newLibEnd = add("__end__", -1);
 }
 
 static OutputSection *findSection(StringRef name, unsigned partition = 1) {
@@ -1149,10 +1153,16 @@ template <class ELFT> void Writer<ELFT>::setReservedSymbolSections() {
       ElfSym::end1->section = last->lastSec;
     if (ElfSym::end2)
       ElfSym::end2->section = last->lastSec;
+    if (ElfSym::newLibEnd)
+      ElfSym::newLibEnd->section = last->lastSec;
   }
 
   if (ElfSym::bss)
     ElfSym::bss->section = findSection(".bss");
+  if (ElfSym::newLibBss1)
+    ElfSym::newLibBss1->section = findSection(".bss");
+  if (ElfSym::newLibBss2)
+    ElfSym::newLibBss2->section = findSection(".bss");
 
   // Setup MIPS _gp_disp/__gnu_local_gp symbols which should
   // be equal to the _gp symbol's value.
@@ -1691,6 +1701,12 @@ template <class ELFT> void Writer<ELFT>::finalizeAddressDependentContent() {
     if (changed && tc.pass >= 15) {
       error("thunk creation not converged");
       break;
+    }
+
+    if (config->morelloC64Plt) {
+      if (changed)
+        script->assignAddresses();
+      changed |= morelloLinkerDefinedCapabilityAlign();
     }
 
     if (config->fixCortexA53Errata843419) {
@@ -2252,6 +2268,7 @@ template <class ELFT> void Writer<ELFT>::finalizeSections() {
   // can relax jump instructions based on symbol offset.
   if (config->optimizeBBJumps)
     optimizeBasicBlockJumps();
+  finalizeSynthetic(in.capRelocs);
 
   // Fill other section headers. The dynamic table is finalized
   // at the end because some tags like RELSZ depend on result
@@ -2352,6 +2369,11 @@ template <class ELFT> void Writer<ELFT>::addStartEndSymbols() {
   if (in.cheriCapTable)
     define("__cap_table_start", "__cap_table_end",
            in.cheriCapTable->getOutputSection());
+
+  if (config->emachine == EM_AARCH64 && in.capRelocs)
+    // These symbol values will be finalized in finalizeContents()
+    define("__cap_relocs_start", "__cap_relocs_end",
+           in.capRelocs->getOutputSection());
 
   if (OutputSection *sec = findSection(".ARM.exidx"))
     define("__exidx_start", "__exidx_end", sec);

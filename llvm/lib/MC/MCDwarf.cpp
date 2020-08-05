@@ -1295,7 +1295,6 @@ public:
 
   /// Emit the unwind information in a compact way.
   void EmitCompactUnwind(const MCDwarfFrameInfo &frame);
-
   const MCSymbol &EmitCIE(const MCDwarfFrameInfo &F);
   void EmitFDE(const MCSymbol &cieStart, const MCDwarfFrameInfo &frame,
                bool LastInSection, const MCSymbol &SectionStart);
@@ -1553,7 +1552,6 @@ static unsigned getCIEVersion(bool IsEH, unsigned DwarfVersion) {
   }
   llvm_unreachable("Unknown version");
 }
-
 const MCSymbol &FrameEmitterImpl::EmitCIE(const MCDwarfFrameInfo &Frame) {
   MCContext &context = Streamer.getContext();
   const MCRegisterInfo *MRI = context.getRegisterInfo();
@@ -1587,8 +1585,8 @@ const MCSymbol &FrameEmitterImpl::EmitCIE(const MCDwarfFrameInfo &Frame) {
   uint8_t CIEVersion = getCIEVersion(IsEH, context.getDwarfVersion());
   Streamer.emitInt8(CIEVersion);
 
+  SmallString<8> Augmentation;
   if (IsEH) {
-    SmallString<8> Augmentation;
     Augmentation += "z";
     if (Frame.Personality)
       Augmentation += "P";
@@ -1599,8 +1597,10 @@ const MCSymbol &FrameEmitterImpl::EmitCIE(const MCDwarfFrameInfo &Frame) {
       Augmentation += "S";
     if (Frame.IsBKeyFrame)
       Augmentation += "B";
-    Streamer.emitBytes(Augmentation);
   }
+  if (Frame.Type == MCCFIProcType::PureCap)
+    Augmentation += 'C';
+  Streamer.emitBytes(Augmentation);
   Streamer.emitInt8(0);
 
   if (CIEVersion >= 4) {
@@ -1665,11 +1665,9 @@ const MCSymbol &FrameEmitterImpl::EmitCIE(const MCDwarfFrameInfo &Frame) {
   // Initial Instructions
 
   const MCAsmInfo *MAI = context.getAsmInfo();
-  if (!Frame.IsSimple) {
-    const std::vector<MCCFIInstruction> &Instructions =
-        MAI->getInitialFrameState();
-    emitCFIInstructions(Instructions, nullptr);
-  }
+  const std::vector<MCCFIInstruction> &Instructions =
+      MAI->getInitialFrameState(Frame.Type);
+  emitCFIInstructions(Instructions, nullptr);
 
   InitialCFAOffset = CFAOffset;
 
@@ -1761,27 +1759,27 @@ namespace {
 
 struct CIEKey {
   static const CIEKey getEmptyKey() {
-    return CIEKey(nullptr, 0, -1, false, false, static_cast<unsigned>(INT_MAX),
-                  false);
+    return CIEKey(nullptr, 0, -1, false, MCCFIProcType::Normal,
+                  static_cast<unsigned>(INT_MAX), false);
   }
 
   static const CIEKey getTombstoneKey() {
-    return CIEKey(nullptr, -1, 0, false, false, static_cast<unsigned>(INT_MAX),
-                  false);
+    return CIEKey(nullptr, -1, 0, false, MCCFIProcType::Normal,
+                  static_cast<unsigned>(INT_MAX), false);
   }
 
   CIEKey(const MCSymbol *Personality, unsigned PersonalityEncoding,
-         unsigned LSDAEncoding, bool IsSignalFrame, bool IsSimple,
+         unsigned LSDAEncoding, bool IsSignalFrame, MCCFIProcType Type,
          unsigned RAReg, bool IsBKeyFrame)
       : Personality(Personality), PersonalityEncoding(PersonalityEncoding),
         LsdaEncoding(LSDAEncoding), IsSignalFrame(IsSignalFrame),
-        IsSimple(IsSimple), RAReg(RAReg), IsBKeyFrame(IsBKeyFrame) {}
+        Type(Type), RAReg(RAReg), IsBKeyFrame(IsBKeyFrame){}
 
   explicit CIEKey(const MCDwarfFrameInfo &Frame)
       : Personality(Frame.Personality),
         PersonalityEncoding(Frame.PersonalityEncoding),
         LsdaEncoding(Frame.LsdaEncoding), IsSignalFrame(Frame.IsSignalFrame),
-        IsSimple(Frame.IsSimple), RAReg(Frame.RAReg),
+        Type(Frame.Type), RAReg(Frame.RAReg),
         IsBKeyFrame(Frame.IsBKeyFrame) {}
 
   StringRef PersonalityName() const {
@@ -1792,17 +1790,17 @@ struct CIEKey {
 
   bool operator<(const CIEKey &Other) const {
     return std::make_tuple(PersonalityName(), PersonalityEncoding, LsdaEncoding,
-                           IsSignalFrame, IsSimple, RAReg) <
+                           IsSignalFrame, Type, RAReg) <
            std::make_tuple(Other.PersonalityName(), Other.PersonalityEncoding,
                            Other.LsdaEncoding, Other.IsSignalFrame,
-                           Other.IsSimple, Other.RAReg);
+                           Other.Type, Other.RAReg);
   }
 
   const MCSymbol *Personality;
   unsigned PersonalityEncoding;
   unsigned LsdaEncoding;
   bool IsSignalFrame;
-  bool IsSimple;
+  MCCFIProcType Type;
   unsigned RAReg;
   bool IsBKeyFrame;
 };
@@ -1818,7 +1816,7 @@ template <> struct DenseMapInfo<CIEKey> {
   static unsigned getHashValue(const CIEKey &Key) {
     return static_cast<unsigned>(hash_combine(
         Key.Personality, Key.PersonalityEncoding, Key.LsdaEncoding,
-        Key.IsSignalFrame, Key.IsSimple, Key.RAReg, Key.IsBKeyFrame));
+        Key.IsSignalFrame, Key.Type, Key.RAReg, Key.IsBKeyFrame));
   }
 
   static bool isEqual(const CIEKey &LHS, const CIEKey &RHS) {
@@ -1826,7 +1824,8 @@ template <> struct DenseMapInfo<CIEKey> {
            LHS.PersonalityEncoding == RHS.PersonalityEncoding &&
            LHS.LsdaEncoding == RHS.LsdaEncoding &&
            LHS.IsSignalFrame == RHS.IsSignalFrame &&
-           LHS.IsSimple == RHS.IsSimple && LHS.RAReg == RHS.RAReg &&
+           LHS.Type == RHS.Type &&
+           LHS.RAReg == RHS.RAReg &&
            LHS.IsBKeyFrame == RHS.IsBKeyFrame;
   }
 };

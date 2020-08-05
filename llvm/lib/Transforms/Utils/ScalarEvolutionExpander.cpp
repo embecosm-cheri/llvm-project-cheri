@@ -63,7 +63,6 @@ Value *SCEVExpander::ReuseOrCreateCast(Value *V, Type *Ty,
   BasicBlock::iterator BIP = Builder.GetInsertPoint();
 
   Value *Ret = nullptr;
-
   // Check to see if there is already a cast!
   for (User *U : V->users()) {
     if (U->getType() != Ty)
@@ -748,8 +747,12 @@ Value *SCEVExpander::visitAddExpr(const SCEVAddExpr *S) {
   // so that pointer operands are inserted first, which the code below relies on
   // to form more involved GEPs.
   SmallVector<std::pair<const Loop *, const SCEV *>, 8> OpsAndLoops;
-  for (const SCEV *Op : reverse(S->operands()))
-    OpsAndLoops.push_back(std::make_pair(getRelevantLoop(Op), Op));
+  SmallSet<const Loop *, 2> Loops;
+  for (const SCEV *Op : reverse(S->operands())) {
+    const Loop *RelLoop = getRelevantLoop(Op);
+    Loops.insert(RelLoop);
+    OpsAndLoops.push_back(std::make_pair(RelLoop, Op));
+  }
 
   // Sort by loop. Use a stable sort so that constants follow non-constants and
   // pointer operands precede non-pointer operands.
@@ -758,13 +761,39 @@ Value *SCEVExpander::visitAddExpr(const SCEVAddExpr *S) {
   // Emit instructions to add all the operands. Hoist as much as possible
   // out of loops, and form meaningful getelementptrs where possible.
   Value *Sum = nullptr;
+  Value *BasePtr = nullptr;
+
+  // For a + b where b is a capability chrec, extract the capability part from the
+  // base.
+  // a + {b,+,c} gets expanded to a + {extract_integer(b) + c} + extract_capability(b)
+  // For example:
+  // a + {b + 1,+,c} -> a + {1,+,c} + b
   for (auto I = OpsAndLoops.begin(), E = OpsAndLoops.end(); I != E;) {
     const Loop *CurLoop = I->first;
     const SCEV *Op = I->second;
     if (!Sum) {
-      // This is the first operand. Just expand it.
-      Sum = expand(Op);
-      ++I;
+      if (DL.isFatPointer(Op->getType()) && !BasePtr && Loops.size() > 1) {
+        // Prevent hoiting of parts of the GEP for fat pointers as the
+        // computations might clear the tag. Note that this won't work
+        // if the add expression has more than one fat pointer in it
+        // and therefore ambiguous.
+        if (auto *AddRec = dyn_cast<SCEVAddRecExpr>(Op)) {
+          auto *BaseSum = SCEVFatRewriter::rewrite(AddRec, SE);
+          auto *IntSum = SCEVIntegerRewriter::rewrite(AddRec, SE);
+          // Expand the fat pointer part and the integer part (if any).
+          BasePtr = expand(BaseSum);
+          Sum = expand(IntSum);
+          ++I;
+        } else {
+          BasePtr = expand(Op);
+          Sum = nullptr;
+          ++I;
+        }
+      } else {
+        // This is the first operand. Just expand it.
+        Sum = expand(Op);
+        ++I;
+      }
       continue;
     }
 
@@ -800,6 +829,13 @@ Value *SCEVExpander::visitAddExpr(const SCEVAddExpr *S) {
                         /*IsSafeToHoist*/ true);
       ++I;
     }
+  }
+  if (BasePtr) {
+    SmallVector<const SCEV *, 4> NewOps;
+    PointerType *PTy = cast<PointerType>(BasePtr->getType());
+    NewOps.push_back(isa<Instruction>(Sum) ? SE.getUnknown(Sum) :
+                                             SE.getSCEV(Sum));
+    Sum = expandAddToGEP(NewOps.begin(), NewOps.end(), PTy, Ty, BasePtr);
   }
 
   return Sum;
@@ -1109,6 +1145,12 @@ static bool canBeCheaplyTransformed(ScalarEvolution &SE,
   Type *PhiTy = SE.getEffectiveSCEVType(Phi->getType());
   Type *RequestedTy = SE.getEffectiveSCEVType(Requested->getType());
 
+  // Don't transform capabilities to integers or the other way
+  // around. These are not nops.
+  auto &DL = SE.getDataLayout();
+  if (DL.isFatPointer(Phi->getType()) != DL.isFatPointer(Requested->getType()))
+    return false;
+
   if (RequestedTy->getIntegerBitWidth() > PhiTy->getIntegerBitWidth())
     return false;
 
@@ -1399,7 +1441,8 @@ Value *SCEVExpander::expandAddRecExprLiterally(const SCEVAddRecExpr *S) {
   // We can't use a pointer type for the addrec if the pointer type is
   // non-integral.
   Type *AddRecPHIExpandTy =
-      DL.isNonIntegralPointerType(STy) ? Normalized->getType() : ExpandTy;
+      (DL.isNonIntegralPointerType(STy) || DL.isFatPointer(STy)) ?
+          Normalized->getType() : ExpandTy;
 
   // In some cases, we decide to reuse an existing phi node but need to truncate
   // it and/or invert the step.
@@ -1679,7 +1722,10 @@ Value *SCEVExpander::expandSMaxExpr(const SCEVNAryExpr *S) {
     // rest of the comparisons as integer.
     Type *OpTy = S->getOperand(i)->getType();
     if (OpTy->isIntegerTy() != Ty->isIntegerTy()) {
-      Ty = SE.getEffectiveSCEVType(Ty);
+      if (DL.isFatPointer(OpTy) && !DL.isFatPointer(Ty))
+        Ty = OpTy;
+      if (!DL.isFatPointer(Ty))
+        Ty = SE.getEffectiveSCEVType(Ty);
       LHS = InsertNoopCastOfTo(LHS, Ty);
     }
     Value *RHS = expandCodeForImpl(S->getOperand(i), Ty, false);
@@ -1708,7 +1754,10 @@ Value *SCEVExpander::expandUMaxExpr(const SCEVNAryExpr *S) {
     // rest of the comparisons as integer.
     Type *OpTy = S->getOperand(i)->getType();
     if (OpTy->isIntegerTy() != Ty->isIntegerTy()) {
-      Ty = SE.getEffectiveSCEVType(Ty);
+      if (DL.isFatPointer(OpTy) && !DL.isFatPointer(Ty))
+        Ty = OpTy;
+      if (!DL.isFatPointer(Ty))
+        Ty = SE.getEffectiveSCEVType(Ty);
       LHS = InsertNoopCastOfTo(LHS, Ty);
     }
     Value *RHS = expandCodeForImpl(S->getOperand(i), Ty, false);
@@ -1737,7 +1786,10 @@ Value *SCEVExpander::expandSMinExpr(const SCEVNAryExpr *S) {
     // rest of the comparisons as integer.
     Type *OpTy = S->getOperand(i)->getType();
     if (OpTy->isIntegerTy() != Ty->isIntegerTy()) {
-      Ty = SE.getEffectiveSCEVType(Ty);
+      if (DL.isFatPointer(OpTy) && !DL.isFatPointer(Ty))
+        Ty = OpTy;
+      if (!DL.isFatPointer(Ty))
+        Ty = SE.getEffectiveSCEVType(Ty);
       LHS = InsertNoopCastOfTo(LHS, Ty);
     }
     Value *RHS = expandCodeForImpl(S->getOperand(i), Ty, false);
@@ -1766,7 +1818,10 @@ Value *SCEVExpander::expandUMinExpr(const SCEVNAryExpr *S) {
     // rest of the comparisons as integer.
     Type *OpTy = S->getOperand(i)->getType();
     if (OpTy->isIntegerTy() != Ty->isIntegerTy()) {
-      Ty = SE.getEffectiveSCEVType(Ty);
+      if (DL.isFatPointer(OpTy) && !DL.isFatPointer(Ty))
+        Ty = OpTy;
+      if (!DL.isFatPointer(Ty))
+        Ty = SE.getEffectiveSCEVType(Ty);
       LHS = InsertNoopCastOfTo(LHS, Ty);
     }
     Value *RHS = expandCodeForImpl(S->getOperand(i), Ty, false);

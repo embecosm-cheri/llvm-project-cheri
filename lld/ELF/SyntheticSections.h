@@ -1165,6 +1165,7 @@ private:
 };
 
 // Can only be forward declared here since it depends on SyntheticSection
+class MorelloCapRelocsSection;
 class CheriCapRelocsSection;
 class CheriCapTableSection;
 class CheriCapTableMappingSection;

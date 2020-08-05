@@ -50,6 +50,13 @@ enum NodeType : unsigned {
   FIRST_NUMBER = ISD::BUILTIN_OP_END,
   WrapperLarge, // 4-instruction MOVZ/MOVK sequence for 64-bit addresses.
   CALL,         // Function call.
+  CCALL,        // Function call thru capability.
+  ClearCALL,    // Function call, clear unused registers.
+  ClearCCALL,   // Function call thru capability, clear unused registers.
+
+  CapTagGet,   // Legalised int_cheri_cap_tag_get
+  CapSealedGet, // Legalised int_cheri_cap_sealed_get
+  ClearPerms,  // Legalised int_cheri_cap_perms_and
 
   // Pseudo for a OBJC call that gets emitted together with a special `mov
   // x29, x29` marker instruction.
@@ -59,11 +66,18 @@ enum NodeType : unsigned {
   // offset of a variable into X0, using the TLSDesc model.
   TLSDESC_CALLSEQ,
   ADRP,     // Page address of a TargetGlobalAddress operand.
+  ADRPC,    // Page address of a TargetGlobalAddress operand as a capability.
   ADR,      // ADR
   ADDlow,   // Add the low 12 bits of a TargetGlobalAddress operand.
+  ADDClow,  // Add the low 12 bits of a TargetGlobalAddress operand to a capability.
   LOADgot,  // Load from automatically generated descriptor (e.g. Global
             // Offset Table, TLS record).
+  LOADCgot, // Load from automatically generated descriptor (e.g. Global
+            // Offset Table, TLS record). However, we are doing the load
+            // via a capability so restrict this to a register that has
+            // a capability sub-register.
   RET_FLAG, // Return with a flag operand. Operand 0 is the chain operand.
+  CRET_FLAG, // Capability return with a flag operand. Operand 0 is the chain operand.
   BRCOND,   // Conditional branch instruction; "b.cond".
   CSEL,
   CSINV, // Conditional select invert.
@@ -267,6 +281,18 @@ enum NodeType : unsigned {
   // Vector bitwise insertion
   BIT,
 
+  // Capability operations
+  CCheckPermS,
+  CCheckTypeS,
+  CapCheckEquals,
+  CapCheckSubset,
+  CapCheckSubsetUnseal,
+  CapSealImm,
+
+  // Capability align operations
+  CapAlignDown,
+  CapAlignUp,
+
   // Compare-and-branch
   CBZ,
   CBNZ,
@@ -275,6 +301,9 @@ enum NodeType : unsigned {
 
   // Tail calls
   TC_RETURN,
+  CTC_RETURN, // thru capability register.
+  ClearTC_RETURN,  // clear unused registers.
+  ClearCTC_RETURN, // thru capability register, clear unused registers.
 
   // Custom prefetch handling
   PREFETCH,
@@ -515,6 +544,9 @@ public:
                                      unsigned Depth = 0) const override;
 
   MVT getPointerTy(const DataLayout &DL, uint32_t AS = 0) const override {
+    // Use a capability if required.
+    if (DL.isFatPointer(AS))
+      return MVT::getFatPointerVT(DL.getPointerSizeInBits(AS));
     // Returning i64 unconditionally here (i.e. even for ILP32) means that the
     // *DAG* representation of pointers will always be 64-bits. They will be
     // truncated and extended when transferred to memory, but the 64-bit DAG
@@ -572,6 +604,20 @@ public:
 
   SDValue ReconstructShuffle(SDValue Op, SelectionDAG &DAG) const;
 
+  const MCExpr *
+  LowerCustomJumpTableEntry(const MachineJumpTableInfo *MJTI,
+                            const MachineBasicBlock *MBB, unsigned uid,
+                            MCContext &Ctx) const override;
+
+  unsigned getJumpTableEncoding() const override;
+
+  // We have the scvalue instruction which can set the address.
+  bool hasCapabilitySetAddress() const override { return true; }
+
+  TailPaddingAmount
+  getTailPaddingForPreciseBounds(uint64_t Size) const override;
+  Align getAlignmentForPreciseBounds(uint64_t Size) const override;
+
   MachineBasicBlock *EmitF128CSEL(MachineInstr &MI,
                                   MachineBasicBlock *BB) const;
 
@@ -617,6 +663,8 @@ public:
 
   bool isMulAddWithConstProfitable(const SDValue &AddNode,
                                    const SDValue &ConstNode) const override;
+
+  bool isSafeMemOpType(MVT VT) const override;
 
   bool shouldConsiderGEPOffsetSplit() const override;
 
@@ -692,6 +740,10 @@ public:
   TargetLoweringBase::AtomicExpansionKind
   shouldExpandAtomicCmpXchgInIR(AtomicCmpXchgInst *AI) const override;
 
+  //bool hasLegalTypeForAtomicCmpXchg(AtomicCmpXchgInst *AI) const override;
+  bool canLowerPointerTypeCmpXchg(const DataLayout &DL,
+                                  AtomicCmpXchgInst *AI) const override;
+
   bool useLoadStackGuardNode() const override;
   TargetLoweringBase::LegalizeTypeAction
   getPreferredVectorAction(MVT VT) const override;
@@ -708,13 +760,16 @@ public:
   /// returns the address of that location. Otherwise, returns nullptr.
   Value *getSafeStackPointerLocation(IRBuilderBase &IRB) const override;
 
+  uint32_t getExceptionPointerAS() const override;
+
   /// If a physical register, this returns the register that receives the
   /// exception address on entry to an EH pad.
   Register
-  getExceptionPointerRegister(const Constant *PersonalityFn) const override {
-    // FIXME: This is a guess. Has this been defined yet?
-    return AArch64::X0;
-  }
+  getExceptionPointerRegister(const Constant *PersonalityFn) const override;
+
+  /// Use address space 0 for the value returned by a jump table, since
+  /// we're going to branch in the same DSO using an i64.
+  bool useDefaultAddrSpaceForJT() const override { return true; }
 
   /// If a physical register, this returns the register that receives the
   /// exception typeid on entry to a landing pad.
@@ -941,9 +996,16 @@ private:
   template <class NodeTy>
   SDValue getGOT(NodeTy *N, SelectionDAG &DAG, unsigned Flags = 0) const;
   template <class NodeTy>
-  SDValue getAddrLarge(NodeTy *N, SelectionDAG &DAG, unsigned Flags = 0) const;
+  SDValue getFatGOT(NodeTy *N, SelectionDAG &DAG, unsigned Flags = 0) const;
+  template <class NodeTy>
+  SDValue
+  getAddrLarge(NodeTy *N, SelectionDAG &DAG, unsigned Flags = 0) const;
   template <class NodeTy>
   SDValue getAddr(NodeTy *N, SelectionDAG &DAG, unsigned Flags = 0) const;
+  template <class NodeTy>
+  SDValue getFatAddr(NodeTy *N, SelectionDAG &DAG, unsigned Flags = 0) const;
+  template <class NodeTy>
+  SDValue getFatAddrLarge(NodeTy *N, SelectionDAG &DAG, unsigned Flags = 0) const;
   template <class NodeTy>
   SDValue getAddrTiny(NodeTy *N, SelectionDAG &DAG, unsigned Flags = 0) const;
   SDValue LowerADDROFRETURNADDR(SDValue Op, SelectionDAG &DAG) const;
@@ -1017,6 +1079,8 @@ private:
   SDValue LowerVSCALE(SDValue Op, SelectionDAG &DAG) const;
   SDValue LowerTRUNCATE(SDValue Op, SelectionDAG &DAG) const;
   SDValue LowerVECREDUCE(SDValue Op, SelectionDAG &DAG) const;
+  SDValue LowerAtomic(SDValue Op, SelectionDAG &DAG) const;
+  SDValue LowerADDRSPACECAST(SDValue Op, SelectionDAG &DAG) const;
   SDValue LowerATOMIC_LOAD_SUB(SDValue Op, SelectionDAG &DAG) const;
   SDValue LowerATOMIC_LOAD_AND(SDValue Op, SelectionDAG &DAG) const;
   SDValue LowerDYNAMIC_STACKALLOC(SDValue Op, SelectionDAG &DAG) const;
@@ -1103,7 +1167,7 @@ private:
   bool isUsedByReturnOnly(SDNode *N, SDValue &Chain) const override;
   bool mayBeEmittedAsTailCall(const CallInst *CI) const override;
   bool getIndexedAddressParts(SDNode *Op, SDValue &Base, SDValue &Offset,
-                              ISD::MemIndexedMode &AM, bool &IsInc,
+                              EVT MemTy, ISD::MemIndexedMode &AM, bool &IsInc,
                               SelectionDAG &DAG) const;
   bool getPreIndexedAddressParts(SDNode *N, SDValue &Base, SDValue &Offset,
                                  ISD::MemIndexedMode &AM,
@@ -1121,6 +1185,10 @@ private:
                                       SelectionDAG &DAG) const;
 
   bool shouldNormalizeToSelectSequence(LLVMContext &, EVT) const override;
+
+  SDValue
+  getGlobalAddressByConstantPool(const GlobalAddressSDNode *GN, EVT PtrVT,
+                                 SelectionDAG &DAG, SDLoc DL) const;
 
   void finalizeLowering(MachineFunction &MF) const override;
 

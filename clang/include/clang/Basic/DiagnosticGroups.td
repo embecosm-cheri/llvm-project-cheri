@@ -144,6 +144,7 @@ def CHERIBitwiseOps : DiagGroup<"cheri-bitwise-operations">;
 def CHERIImplicitConversion : DiagGroup<"cheri-implicit-conversion">;
 def CHERIImplicitConversionSign : DiagGroup<"cheri-implicit-conversion-sign">;
 def CHERIPointerConversion : DiagGroup<"cheri-pointer-conversion", [CHERIImplicitConversionSign, CHERIImplicitConversion]>;
+def CHERIMissingFeatures : DiagGroup<"cheri-unimplemented-features">;
 def CHERIPrototypes: DiagGroup<"cheri-prototypes">;
 def CHERIPrototypesStrict: DiagGroup<"cheri-prototypes-strict">;
 // Remarks about setting/not setting subobject bounds

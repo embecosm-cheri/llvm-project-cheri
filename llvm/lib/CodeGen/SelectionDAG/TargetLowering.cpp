@@ -206,6 +206,13 @@ bool TargetLowering::findOptimalMemOpLowering(
   if (VT == MVT::isVoid) {
     return false; // cannot lower as memops
   }
+
+  // If we are preserving capabilities, the first VT must be a capability
+  if (Op.PreserveTags == PreserveCheriTags::Required && MemOps.empty() &&
+      !VT.isFatPointer() && Op.size() >= cheriCapabilityType().getSizeInBits() / 8) {
+    return false;
+  }
+
   // If the type is a fat pointer, then forcibly disable overlap.
   // XXXAR: Note this is not the same as TLI.allowsMisalignedMemoryAccesses().
   // Even if we support unaligned access for 8-byte values, we must never
@@ -250,7 +257,7 @@ bool TargetLowering::findOptimalMemOpLowering(
       unsigned NewVTSize;
 
       bool Found = false;
-      if (VT.isVector() || VT.isFloatingPoint()) {
+      if (VT.isVector() || VT.isFloatingPoint() || VT.isFatPointer()) {
         NewVT = (VT.getSizeInBits() > 64) ? MVT::i64 : MVT::i32;
         if (isOperationLegalOrCustom(ISD::STORE, NewVT) &&
             isSafeMemOpType(NewVT.getSimpleVT()))
@@ -295,12 +302,6 @@ bool TargetLowering::findOptimalMemOpLowering(
     if (++NumMemOps > Limit) {
       if (ReachedLimit)
         *ReachedLimit = true;
-      return false;
-    }
-
-    // If we are preserving capabilities, the first VT must be a capability
-    if (Op.PreserveTags == PreserveCheriTags::Required && MemOps.empty() &&
-        !VT.isFatPointer()) {
       return false;
     }
 
@@ -8054,7 +8055,9 @@ SDValue TargetLowering::getVectorSubVecPointer(SelectionDAG &DAG,
                                                SDValue Index) const {
   SDLoc dl(Index);
   // Make sure the index type is big enough to compute in.
-  Index = DAG.getZExtOrTrunc(Index, dl, VecPtr.getValueType());
+  EVT IndexTy = VecPtr.getValueType().isFatPointer() ? MVT::i64
+                                                 : VecPtr.getValueType();
+  Index = DAG.getZExtOrTrunc(Index, dl, IndexTy);
 
   EVT EltVT = VecVT.getVectorElementType();
 
@@ -8086,9 +8089,9 @@ SDValue TargetLowering::LowerToTLSEmulatedModel(const GlobalAddressSDNode *GA,
                                                 SelectionDAG &DAG) const {
   // Access to address of TLS varialbe xyz is lowered to a function call:
   //   __emutls_get_address( address of global variable named "__emutls_v.xyz" )
-  EVT DataPtrVT = getPointerTy(DAG.getDataLayout(),
-                               DAG.getDataLayout().getGlobalsAddressSpace());
-  PointerType *VoidPtrType = Type::getInt8PtrTy(*DAG.getContext());
+  unsigned AddrSpace = DAG.getDataLayout().getGlobalsAddressSpace();
+  EVT DataPtrVT = getPointerTy(DAG.getDataLayout(), AddrSpace);
+  PointerType *VoidPtrType = Type::getInt8PtrTy(*DAG.getContext(), AddrSpace);
   SDLoc dl(GA);
 
   ArgListTy Args;

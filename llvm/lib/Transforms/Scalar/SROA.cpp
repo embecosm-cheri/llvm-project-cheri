@@ -84,6 +84,7 @@
 #include "llvm/Transforms/Scalar.h"
 #include "llvm/Transforms/Utils/Local.h"
 #include "llvm/Transforms/Utils/PromoteMemToReg.h"
+#include "llvm/ADT/STLExtras.h"
 #include <algorithm>
 #include <cassert>
 #include <chrono>

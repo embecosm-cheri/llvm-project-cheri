@@ -15737,9 +15737,10 @@ bool DAGCombiner::CombineToPreIndexedLoadStore(SDNode *N) {
                                 Ptr, TLI))
     return false;
 
-  // If the pointer is not an add/sub, or if it doesn't have multiple uses, bail
+  // If the pointer is not an add/sub/ptradd, or if it doesn't have multiple uses, bail
   // out.  There is no reason to make this a preinc/predec.
-  if ((Ptr.getOpcode() != ISD::ADD && Ptr.getOpcode() != ISD::SUB) ||
+  unsigned PtrOpc = Ptr.getOpcode();
+  if ((PtrOpc != ISD::ADD && PtrOpc != ISD::SUB && PtrOpc != ISD::PTRADD) ||
       Ptr.getNode()->hasOneUse())
     return false;
 
@@ -15813,7 +15814,8 @@ bool DAGCombiner::CombineToPreIndexedLoadStore(SDNode *N) {
         continue;
 
       if (Use.getUser()->getOpcode() != ISD::ADD &&
-          Use.getUser()->getOpcode() != ISD::SUB) {
+          Use.getUser()->getOpcode() != ISD::SUB &&
+          Use.getUser()->getOpcode() != ISD::PTRADD) {
         OtherUses.clear();
         break;
       }
@@ -15914,8 +15916,6 @@ bool DAGCombiner::CombineToPreIndexedLoadStore(SDNode *N) {
     int X1 = (AM == ISD::PRE_DEC && !Swapped) ? -1 : 1;
     int Y1 = (AM == ISD::PRE_DEC && Swapped) ? -1 : 1;
 
-    unsigned Opcode = (Y0 * Y1 < 0) ? ISD::SUB : ISD::ADD;
-
     APInt CNV = Offset0;
     if (X0 < 0) CNV = -CNV;
     if (X1 * Y0 * Y1 < 0) CNV = CNV + Offset1;
@@ -15924,12 +15924,9 @@ bool DAGCombiner::CombineToPreIndexedLoadStore(SDNode *N) {
     SDLoc DL(OtherUses[i]);
 
     // We can now generate the new expression.
-    SDValue NewOp1 = DAG.getConstant(CNV, DL, CN->getValueType(0));
-    SDValue NewOp2 = Result.getValue(IsLoad ? 1 : 0);
+    SDValue NewOp = Result.getValue(IsLoad ? 1 : 0);
 
-    SDValue NewUse = DAG.getNode(Opcode,
-                                 DL,
-                                 OtherUses[i]->getValueType(0), NewOp1, NewOp2);
+    SDValue NewUse = DAG.getPointerAdd(DL, NewOp, CNV);
     DAG.ReplaceAllUsesOfValueWith(SDValue(OtherUses[i], 0), NewUse);
     deleteAndRecombine(OtherUses[i]);
   }
@@ -16099,9 +16096,11 @@ SDValue DAGCombiner::SplitIndexingFromLoad(LoadSDNode *LD) {
                           ConstInc->getValueType(0));
   }
 
-  unsigned Opc =
-      (AM == ISD::PRE_INC || AM == ISD::POST_INC ? ISD::ADD : ISD::SUB);
-  return DAG.getNode(Opc, SDLoc(LD), BP.getSimpleValueType(), BP, Inc);
+  if (AM == ISD::PRE_INC || AM == ISD::POST_INC)
+    return DAG.getPointerAdd(SDLoc(LD), BP, Inc);
+
+  APInt Imm = -cast<ConstantSDNode>(Inc)->getAPIntValue();
+  return DAG.getPointerAdd(SDLoc(LD), BP, Imm);
 }
 
 static inline ElementCount numVectorEltsOrZero(EVT T) {
@@ -16645,10 +16644,8 @@ struct LoadedSlice {
     assert(Offset >= 0 && "Offset too big to fit in int64_t!");
     if (Offset) {
       // BaseAddr = BaseAddr + Offset.
-      EVT ArithType = BaseAddr.getValueType();
       SDLoc DL(Origin);
-      BaseAddr = DAG->getNode(ISD::ADD, DL, ArithType, BaseAddr,
-                              DAG->getConstant(Offset, DL, ArithType));
+      BaseAddr = DAG->getPointerAdd(SDLoc(Origin), BaseAddr, Offset);
     }
 
     // Create the type of the loaded slice according to its size.
@@ -17200,6 +17197,7 @@ SDValue DAGCombiner::ReduceLoadOpStoreWidth(SDNode *N) {
           DAG.getLoad(NewVT, SDLoc(N0), LD->getChain(), NewPtr,
                       LD->getPointerInfo().getWithOffset(PtrOff), NewAlign,
                       LD->getMemOperand()->getFlags(), LD->getAAInfo());
+
       SDValue NewVal = DAG.getNode(Opc, SDLoc(Value), NewVT, NewLD,
                                    DAG.getConstant(NewImm, SDLoc(Value),
                                                    NewVT));

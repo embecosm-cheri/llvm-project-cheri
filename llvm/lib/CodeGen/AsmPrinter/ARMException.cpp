@@ -51,7 +51,7 @@ void ARMException::beginFunction(const MachineFunction *MF) {
     }
 
     shouldEmitCFI = true;
-    Asm->OutStreamer->emitCFIStartProc(false);
+    Asm->OutStreamer->emitCFIStartProc(MCCFIProcType::Normal);
   }
 }
 

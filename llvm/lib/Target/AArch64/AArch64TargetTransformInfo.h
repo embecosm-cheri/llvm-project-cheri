@@ -222,6 +222,8 @@ public:
 
   bool getTgtMemIntrinsic(IntrinsicInst *Inst, MemIntrinsicInfo &Info);
 
+  int getCheriIntrinsicNullCaseValue();
+
   bool isElementTypeLegalForScalableVector(Type *Ty) const {
     if (Ty->isPointerTy())
       return true;

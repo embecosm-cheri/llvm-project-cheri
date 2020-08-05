@@ -11990,7 +11990,7 @@ variable argument handling intrinsic functions are used.
       ; Initialize variable argument processing
       %ap = alloca %struct.va_list
       %ap2 = bitcast %struct.va_list* %ap to i8*
-      call void @llvm.va_start(i8* %ap2)
+      call void @llvm.va_start.p0i8(i8* %ap2)
 
       ; Read a single integer argument
       %tmp = va_arg i8* %ap2, i32
@@ -11998,17 +11998,17 @@ variable argument handling intrinsic functions are used.
       ; Demonstrate usage of llvm.va_copy and llvm.va_end
       %aq = alloca i8*
       %aq2 = bitcast i8** %aq to i8*
-      call void @llvm.va_copy(i8* %aq2, i8* %ap2)
-      call void @llvm.va_end(i8* %aq2)
+      call void @llvm.va_copy.p0i8.p0i8(i8* %aq2, i8* %ap2)
+      call void @llvm.va_end.p0i8(i8* %aq2)
 
       ; Stop processing of arguments.
-      call void @llvm.va_end(i8* %ap2)
+      call void @llvm.va_end.p0i8(i8* %ap2)
       ret i32 %tmp
     }
 
-    declare void @llvm.va_start(i8*)
-    declare void @llvm.va_copy(i8*, i8*)
-    declare void @llvm.va_end(i8*)
+    declare void @llvm.va_start.p0i8(i8*)
+    declare void @llvm.va_copy.p0i8.p0i8(i8*, i8*)
+    declare void @llvm.va_end.p0i8(i8*)
 
 .. _int_va_start:
 
@@ -12018,9 +12018,13 @@ variable argument handling intrinsic functions are used.
 Syntax:
 """""""
 
+This is an overloaded intrinsic. You can use ``llvm.va_start`` for different
+address spaces.
+
 ::
 
-      declare void @llvm.va_start(i8* <arglist>)
+      declare void @llvm.va_start.p0i8(i8* <arglist>)
+      declare void @llvm.va_start.p200i8(i8 addrspace(200)* <arglist>)
 
 Overview:
 """""""""
@@ -12050,9 +12054,13 @@ that out.
 Syntax:
 """""""
 
+This is an overloaded intrinsic. You can use ``llvm.va_end`` for different
+address spaces.
+
 ::
 
-      declare void @llvm.va_end(i8* <arglist>)
+      declare void @llvm.va_end.p0i8(i8* <arglist>)
+      declare void @llvm.va_end.p200i8(i8 addrspace(200)* <arglist>)
 
 Overview:
 """""""""
@@ -12083,9 +12091,14 @@ element to which the argument points. Calls to
 Syntax:
 """""""
 
+This is an overloaded intrinsic. You can use ``llvm.va_copy`` for different
+address spaces.
+
 ::
 
-      declare void @llvm.va_copy(i8* <destarglist>, i8* <srcarglist>)
+      declare void @llvm.va_copy.p0i8.p0i8(i8* <destarglist>, i8* <srcarglist>)
+      declare void @llvm.va_copy.p200i8.p200i8(i8 addrspace(200)* <destarglist>,
+                                               i8 addrspace(200)* <srcarglist>)
 
 Overview:
 """""""""

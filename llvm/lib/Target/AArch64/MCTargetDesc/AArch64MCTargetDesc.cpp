@@ -266,10 +266,20 @@ static MCAsmInfo *createAArch64MCAsmInfo(const MCRegisterInfo &MRI,
     MAI = new AArch64MCAsmInfoELF(TheTriple);
   }
 
-  // Initial state of the frame pointer is SP.
+  // Initial state of the frame pointer is SP, or CSP in the purecap mode.
   unsigned Reg = MRI.getDwarfRegNum(AArch64::SP, true);
   MCCFIInstruction Inst = MCCFIInstruction::cfiDefCfa(nullptr, Reg, 0);
-  MAI->addInitialFrameState(Inst);
+  MAI->addInitialFrameState(MCCFIProcType::Normal, Inst);
+
+  unsigned RegPureCap = MRI.getDwarfRegNum(AArch64::CSP, true);
+  MCCFIInstruction InstPureCap =
+      MCCFIInstruction::cfiDefCfa(nullptr, RegPureCap, 0);
+  MAI->addInitialFrameState(MCCFIProcType::PureCap, InstPureCap);
+
+  // Register that the purecap CFI procedure type uses CLR as the return address
+  // register, other types use the default AArch64::LR.
+  unsigned RetPureCap = MRI.getDwarfRegNum(AArch64::CLR, true);
+  MAI->addInitialRARegister(MCCFIProcType::PureCap, RetPureCap);
 
   return MAI;
 }

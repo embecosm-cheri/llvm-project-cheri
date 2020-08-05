@@ -2212,10 +2212,11 @@ SelectionDAGLegalize::ExpandDivRemLibCall(SDNode *Node,
     Args.push_back(Entry);
   }
 
+  unsigned AddrSpace = DAG.getDataLayout().getAllocaAddrSpace();
   // Also pass the return address of the remainder.
   SDValue FIPtr = DAG.CreateStackTemporary(RetVT);
   Entry.Node = FIPtr;
-  Entry.Ty = RetTy->getPointerTo();
+  Entry.Ty = RetTy->getPointerTo(AddrSpace);
   Entry.IsSExt = isSigned;
   Entry.IsZExt = !isSigned;
   Args.push_back(Entry);
@@ -2302,10 +2303,11 @@ SelectionDAGLegalize::ExpandSinCosLibCall(SDNode *Node,
   Entry.IsZExt = false;
   Args.push_back(Entry);
 
+  unsigned AddrSpace = DAG.getDataLayout().getAllocaAddrSpace();
   // Pass the return address of sin.
   SDValue SinPtr = DAG.CreateStackTemporary(RetVT);
   Entry.Node = SinPtr;
-  Entry.Ty = RetTy->getPointerTo();
+  Entry.Ty = RetTy->getPointerTo(AddrSpace);
   Entry.IsSExt = false;
   Entry.IsZExt = false;
   Args.push_back(Entry);
@@ -2313,7 +2315,7 @@ SelectionDAGLegalize::ExpandSinCosLibCall(SDNode *Node,
   // Also pass the return address of the cos.
   SDValue CosPtr = DAG.CreateStackTemporary(RetVT);
   Entry.Node = CosPtr;
-  Entry.Ty = RetTy->getPointerTo();
+  Entry.Ty = RetTy->getPointerTo(AddrSpace);
   Entry.IsSExt = false;
   Entry.IsZExt = false;
   Args.push_back(Entry);
@@ -2517,15 +2519,15 @@ SDValue SelectionDAGLegalize::ExpandLegalINT_TO_FP(SDNode *Node,
   }
   if (DAG.getDataLayout().isLittleEndian())
     FF <<= 32;
-  Constant *FudgeFactor = ConstantInt::get(
-                                       Type::getInt64Ty(*DAG.getContext()), FF);
+  Constant *FudgeFactor =
+      ConstantInt::get(Type::getInt64Ty(*DAG.getContext()), FF);
 
   SDValue CPIdx = DAG.getConstantPool(
       FudgeFactor,
       TLI.getPointerTy(DAG.getDataLayout(),
                        DAG.getDataLayout().getGlobalsAddressSpace()));
   Align Alignment = cast<ConstantPoolSDNode>(CPIdx)->getAlign();
-  CPIdx = DAG.getNode(ISD::ADD, dl, CPIdx.getValueType(), CPIdx, CstOffset);
+  CPIdx = DAG.getPointerAdd(dl, CPIdx, CstOffset);
   Alignment = commonAlignment(Alignment, 4);
   SDValue FudgeInReg;
   if (DestVT == MVT::f32)

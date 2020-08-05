@@ -257,3 +257,10 @@ def make_target_info(full_config):
     if target_system == 'Windows': return WindowsLocalTI(full_config)
     if target_system == 'OS/390':  return ZOSLocalTI(full_config)
     return DefaultTargetInfo(full_config)
+
+class MorelloModelTI(DefaultTargetInfo):
+    def __init__(self, full_config):
+        super(MorelloModelTI, self).__init__(full_config)
+
+    def add_cxx_compile_flags(self, flags):
+        flags += ["-D_GNU_SOURCE"]

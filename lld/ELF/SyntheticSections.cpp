@@ -711,7 +711,7 @@ bool GotSection::addDynTlsEntry(Symbol &sym) {
 bool GotSection::addTlsIndex() {
   if (tlsIndexOff != uint32_t(-1))
     return false;
-  tlsIndexOff = numEntries * config->wordsize;
+  tlsIndexOff = numEntries * config->gotEntrySize;
   numEntries += 2;
   return true;
 }
@@ -725,11 +725,11 @@ uint64_t GotSection::getTlsDescAddr(const Symbol &sym) const {
 }
 
 uint64_t GotSection::getGlobalDynAddr(const Symbol &b) const {
-  return this->getVA() + b.getTlsGdIdx() * config->wordsize;
+  return this->getVA() + b.getTlsGdIdx() * config->gotEntrySize;
 }
 
 uint64_t GotSection::getGlobalDynOffset(const Symbol &b) const {
-  return b.getTlsGdIdx() * config->wordsize;
+  return b.getTlsGdIdx() * config->gotEntrySize;
 }
 
 void GotSection::finalizeContents() {
@@ -737,7 +737,7 @@ void GotSection::finalizeContents() {
       numEntries <= target->gotHeaderEntriesNum && !ElfSym::globalOffsetTable)
     size = 0;
   else
-    size = numEntries * config->wordsize;
+    size = numEntries * config->gotEntrySize;
 }
 
 bool GotSection::isNeeded() const {
@@ -1041,7 +1041,7 @@ void MipsGotSection::build() {
     // Create dynamic relocations for TLS entries.
     for (std::pair<Symbol *, size_t> &p : got.tls) {
       Symbol *s = p.first;
-      uint64_t offset = p.second * config->wordsize;
+      uint64_t offset = p.second * config->gotEntrySize;
       // When building a shared library we still need a dynamic relocation
       // for the TP-relative offset as we don't know how much other data will
       // be allocated before us in the static TLS block.
@@ -1052,7 +1052,7 @@ void MipsGotSection::build() {
     }
     for (std::pair<Symbol *, size_t> &p : got.dynTlsSymbols) {
       Symbol *s = p.first;
-      uint64_t offset = p.second * config->wordsize;
+      uint64_t offset = p.second * config->gotEntrySize;
       if (s == nullptr) {
         if (!config->shared)
           continue;
@@ -1070,7 +1070,7 @@ void MipsGotSection::build() {
         // symbols since it is known even in shared libraries
         if (!s->isPreemptible)
           continue;
-        offset += config->wordsize;
+        offset += config->gotEntrySize;
         mainPart->relaDyn->addSymbolReloc(target->tlsOffsetRel, *this, offset,
                                           *s);
       }
@@ -1083,7 +1083,7 @@ void MipsGotSection::build() {
 
     // Dynamic relocations for "global" entries.
     for (const std::pair<Symbol *, size_t> &p : got.global) {
-      uint64_t offset = p.second * config->wordsize;
+      uint64_t offset = p.second * config->gotEntrySize;
       mainPart->relaDyn->addSymbolReloc(target->relativeRel, *this, offset,
                                         *p.first);
     }
@@ -1094,13 +1094,13 @@ void MipsGotSection::build() {
          got.pagesMap) {
       size_t pageCount = l.second.count;
       for (size_t pi = 0; pi < pageCount; ++pi) {
-        uint64_t offset = (l.second.firstIndex + pi) * config->wordsize;
+        uint64_t offset = (l.second.firstIndex + pi) * config->gotEntrySize;
         mainPart->relaDyn->addReloc({target->relativeRel, this, offset, l.first,
                                      int64_t(pi * 0x10000)});
       }
     }
     for (const std::pair<GotEntry, size_t> &p : got.local16) {
-      uint64_t offset = p.second * config->wordsize;
+      uint64_t offset = p.second * config->gotEntrySize;
       mainPart->relaDyn->addReloc({target->relativeRel, this, offset,
                                    DynamicReloc::AddendOnlyWithTargetVA,
                                    *p.first.first, p.first.second, R_ABS});
@@ -1191,8 +1191,8 @@ void MipsGotSection::writeTo(uint8_t *buf) {
 // section. I don't know why we have a BSS style type for the section but it is
 // consistent across both 64-bit PowerPC ABIs as well as the 32-bit PowerPC ABI.
 GotPltSection::GotPltSection()
-    : SyntheticSection(SHF_ALLOC | SHF_WRITE, SHT_PROGBITS, config->wordsize,
-                       ".got.plt") {
+    : SyntheticSection(SHF_ALLOC | SHF_WRITE, SHT_PROGBITS,
+                       config->gotEntrySize, ".got.plt") {
   if (config->emachine == EM_PPC) {
     name = ".plt";
   } else if (config->emachine == EM_PPC64) {

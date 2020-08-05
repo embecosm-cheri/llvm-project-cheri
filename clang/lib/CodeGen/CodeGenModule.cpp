@@ -3860,6 +3860,7 @@ llvm::Constant *CodeGenModule::GetOrCreateLLVMFunction(
 
   llvm::Function *F =
       llvm::Function::Create(FTy, llvm::Function::ExternalLinkage,
+                             getFunctionAddrSpace(),
                              Entry ? StringRef() : MangledName, &getModule());
 
   // If we already created a function with the same mangled name (but different
@@ -5285,7 +5286,8 @@ void CodeGenModule::emitIFuncDefinition(GlobalDecl GD) {
       GetOrCreateLLVMFunction(IFA->getResolver(), ResolverTy, {},
                               /*ForVTable=*/false);
   llvm::GlobalIFunc *GIF =
-      llvm::GlobalIFunc::create(DeclTy, 0, llvm::Function::ExternalLinkage,
+      llvm::GlobalIFunc::create(DeclTy, getFunctionAddrSpace(),
+                                llvm::Function::ExternalLinkage,
                                 "", Resolver, &getModule());
   if (Entry) {
     if (GIF->getResolver() == Entry) {
@@ -5846,7 +5848,10 @@ ConstantAddress CodeGenModule::GetAddrOfGlobalTemporary(
   if (VD->getTLSKind())
     setTLSMode(GV, *VD);
   llvm::Constant *CV = GV;
-  if (AddrSpace != LangAS::Default)
+  LangAS ExpectedAS = LangAS::Default;
+  if (getContext().getTargetInfo().areAllPointersCapabilities())
+    ExpectedAS = getLangASFromTargetAS(getTargetCodeGenInfo().getCHERICapabilityAS());
+  if (AddrSpace != ExpectedAS)
     CV = getTargetCodeGenInfo().performAddrSpaceCast(
         *this, GV, AddrSpace, LangAS::Default,
         Type->getPointerTo(

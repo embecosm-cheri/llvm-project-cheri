@@ -2163,7 +2163,7 @@ QualType Sema::BuildPointerType(QualType T, PointerInterpretationKind PIK,
 
   // If we are in purecap ABI turn pointers marked as using an integer
   // representation into a plain pointer-range-sized integer
-  if (PIK == PIK_Integer
+  if (PointerInterpretation == PIK_Integer
       && Context.getTargetInfo().areAllPointersCapabilities()) {
     // This is not a real pointer type in the purecap ABI
     // ptrdiff_t will be the same size as a plain mips pointer

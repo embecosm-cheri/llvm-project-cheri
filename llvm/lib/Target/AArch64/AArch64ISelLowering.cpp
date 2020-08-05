@@ -18,6 +18,7 @@
 #include "AArch64RegisterInfo.h"
 #include "AArch64Subtarget.h"
 #include "MCTargetDesc/AArch64AddressingModes.h"
+#include "MCTargetDesc/AArch64TargetStreamer.h"
 #include "Utils/AArch64BaseInfo.h"
 #include "llvm/ADT/APFloat.h"
 #include "llvm/ADT/APInt.h"
@@ -42,6 +43,8 @@
 #include "llvm/CodeGen/MachineInstrBuilder.h"
 #include "llvm/CodeGen/MachineMemOperand.h"
 #include "llvm/CodeGen/MachineRegisterInfo.h"
+#include "llvm/CodeGen/MachineJumpTableInfo.h"
+#include "llvm/CodeGen/MachineConstantPool.h"
 #include "llvm/CodeGen/RuntimeLibcalls.h"
 #include "llvm/CodeGen/SelectionDAG.h"
 #include "llvm/CodeGen/SelectionDAGNodes.h"
@@ -81,6 +84,7 @@
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Target/TargetMachine.h"
 #include "llvm/Target/TargetOptions.h"
+#include "llvm/MC/MCContext.h"
 #include <algorithm>
 #include <bitset>
 #include <cassert>
@@ -239,6 +243,12 @@ static bool isMergePassthruOpcode(unsigned Opc) {
 AArch64TargetLowering::AArch64TargetLowering(const TargetMachine &TM,
                                              const AArch64Subtarget &STI)
     : TargetLowering(TM), Subtarget(&STI) {
+  if (STI.hasMorello())
+    CapType = MVT::iFATPTR128;
+
+  if (STI.hasMorello())
+    SupportsAtomicCapabilityOperations = true;
+
   // AArch64 doesn't have comparisons which set GPRs or setcc instructions, so
   // we have to make something up. Arbitrarily, choose ZeroOrOne.
   setBooleanContents(ZeroOrOneBooleanContent);
@@ -287,6 +297,27 @@ AArch64TargetLowering::AArch64TargetLowering(const TargetMachine &TM,
     addQRTypeForNEON(MVT::v8f16);
     if (Subtarget->hasBF16())
       addQRTypeForNEON(MVT::v8bf16);
+  }
+
+  if (Subtarget->hasMorello())
+    addRegisterClass(MVT::iFATPTR128, &AArch64::CapallRegClass);
+
+  if (Subtarget->hasMorello()) {
+    for (MVT Ty : { MVT::i8, MVT::i16, MVT::i32, MVT::i64, MVT::i128,
+                    MVT::iFATPTR128 }) {
+      setOperationAction(ISD::ATOMIC_SWAP, Ty, Custom);
+      setOperationAction(ISD::ATOMIC_LOAD_ADD, Ty, Custom);
+      setOperationAction(ISD::ATOMIC_LOAD_SUB, Ty, Custom);
+      setOperationAction(ISD::ATOMIC_LOAD_AND, Ty, Custom);
+      setOperationAction(ISD::ATOMIC_LOAD_OR, Ty, Custom);
+      setOperationAction(ISD::ATOMIC_LOAD_XOR, Ty, Custom);
+      setOperationAction(ISD::ATOMIC_LOAD_NAND, Ty, Custom);
+      setOperationAction(ISD::ATOMIC_LOAD_MIN, Ty, Custom);
+      setOperationAction(ISD::ATOMIC_LOAD_MAX, Ty, Custom);
+      setOperationAction(ISD::ATOMIC_LOAD_UMIN, Ty, Custom);
+      setOperationAction(ISD::ATOMIC_LOAD_UMAX, Ty, Custom);
+      setOperationAction(ISD::ATOMIC_CMP_SWAP, Ty, Custom);
+    }
   }
 
   if (Subtarget->hasSVE()) {
@@ -375,12 +406,15 @@ AArch64TargetLowering::AArch64TargetLowering(const TargetMachine &TM,
 
   // Provide all sorts of operation actions
   setOperationAction(ISD::GlobalAddress, MVT::i64, Custom);
+  setOperationAction(ISD::GlobalAddress, MVT::iFATPTR128, Custom);
   setOperationAction(ISD::GlobalTLSAddress, MVT::i64, Custom);
+  setOperationAction(ISD::GlobalTLSAddress, MVT::iFATPTR128, Custom);
   setOperationAction(ISD::SETCC, MVT::i32, Custom);
   setOperationAction(ISD::SETCC, MVT::i64, Custom);
   setOperationAction(ISD::SETCC, MVT::f16, Custom);
   setOperationAction(ISD::SETCC, MVT::f32, Custom);
   setOperationAction(ISD::SETCC, MVT::f64, Custom);
+  setOperationAction(ISD::SETCC, MVT::iFATPTR128, Custom);
   setOperationAction(ISD::STRICT_FSETCC, MVT::f16, Custom);
   setOperationAction(ISD::STRICT_FSETCC, MVT::f32, Custom);
   setOperationAction(ISD::STRICT_FSETCC, MVT::f64, Custom);
@@ -395,16 +429,19 @@ AArch64TargetLowering::AArch64TargetLowering(const TargetMachine &TM,
   setOperationAction(ISD::BR_CC, MVT::f16, Custom);
   setOperationAction(ISD::BR_CC, MVT::f32, Custom);
   setOperationAction(ISD::BR_CC, MVT::f64, Custom);
+  setOperationAction(ISD::BR_CC, MVT::iFATPTR128, Custom);
   setOperationAction(ISD::SELECT, MVT::i32, Custom);
   setOperationAction(ISD::SELECT, MVT::i64, Custom);
   setOperationAction(ISD::SELECT, MVT::f16, Custom);
   setOperationAction(ISD::SELECT, MVT::f32, Custom);
   setOperationAction(ISD::SELECT, MVT::f64, Custom);
+  setOperationAction(ISD::SELECT, MVT::iFATPTR128, Custom);
   setOperationAction(ISD::SELECT_CC, MVT::i32, Custom);
   setOperationAction(ISD::SELECT_CC, MVT::i64, Custom);
   setOperationAction(ISD::SELECT_CC, MVT::f16, Custom);
   setOperationAction(ISD::SELECT_CC, MVT::f32, Custom);
   setOperationAction(ISD::SELECT_CC, MVT::f64, Custom);
+  setOperationAction(ISD::SELECT_CC, MVT::iFATPTR128, Custom);
   setOperationAction(ISD::BR_JT, MVT::Other, Custom);
   setOperationAction(ISD::JumpTable, MVT::i64, Custom);
 
@@ -502,11 +539,15 @@ AArch64TargetLowering::AArch64TargetLowering(const TargetMachine &TM,
   else
     setOperationAction(ISD::DYNAMIC_STACKALLOC, MVT::i64, Expand);
 
+  setOperationAction(ISD::DYNAMIC_STACKALLOC, MVT::iFATPTR128, Expand);
+
   // Constant pool entries
   setOperationAction(ISD::ConstantPool, MVT::i64, Custom);
+  setOperationAction(ISD::ConstantPool, MVT::iFATPTR128, Custom);
 
   // BlockAddress
   setOperationAction(ISD::BlockAddress, MVT::i64, Custom);
+  setOperationAction(ISD::BlockAddress, MVT::iFATPTR128, Custom);
 
   // Add/Sub overflow ops with MVT::Glues are lowered to NZCV dependences.
   setOperationAction(ISD::ADDC, MVT::i32, Custom);
@@ -865,18 +906,22 @@ AArch64TargetLowering::AArch64TargetLowering(const TargetMachine &TM,
     setIndexedLoadAction(im, MVT::i16, Legal);
     setIndexedLoadAction(im, MVT::i32, Legal);
     setIndexedLoadAction(im, MVT::i64, Legal);
+    setIndexedLoadAction(im, MVT::f128, Legal);
     setIndexedLoadAction(im, MVT::f64, Legal);
     setIndexedLoadAction(im, MVT::f32, Legal);
     setIndexedLoadAction(im, MVT::f16, Legal);
     setIndexedLoadAction(im, MVT::bf16, Legal);
+    setIndexedLoadAction(im, MVT::iFATPTR128, Legal);
     setIndexedStoreAction(im, MVT::i8, Legal);
     setIndexedStoreAction(im, MVT::i16, Legal);
     setIndexedStoreAction(im, MVT::i32, Legal);
     setIndexedStoreAction(im, MVT::i64, Legal);
+    setIndexedStoreAction(im, MVT::f128, Legal);
     setIndexedStoreAction(im, MVT::f64, Legal);
     setIndexedStoreAction(im, MVT::f32, Legal);
     setIndexedStoreAction(im, MVT::f16, Legal);
     setIndexedStoreAction(im, MVT::bf16, Legal);
+    setIndexedStoreAction(im, MVT::iFATPTR128, Legal);
   }
 
   // Trap.
@@ -903,9 +948,6 @@ AArch64TargetLowering::AArch64TargetLowering(const TargetMachine &TM,
   setTargetDAGCombine(ISD::FP_TO_SINT_SAT);
   setTargetDAGCombine(ISD::FP_TO_UINT_SAT);
   setTargetDAGCombine(ISD::FDIV);
-
-  // Try and combine setcc with csel
-  setTargetDAGCombine(ISD::SETCC);
 
   setTargetDAGCombine(ISD::INTRINSIC_WO_CHAIN);
 
@@ -954,7 +996,8 @@ AArch64TargetLowering::AArch64TargetLowering(const TargetMachine &TM,
   MaxLoadsPerMemcmp =
       Subtarget->requiresStrictAlign() ? MaxLoadsPerMemcmpOptSize : 8;
 
-  setStackPointerRegisterToSaveRestore(AArch64::SP);
+  setStackPointerRegisterToSaveRestore(Subtarget->hasPureCap() ? AArch64::CSP
+                                                               : AArch64::SP);
 
   setSchedulingPreference(Sched::Hybrid);
 
@@ -976,6 +1019,7 @@ AArch64TargetLowering::AArch64TargetLowering(const TargetMachine &TM,
   setHasExtractBitsInsn(true);
 
   setOperationAction(ISD::INTRINSIC_WO_CHAIN, MVT::Other, Custom);
+  setOperationAction(ISD::INTRINSIC_WO_CHAIN, MVT::i1, Custom);
 
   if (Subtarget->hasNEON()) {
     // FIXME: v1f64 shouldn't be legal if we can avoid it, because it leads to
@@ -1434,6 +1478,16 @@ AArch64TargetLowering::AArch64TargetLowering(const TargetMachine &TM,
   }
 
   PredictableSelectIsExpensive = Subtarget->predictableSelectIsExpensive();
+
+  if (Subtarget->hasMorello()) {
+    setOperationAction(ISD::ADDRSPACECAST, MVT::iFATPTR128, Custom);
+    setOperationAction(ISD::ADDRSPACECAST, MVT::i64, Custom);
+    // We need to legalize the load result from ldct.
+    setOperationAction(ISD::INTRINSIC_W_CHAIN, MVT::i1, Custom);
+    setOperationAction(ISD::INTRINSIC_W_CHAIN, MVT::i8, Custom);
+    setOperationAction(ISD::INTRINSIC_W_CHAIN, MVT::i16, Custom);
+    setOperationAction(ISD::INTRINSIC_W_CHAIN, MVT::i128, Custom);
+  }
 }
 
 void AArch64TargetLowering::addTypeForNEON(MVT VT) {
@@ -1678,6 +1732,31 @@ void AArch64TargetLowering::addDRTypeForNEON(MVT VT) {
 void AArch64TargetLowering::addQRTypeForNEON(MVT VT) {
   addRegisterClass(VT, &AArch64::FPR128RegClass);
   addTypeForNEON(VT);
+}
+
+bool AArch64TargetLowering::isSafeMemOpType(MVT VT) const {
+  if (!Subtarget->hasMorello())
+    return true;
+
+  // Use legal types for mem op lowering.
+  if (VT == MVT::f80)
+    return false;
+  if (VT.isFatPointer() && VT != MVT::iFATPTR128)
+    return false;
+
+  return true;
+}
+
+uint32_t AArch64TargetLowering::getExceptionPointerAS() const {
+  return Subtarget->hasPureCap() ? 200 : 0;
+}
+
+Register AArch64TargetLowering::
+getExceptionPointerRegister(const Constant *PersonalityFn) const {
+  // FIXME: This is a guess. Has this been defined yet?
+  if (Subtarget->hasPureCap())
+    return AArch64::C0;
+  return AArch64::X0;
 }
 
 EVT AArch64TargetLowering::getSetCCResultType(const DataLayout &,
@@ -1981,6 +2060,10 @@ bool AArch64TargetLowering::allowsMisalignedMemoryAccesses(
 FastISel *
 AArch64TargetLowering::createFastISel(FunctionLoweringInfo &funcInfo,
                                       const TargetLibraryInfo *libInfo) const {
+  // FIXME: FastISel has no support yet for Morello and capabilities, so just don't
+  // use it for now.
+  if (Subtarget->hasMorello())
+    return nullptr;
   return AArch64::createFastISel(funcInfo, libInfo);
 }
 
@@ -1992,11 +2075,18 @@ const char *AArch64TargetLowering::getTargetNodeName(unsigned Opcode) const {
   case AArch64ISD::FIRST_NUMBER:
     break;
     MAKE_CASE(AArch64ISD::CALL)
+    MAKE_CASE(AArch64ISD::CCALL)
+    MAKE_CASE(AArch64ISD::ClearCALL)
+    MAKE_CASE(AArch64ISD::ClearCCALL)
     MAKE_CASE(AArch64ISD::ADRP)
+    MAKE_CASE(AArch64ISD::ADRPC)
     MAKE_CASE(AArch64ISD::ADR)
     MAKE_CASE(AArch64ISD::ADDlow)
+    MAKE_CASE(AArch64ISD::ADDClow)
     MAKE_CASE(AArch64ISD::LOADgot)
+    MAKE_CASE(AArch64ISD::LOADCgot)
     MAKE_CASE(AArch64ISD::RET_FLAG)
+    MAKE_CASE(AArch64ISD::CRET_FLAG)
     MAKE_CASE(AArch64ISD::BRCOND)
     MAKE_CASE(AArch64ISD::CSEL)
     MAKE_CASE(AArch64ISD::CSINV)
@@ -2157,6 +2247,9 @@ const char *AArch64TargetLowering::getTargetNodeName(unsigned Opcode) const {
     MAKE_CASE(AArch64ISD::TBZ)
     MAKE_CASE(AArch64ISD::TBNZ)
     MAKE_CASE(AArch64ISD::TC_RETURN)
+    MAKE_CASE(AArch64ISD::CTC_RETURN)
+    MAKE_CASE(AArch64ISD::ClearTC_RETURN)
+    MAKE_CASE(AArch64ISD::ClearCTC_RETURN)
     MAKE_CASE(AArch64ISD::PREFETCH)
     MAKE_CASE(AArch64ISD::SITOF)
     MAKE_CASE(AArch64ISD::UITOF)
@@ -2197,6 +2290,17 @@ const char *AArch64TargetLowering::getTargetNodeName(unsigned Opcode) const {
     MAKE_CASE(AArch64ISD::FRECPS)
     MAKE_CASE(AArch64ISD::FRSQRTE)
     MAKE_CASE(AArch64ISD::FRSQRTS)
+    MAKE_CASE(AArch64ISD::CapAlignDown)
+    MAKE_CASE(AArch64ISD::CapAlignUp)
+    MAKE_CASE(AArch64ISD::CCheckPermS)
+    MAKE_CASE(AArch64ISD::CCheckTypeS)
+    MAKE_CASE(AArch64ISD::CapCheckEquals)
+    MAKE_CASE(AArch64ISD::CapCheckSubset)
+    MAKE_CASE(AArch64ISD::CapCheckSubsetUnseal)
+    MAKE_CASE(AArch64ISD::CapSealImm)
+    MAKE_CASE(AArch64ISD::CapTagGet)
+    MAKE_CASE(AArch64ISD::ClearPerms)
+    MAKE_CASE(AArch64ISD::CapSealedGet)
     MAKE_CASE(AArch64ISD::STG)
     MAKE_CASE(AArch64ISD::STZG)
     MAKE_CASE(AArch64ISD::ST2G)
@@ -2281,6 +2385,32 @@ const char *AArch64TargetLowering::getTargetNodeName(unsigned Opcode) const {
   }
 #undef MAKE_CASE
   return nullptr;
+}
+
+const MCExpr *
+AArch64TargetLowering::LowerCustomJumpTableEntry(const MachineJumpTableInfo *MJTI,
+                                             const MachineBasicBlock *MBB,
+                                             unsigned uid,MCContext &Ctx) const{
+  assert(Subtarget->hasC64() && "Only need custom lowering for C64");
+  const MCExpr *Ret = MCSymbolRefExpr::create(MBB->getSymbol(), Ctx);
+  if (isPositionIndependent()) {
+    auto *MF = MBB->getParent();
+    const TargetLowering *TLI = MF->getSubtarget().getTargetLowering();
+    const MCExpr *Base = TLI->getPICJumpTableRelocBaseExpr(MF, uid, Ctx);
+    Ret = MCBinaryExpr::createSub(Ret, Base, Ctx);
+  }
+  Ret = MCBinaryExpr::createAdd(Ret, MCConstantExpr::create(1, Ctx), Ctx);
+  return Ret;
+}
+
+unsigned AArch64TargetLowering::getJumpTableEncoding() const {
+  if (Subtarget->hasC64() && isPositionIndependent())
+    return MachineJumpTableInfo::EK_Custom32;
+
+  if (Subtarget->hasC64())
+    return MachineJumpTableInfo::EK_Custom64;
+
+  return TargetLowering::getJumpTableEncoding();
 }
 
 MachineBasicBlock *
@@ -2618,6 +2748,27 @@ static SDValue emitComparison(SDValue LHS, SDValue RHS, ISD::CondCode CC,
     return DAG.getNode(AArch64ISD::FCMP, dl, VT, LHS, RHS);
   }
 
+  if (VT.isFatPointer()) {
+    SDValue SubReg = DAG.getTargetConstant(AArch64::sub_64, dl, MVT::i32);
+
+    auto getCapCmpOp = [&](SDValue Node) {
+      if (Node->getOpcode() == ISD::INTTOPTR) {
+        // INTTOPTR will construct a capability from CZR, so doing this on a
+        // constant and extracting the subregister will give us back the
+        // constant.
+        ConstantSDNode *Const = dyn_cast<ConstantSDNode>(Node->getOperand(0));
+        if (Const)
+          return DAG.getZExtOrTrunc(SDValue(Const, 0), dl, MVT::i64);
+      }
+      Node = SDValue(DAG.getMachineNode(TargetOpcode::EXTRACT_SUBREG,
+                                     dl, MVT::i64, Node, SubReg), 0);
+      return Node;
+    };
+    LHS = getCapCmpOp(LHS);
+    RHS = getCapCmpOp(RHS);
+    VT = MVT::i64;
+  }
+
   // The CMP instruction is just an alias for SUBS, and representing it as
   // SUBS means that it's possible to get CSE with subtract operations.
   // A later phase can perform the optimization of setting the destination
@@ -2765,6 +2916,8 @@ static bool canEmitConjunction(const SDValue Val, bool &CanNegate,
   if (Opcode == ISD::SETCC) {
     if (Val->getOperand(0).getValueType() == MVT::f128)
       return false;
+    if (Val->getOperand(0).getValueType() == MVT::iFATPTR128)
+      return false;
     CanNegate = true;
     MustBeFirst = false;
     return true;
@@ -2834,6 +2987,9 @@ static SDValue emitConjunctionRec(SelectionDAG &DAG, SDValue Val,
     // Determine OutCC and handle FP special case.
     if (isInteger) {
       OutCC = changeIntCCToAArch64CC(CC);
+    } else if (LHS.getValueType().isFatPointer()) {
+      // We have no support for conditionnal compares with capabilities.
+      llvm_unreachable("Not a conjunction disjunction tree");
     } else {
       assert(LHS.getValueType().isFloatingPoint());
       AArch64CC::CondCode ExtraCC;
@@ -4069,6 +4225,45 @@ static SDValue lowerConvertToSVBool(SDValue Op, SelectionDAG &DAG) {
   return DAG.getNode(ISD::AND, DL, OutVT, Reinterpret, MaskReinterpret);
 }
 
+static unsigned getIntrinsicID(const SDNode *N) {
+  unsigned Opcode = N->getOpcode();
+  switch (Opcode) {
+  default:
+    return Intrinsic::not_intrinsic;
+  case ISD::INTRINSIC_WO_CHAIN: {
+    unsigned IID = cast<ConstantSDNode>(N->getOperand(0))->getZExtValue();
+    if (IID < Intrinsic::num_intrinsics)
+      return IID;
+    return Intrinsic::not_intrinsic;
+  }
+  }
+}
+
+static SDValue getGOTAccess(SDLoc &DL, EVT PtrVT, SDValue Callee,
+                            const AArch64Subtarget *Subtarget,
+                            SelectionDAG &DAG) {
+  if (Subtarget->hasC64() || Subtarget->hasCapGOT()) {
+    SDValue Val = DAG.getNode(AArch64ISD::LOADCgot, DL, MVT::iFATPTR128, Callee);
+    if (PtrVT != MVT::iFATPTR128) {
+      // C64 needs to access the GOT with the following sequence:
+      //
+      //   adrp x0, :got:sym
+      //   ldr  x0, [c0, :got_lo12:sym]
+      //
+      // We therefore need to restrict the register class to be a capability.
+      // Since the address is an integer pointer we need to extract the
+      // sub-register.
+      SDValue SubReg = DAG.getTargetConstant(AArch64::sub_64, DL, MVT::i32);
+      Val = SDValue(DAG.getMachineNode(TargetOpcode::EXTRACT_SUBREG,
+                                       DL, MVT::i64, Val, SubReg), 0);
+    }
+    return Val;
+  }
+
+  return DAG.getNode(AArch64ISD::LOADgot, DL, PtrVT, Callee);
+}
+
+
 SDValue AArch64TargetLowering::LowerINTRINSIC_W_CHAIN(SDValue Op,
                                                       SelectionDAG &DAG) const {
   unsigned IntNo = Op.getConstantOperandVal(1);
@@ -4137,6 +4332,82 @@ SDValue AArch64TargetLowering::LowerINTRINSIC_WO_CHAIN(SDValue Op,
   case Intrinsic::aarch64_neon_umin:
     return DAG.getNode(ISD::UMIN, dl, Op.getValueType(),
                        Op.getOperand(1), Op.getOperand(2));
+  case Intrinsic::morello_subset_test_unseal: {
+    if (Subtarget->hasMorello()) {
+      SDValue NonNullCap = DAG.getNode(AArch64ISD::CapCheckSubsetUnseal, dl,
+                                       DAG.getVTList(MVT::iFATPTR128, MVT::i32),
+                                       Op.getOperand(1), Op.getOperand(2));
+      SDValue NullCap = DAG.getRegister(AArch64::CZR, MVT::iFATPTR128);
+      SDValue CCVal = DAG.getConstant(AArch64CC::MI, dl, MVT::i32);
+      return DAG.getNode(AArch64ISD::CSEL, dl, MVT::iFATPTR128,
+                         NonNullCap.getValue(0), NullCap,
+                         CCVal, NonNullCap.getValue(1));
+    }
+    return SDValue();
+  }
+  case Intrinsic::cheri_cap_seal_entry: {
+    if (!Subtarget->hasMorello())
+      return SDValue();
+    return DAG.getNode(AArch64ISD::CapSealImm, dl, MVT::iFATPTR128,
+                       Op.getOperand(1), DAG.getConstant(1, dl, MVT::i32));
+  }
+  case Intrinsic::cheri_cap_bit_equals:
+  case Intrinsic::cheri_cap_subset_test: {
+    if (Subtarget->hasMorello()) {
+      unsigned opcode, cond;
+      if (IntNo == Intrinsic::cheri_cap_bit_equals) {
+        opcode = AArch64ISD::CapCheckEquals;
+        cond = AArch64CC::EQ;
+      } else {
+        opcode = AArch64ISD::CapCheckSubset;
+        cond = AArch64CC::MI;
+      }
+      SDValue Compare = DAG.getNode(opcode, dl, MVT::i32,
+                                    Op.getOperand(1), Op.getOperand(2));
+      SDValue TVal = DAG.getConstant(1, dl, MVT::i32);
+      SDValue FVal = DAG.getConstant(0, dl, MVT::i32);
+      SDValue CCVal = DAG.getConstant(cond, dl, MVT::i32);
+      SDValue Csel = DAG.getNode(AArch64ISD::CSEL, dl, MVT::i32, TVal, FVal,
+                                 CCVal, Compare);
+      return DAG.getZExtOrTrunc(Csel, dl, Op.getValueType());
+    }
+    return SDValue();
+  }
+  case Intrinsic::cheri_round_representable_length: {
+    if (Subtarget->hasMorello())
+      return SDValue();
+    return Op.getOperand(1);
+  }
+  case Intrinsic::cheri_representable_alignment_mask: {
+    if (Subtarget->hasMorello())
+      return SDValue();
+    return DAG.getConstant(-1ULL, dl, MVT::i64);
+  }
+  case Intrinsic::cheri_cap_tag_get: {
+    SDValue IntRes = DAG.getNode(AArch64ISD::CapTagGet, dl, MVT::i64,
+                                 Op.getOperand(1));
+    IntRes = DAG.getNode(ISD::AssertZext, dl, MVT::i64, IntRes,
+                         DAG.getValueType(MVT::i1));
+    return DAG.getSetCC(dl, MVT::i1, IntRes,
+                        DAG.getConstant(0, dl, MVT::i64), ISD::SETNE);
+  }
+  case Intrinsic::cheri_cap_sealed_get: {
+    SDValue IntRes = DAG.getNode(AArch64ISD::CapSealedGet, dl, MVT::i64,
+                                 Op.getOperand(1));
+    IntRes = DAG.getNode(ISD::AssertZext, dl, MVT::i64, IntRes,
+                         DAG.getValueType(MVT::i1));
+    return DAG.getSetCC(dl, MVT::i1, IntRes,
+                        DAG.getConstant(0, dl, MVT::i64), ISD::SETNE);
+  }
+  case Intrinsic::cheri_cap_perms_and: {
+    if (!Subtarget->hasMorello())
+      return SDValue();
+    SDValue Neg = DAG.getNode(ISD::XOR, dl, MVT::i64,
+                              DAG.getConstant(-1ULL, dl, MVT::i64),
+                              Op.getOperand(2));
+    return DAG.getNode(AArch64ISD::ClearPerms, dl, MVT::iFATPTR128,
+                       Op.getOperand(1), Neg);
+  }
 
   case Intrinsic::aarch64_sve_sunpkhi:
     return DAG.getNode(AArch64ISD::SUNPKHI, dl, Op.getValueType(),
@@ -4434,6 +4705,131 @@ bool AArch64TargetLowering::shouldRemoveExtendFromGSIndex(EVT VT) const {
     return true;
 
   return false;
+}
+
+static SDValue getAddrFromDDC(SDValue Node, SelectionDAG &DAG) {
+  SDLoc DL(Node.getNode());
+  SDValue GCap = SDValue(DAG.getMachineNode(AArch64::GetDDC, DL,
+                                            MVT::iFATPTR128),
+                         0);
+  return DAG.getNode(
+      ISD::INTRINSIC_WO_CHAIN, DL, MVT::iFATPTR128,
+      DAG.getConstant(Intrinsic::cheri_cap_from_pointer, DL,
+                      MVT::i32),
+      GCap, Node);
+}
+
+SDValue AArch64TargetLowering::LowerAtomic(SDValue Op,
+                                           SelectionDAG &DAG) const {
+  SDNode *Node = Op.getNode();
+  bool FatPtrBase =
+    cast<AtomicSDNode>(Node)->getBasePtr().getValueType().isFatPointer();
+  bool Relaxed = !isAcquireOrStronger(cast<AtomicSDNode>(Node)->getSuccessOrdering());
+
+  // This only handles altenate base atomics. Others are handled in tablegen.
+  if (FatPtrBase == Subtarget->hasC64() || Relaxed)
+    return Op;
+
+  MVT VT = cast<AtomicSDNode>(Node)->getMemoryVT().getSimpleVT();
+  RTLIB::Libcall LC = RTLIB::getSYNC(Op.getOpcode(), VT, FatPtrBase);
+  assert(LC != RTLIB::UNKNOWN_LIBCALL && "Unexpected atomic op or value type!");
+
+  SDValue InChain = Node->getOperand(0);
+
+  TargetLowering::ArgListTy Args;
+  TargetLowering::ArgListEntry Entry;
+  for (unsigned i = 1, e = Node->getNumOperands(); i != e; ++i) {
+    EVT ArgVT = Node->getOperand(i).getValueType();
+    Type *ArgTy = ArgVT.getTypeForEVT(*DAG.getContext());
+    Entry.Node = Node->getOperand(i);
+    Entry.Ty = ArgTy;
+    Entry.IsSExt = false;
+    Entry.IsZExt = true;
+    Args.push_back(Entry);
+  }
+
+  SDValue Callee = DAG.getExternalFunctionSymbol(getLibcallName(LC));
+
+  Type *RetTy = Node->getValueType(0).getTypeForEVT(*DAG.getContext());
+
+  TargetLowering::CallLoweringInfo CLI(DAG);
+  CLI.setDebugLoc(SDLoc(Node))
+      .setChain(InChain)
+      .setLibCallee(getLibcallCallingConv(LC), RetTy, Callee,
+                    std::move(Args))
+      .setSExtResult(false)
+      .setZExtResult(true);
+
+  return LowerCallTo(CLI).first;
+}
+
+SDValue AArch64TargetLowering::LowerADDRSPACECAST(SDValue Op,
+                                                  SelectionDAG &DAG) const {
+  SDLoc DL(Op);
+  SDValue Src = Op.getOperand(0);
+  EVT DstTy = Op.getValueType();
+  unsigned Opcode = 0;
+  if (Src.getValueType() == MVT::i64 && DstTy.isFatPointer()) {
+    // In case the source is a global address, load from a constant pool.
+    // This should handle cases where the source points to code, since
+    // the capinit relocation will produce an executable capability.
+    // This shouldn't happen in the pure ABI, as we expect globals to be
+    // capabilities already so there shouldn't be a need to for an
+    // addrspacecast.
+    if (auto *GN = dyn_cast<GlobalAddressSDNode>(Op.getOperand(0))) {
+      // Create a constant with the new address.
+      auto *FatInt8PtrTy = Type::getInt8PtrTy(*DAG.getContext(), 200);
+      auto *Int64Ty = Type::getInt64Ty(*DAG.getContext());
+      auto *GAddr = const_cast<GlobalValue *>(GN->getGlobal());
+      auto *FTy = PointerType::get(GAddr->getType()->getElementType(), 200);
+      auto *Addr =
+        ConstantExpr::getGetElementPtr(
+            FatInt8PtrTy->getElementType(),
+            ConstantExpr::getPointerCast(
+                ConstantExpr::getAddrSpaceCast(GAddr, FTy),
+                FatInt8PtrTy),
+            ConstantInt::get(Int64Ty, GN->getOffset()));
+      // Now load the constant from a constant pool.
+      SDNode *CPNode =
+          DAG.getTargetConstantPool(Addr, MVT::i64, Align(16), 0).getNode();
+      ConstantPoolSDNode *Pool = cast<ConstantPoolSDNode>(CPNode);
+      SDValue PoolAddr = (Subtarget->hasC64() ? getFatAddr(Pool, DAG)
+                                              : getAddr(Pool, DAG));
+
+      SDValue Chain = DAG.getEntryNode();
+      return DAG.getLoad(
+        MVT::iFATPTR128, DL, Chain, PoolAddr,
+        MachinePointerInfo::getConstantPool(DAG.getMachineFunction()),
+        /*Alignment=*/16,
+        MachineMemOperand::MONonTemporal | MachineMemOperand::MOInvariant |
+        MachineMemOperand::MODereferenceable);
+    }
+    // Ideally this should be an INTTOPTR in all cases, which would construct a
+    // capability from czr.
+    if (ConstantSDNode *ConstNode = dyn_cast<ConstantSDNode>(Src.getNode()))
+      if (ConstNode->isNullValue())
+        Opcode = ISD::INTTOPTR;
+    if (!Opcode)
+      return getAddrFromDDC(Src, DAG);
+  } else if (Src.getValueType().isFatPointer() && DstTy == MVT::i64) {
+    // Addrspacecast of a fat pointer global can be lowered with the
+    // normal integer lowering code.
+    if (GlobalAddressSDNode *GN = dyn_cast<GlobalAddressSDNode>(Op.getOperand(0))) {
+      const GlobalValue *GV = GN->getGlobal();
+      bool IsLargeCM = getTargetMachine().getCodeModel() == CodeModel::Large;
+      if (getTargetMachine().shouldAssumeDSOLocal(*GV->getParent(), GV) &&
+          !IsLargeCM) {
+
+        const AArch64II::TOF TargetFlags =
+            (GV->hasDLLImportStorageClass() ? AArch64II::MO_DLLIMPORT
+                                            : AArch64II::MO_NO_FLAG);
+        return getAddr(GN, DAG, TargetFlags);
+      }
+    }
+    Opcode = ISD::PTRTOINT;
+  } else
+    llvm_unreachable("Unsupported address space cast.");
+  return DAG.getNode(Opcode, DL, DstTy, Src);
 }
 
 bool AArch64TargetLowering::isVectorLoadExtDesirable(SDValue ExtVal) const {
@@ -4887,7 +5283,9 @@ SDValue AArch64TargetLowering::LowerSTORE(SDValue Op,
           StoreNode->getMemoryVT(), StoreNode->getMemOperand());
       return Result;
     }
-  } else if (MemVT == MVT::i128 && StoreNode->isVolatile()) {
+  } else if (MemVT == MVT::i128 && StoreNode->isVolatile() &&
+             !Subtarget->hasC64() &&
+             StoreNode->getBasePtr().getValueType() != MVT::iFATPTR128) {
     return LowerStore128(Op, DAG);
   } else if (MemVT == MVT::i64x8) {
     SDValue Value = StoreNode->getValue();
@@ -5017,6 +5415,8 @@ SDValue AArch64TargetLowering::LowerOperation(SDValue Op,
     return SDValue();
   case ISD::BITCAST:
     return LowerBITCAST(Op, DAG);
+  case ISD::ADDRSPACECAST:
+    return LowerADDRSPACECAST(Op, DAG);
   case ISD::GlobalAddress:
     return LowerGlobalAddress(Op, DAG);
   case ISD::GlobalTLSAddress:
@@ -5207,6 +5607,17 @@ SDValue AArch64TargetLowering::LowerOperation(SDValue Op,
     return LowerATOMIC_LOAD_AND(Op, DAG);
   case ISD::DYNAMIC_STACKALLOC:
     return LowerDYNAMIC_STACKALLOC(Op, DAG);
+  case ISD::ATOMIC_SWAP:
+  case ISD::ATOMIC_LOAD_ADD:
+  case ISD::ATOMIC_LOAD_OR:
+  case ISD::ATOMIC_LOAD_XOR:
+  case ISD::ATOMIC_LOAD_NAND:
+  case ISD::ATOMIC_LOAD_MIN:
+  case ISD::ATOMIC_LOAD_MAX:
+  case ISD::ATOMIC_LOAD_UMIN:
+  case ISD::ATOMIC_LOAD_UMAX:
+  case ISD::ATOMIC_CMP_SWAP:
+    return LowerAtomic(Op, DAG);
   case ISD::VSCALE:
     return LowerVSCALE(Op, DAG);
   case ISD::ANY_EXTEND:
@@ -5324,6 +5735,8 @@ bool AArch64TargetLowering::useSVEForFixedLengthVectorVT(
 /// Selects the correct CCAssignFn for a given CallingConvention value.
 CCAssignFn *AArch64TargetLowering::CCAssignFnForCall(CallingConv::ID CC,
                                                      bool IsVarArg) const {
+  const bool Use32CapRegs = !Subtarget->use16CapRegs();
+
   switch (CC) {
   default:
     report_fatal_error("Unsupported calling convention.");
@@ -5341,12 +5754,23 @@ CCAssignFn *AArch64TargetLowering::CCAssignFnForCall(CallingConv::ID CC,
     if (Subtarget->isTargetWindows() && IsVarArg)
       return CC_AArch64_Win64_VarArg;
     if (!Subtarget->isTargetDarwin())
-      return CC_AArch64_AAPCS;
+      return Subtarget->hasPureCap() ? (Use32CapRegs ? CC_AArch64_AAPCS_Pure_32Cap_Regs
+                                                     : CC_AArch64_AAPCS_Pure_16Cap_Regs)
+                                     : CC_AArch64_AAPCS;
     if (!IsVarArg)
       return CC_AArch64_DarwinPCS;
     return Subtarget->isTargetILP32() ? CC_AArch64_DarwinPCS_ILP32_VarArg
                                       : CC_AArch64_DarwinPCS_VarArg;
-   case CallingConv::Win64:
+  // Always use the Pure Capability ABI argument passing convention for CCallees.
+  // This should allow switching between compartments with different ABIs.
+  case CallingConv::CHERI_CCallee:
+    return Use32CapRegs ? CC_AArch64_AAPCS_Pure_32Cap_Regs : CC_AArch64_AAPCS_Pure_16Cap_Regs;
+
+  // For CCalls marshal we need to marshal the three extra arguments.
+  case CallingConv::CHERI_CCall:
+    return CC_AArch64_AAPCS_CCall;
+
+  case CallingConv::Win64:
     return IsVarArg ? CC_AArch64_Win64_VarArg : CC_AArch64_AAPCS;
    case CallingConv::CFGuard_Check:
      return CC_AArch64_Win64_CFGuard_Check;
@@ -5358,6 +5782,13 @@ CCAssignFn *AArch64TargetLowering::CCAssignFnForCall(CallingConv::ID CC,
 
 CCAssignFn *
 AArch64TargetLowering::CCAssignFnForReturn(CallingConv::ID CC) const {
+  const bool Use32CapRegs = !Subtarget->use16CapRegs();
+  const bool HasPureCap = Subtarget->hasPureCap();
+
+  if (CC == CallingConv::CHERI_CCallee || HasPureCap)
+    return Use32CapRegs ? RetCC_AArch64_AAPCS_Pure_32Cap_Regs
+                        : RetCC_AArch64_AAPCS_Pure_16Cap_Regs;
+
   return CC == CallingConv::WebKit_JS ? RetCC_AArch64_WebKit_JS
                                       : RetCC_AArch64_AAPCS;
 }
@@ -5417,7 +5848,8 @@ SDValue AArch64TargetLowering::LowerFormalArguments(
     if (Ins[i].Flags.isByVal()) {
       // Byval is used for HFAs in the PCS, but the system should work in a
       // non-compliant manner for larger structs.
-      EVT PtrVT = getPointerTy(DAG.getDataLayout());
+      const bool HasPureCap = Subtarget->hasPureCap();
+      EVT PtrVT = HasPureCap ? MVT::iFATPTR128 : getPointerTy(DAG.getDataLayout());
       int Size = Ins[i].Flags.getByValSize();
       unsigned NumRegs = (Size + 7) / 8;
 
@@ -5444,6 +5876,8 @@ SDValue AArch64TargetLowering::LowerFormalArguments(
         RC = &AArch64::GPR32RegClass;
       else if (RegVT == MVT::i64)
         RC = &AArch64::GPR64RegClass;
+      else if (RegVT == MVT::iFATPTR128)
+        RC = &AArch64::CapRegClass;
       else if (RegVT == MVT::f16 || RegVT == MVT::bf16)
         RC = &AArch64::FPR16RegClass;
       else if (RegVT == MVT::f32)
@@ -5504,7 +5938,8 @@ SDValue AArch64TargetLowering::LowerFormalArguments(
       int FI = MFI.CreateFixedObject(ArgSize, ArgOffset + BEAlign, true);
 
       // Create load nodes to retrieve arguments from the stack.
-      SDValue FIN = DAG.getFrameIndex(FI, getPointerTy(DAG.getDataLayout()));
+      const DataLayout &TDL = DAG.getDataLayout();
+      SDValue FIN = DAG.getFrameIndex(FI, getPointerTy(TDL, TDL.getAllocaAddrSpace()));
 
       // For NON_EXTLOAD, generic code in getLoad assert(ValVT == MemVT)
       ISD::LoadExtType ExtType = ISD::NON_EXTLOAD;
@@ -5608,7 +6043,10 @@ SDValue AArch64TargetLowering::LowerFormalArguments(
     // This will point to the next argument passed via stack.
     unsigned StackOffset = CCInfo.getNextStackOffset();
     // We currently pass all varargs at 8-byte alignment, or 4 for ILP32
-    StackOffset = alignTo(StackOffset, Subtarget->isTargetILP32() ? 4 : 8);
+    unsigned Alignment = Subtarget->hasPureCap() ? 16 : 8;
+    if (Subtarget->isTargetILP32())
+      Alignment = 4;
+    StackOffset = alignTo(StackOffset, Alignment);
     FuncInfo->setVarArgsStackIndex(MFI.CreateFixedObject(4, StackOffset, true));
 
     if (MFI.hasMustTailInVarArgFunc()) {
@@ -5682,18 +6120,38 @@ void AArch64TargetLowering::saveVarArgRegisters(CCState &CCInfo,
   MachineFunction &MF = DAG.getMachineFunction();
   MachineFrameInfo &MFI = MF.getFrameInfo();
   AArch64FunctionInfo *FuncInfo = MF.getInfo<AArch64FunctionInfo>();
-  auto PtrVT = getPointerTy(DAG.getDataLayout());
+  const bool HasPureCap = Subtarget->hasPureCap();
+  const bool HasCap = Subtarget->hasMorello();
+  const bool Use32CapRegs = !Subtarget->use16CapRegs();
+  auto PtrVT = HasPureCap ? MVT::iFATPTR128 : getPointerTy(DAG.getDataLayout());
   bool IsWin64 = Subtarget->isCallingConvWin64(MF.getFunction().getCallingConv());
 
   SmallVector<SDValue, 8> MemOps;
 
-  static const MCPhysReg GPRArgRegs[] = { AArch64::X0, AArch64::X1, AArch64::X2,
+  static const MCPhysReg GPRArgRegs[8] = {AArch64::X0, AArch64::X1, AArch64::X2,
                                           AArch64::X3, AArch64::X4, AArch64::X5,
-                                          AArch64::X6, AArch64::X7 };
-  static const unsigned NumGPRArgRegs = array_lengthof(GPRArgRegs);
-  unsigned FirstVariadicGPR = CCInfo.getFirstUnallocated(GPRArgRegs);
+                                          AArch64::X6, AArch64::X7};
+  static const MCPhysReg CapArgRegs[8] = {AArch64::C0, AArch64::C1, AArch64::C2,
+                                          AArch64::C3, AArch64::C4, AArch64::C5,
+                                          AArch64::C6, AArch64::C7};
+
+  const MCPhysReg *RegPtr = HasCap ? CapArgRegs : GPRArgRegs;
+  static const unsigned NumGPRArgRegs = !HasPureCap || Use32CapRegs ? 8 : 6;
+  SmallVector<MCPhysReg, 8> Regs;
+  for (unsigned i = 0; i < NumGPRArgRegs; ++i)
+    Regs.push_back(RegPtr[i]);
+
+  unsigned FirstVariadicGPR = CCInfo.getFirstUnallocated(Regs);
 
   unsigned GPRSaveSize = 8 * (NumGPRArgRegs - FirstVariadicGPR);
+  if (HasCap)
+      GPRSaveSize += 16 * (NumGPRArgRegs - FirstVariadicGPR);
+  unsigned Start = 0;
+  if (HasCap && GPRSaveSize % 16 != 0) {
+    // Round up to a multiple of 16 bytes
+    GPRSaveSize = (GPRSaveSize + 15) & ~15;
+    Start = 8;
+  }
   int GPRIdx = 0;
   if (GPRSaveSize != 0) {
     if (IsWin64) {
@@ -5702,25 +6160,63 @@ void AArch64TargetLowering::saveVarArgRegisters(CCState &CCInfo,
         // The extra size here, if triggered, will always be 8.
         MFI.CreateFixedObject(16 - (GPRSaveSize & 15), -(int)alignTo(GPRSaveSize, 16), false);
     } else
-      GPRIdx = MFI.CreateStackObject(GPRSaveSize, Align(8), false);
+      GPRIdx = MFI.CreateStackObject(GPRSaveSize, Align(HasCap ? 16 : 8), false);
 
     SDValue FIN = DAG.getFrameIndex(GPRIdx, PtrVT);
+    if (Start)
+      FIN = DAG.getPointerAdd(DL, FIN, Start);
+    unsigned Offset = Start;
 
+    // Add register values as live-ins.
+    SmallVector<SDValue, 8> Regs;
     for (unsigned i = FirstVariadicGPR; i < NumGPRArgRegs; ++i) {
-      Register VReg = MF.addLiveIn(GPRArgRegs[i], &AArch64::GPR64RegClass);
-      SDValue Val = DAG.getCopyFromReg(Chain, DL, VReg, MVT::i64);
-      SDValue Store =
-          DAG.getStore(Val.getValue(1), DL, Val, FIN,
-                       IsWin64 ? MachinePointerInfo::getFixedStack(
-                                     MF, GPRIdx, (i - FirstVariadicGPR) * 8)
-                               : MachinePointerInfo::getStack(MF, i * 8));
-      MemOps.push_back(Store);
-      FIN =
-          DAG.getNode(ISD::ADD, DL, PtrVT, FIN, DAG.getConstant(8, DL, PtrVT));
+      unsigned VReg;
+      if (!HasCap) {
+        VReg =
+          MF.addLiveIn(GPRArgRegs[i], &AArch64::GPR64RegClass);
+        Regs.push_back(DAG.getCopyFromReg(Chain, DL, VReg, MVT::i64));
+      } else {
+        VReg =
+          MF.addLiveIn(CapArgRegs[i], &AArch64::CapRegClass);
+        Regs.push_back(DAG.getCopyFromReg(Chain, DL, VReg, MVT::iFATPTR128));
+      }
     }
+    // Store the GPRs.
+    for (unsigned i = FirstVariadicGPR; i < NumGPRArgRegs; ++i) {
+      SDValue Val = Regs[i - FirstVariadicGPR];
+      // Save val for the chain operand.
+      SDValue OldVal = Val;
+      if (HasCap) {
+        SDValue SubReg = DAG.getTargetConstant(AArch64::sub_64, DL, MVT::i32);
+        Val = SDValue(DAG.getMachineNode(TargetOpcode::EXTRACT_SUBREG,
+                                         DL, MVT::i64, Val, SubReg), 0);
+      }
+      SDValue Store = DAG.getStore(
+          OldVal.getValue(1), DL, Val, FIN,
+          IsWin64
+              ? MachinePointerInfo::getFixedStack(MF,
+                                                  GPRIdx,
+                                                  (i - FirstVariadicGPR) * 8)
+              : MachinePointerInfo::getStack(MF, Offset));
+      Offset += 8;
+      MemOps.push_back(Store);
+      FIN = DAG.getPointerAdd(DL, FIN, 8);
+    }
+    // Store the associated capabilities in reverse order above the GPRs.
+    if (HasCap)
+      for (unsigned i = FirstVariadicGPR; i < NumGPRArgRegs; ++i) {
+        SDValue Val = Regs[NumGPRArgRegs - i -1];
+        SDValue Store = DAG.getStore(
+            Val.getValue(1), DL, Val, FIN,
+            MachinePointerInfo::getStack(DAG.getMachineFunction(), Offset));
+        Offset += 16;
+        MemOps.push_back(Store);
+        FIN = DAG.getPointerAdd(DL, FIN, 16);
+      }
   }
   FuncInfo->setVarArgsGPRIndex(GPRIdx);
-  FuncInfo->setVarArgsGPRSize(GPRSaveSize);
+  FuncInfo->setVarArgsGPRSize(8 * (NumGPRArgRegs - FirstVariadicGPR));
+  FuncInfo->setVarArgsGPROffset(Start);
 
   if (Subtarget->hasFPARMv8() && !IsWin64) {
     static const MCPhysReg FPRArgRegs[] = {
@@ -5743,8 +6239,7 @@ void AArch64TargetLowering::saveVarArgRegisters(CCState &CCInfo,
         SDValue Store = DAG.getStore(Val.getValue(1), DL, Val, FIN,
                                      MachinePointerInfo::getStack(MF, i * 16));
         MemOps.push_back(Store);
-        FIN = DAG.getNode(ISD::ADD, DL, PtrVT, FIN,
-                          DAG.getConstant(16, DL, PtrVT));
+        FIN = DAG.getPointerAdd(DL, FIN, 16);
       }
     }
     FuncInfo->setVarArgsFPRIndex(FPRIdx);
@@ -6037,6 +6532,7 @@ static bool checkZExtBool(SDValue Arg, const SelectionDAG &DAG) {
   return ZExtBool;
 }
 
+
 /// LowerCall - Lower a call to a callseq_start + CALL + callseq_end chain,
 /// and add input and output parameter nodes.
 SDValue
@@ -6051,8 +6547,9 @@ AArch64TargetLowering::LowerCall(CallLoweringInfo &CLI,
   SDValue Callee = CLI.Callee;
   bool &IsTailCall = CLI.IsTailCall;
   CallingConv::ID CallConv = CLI.CallConv;
+  bool ClearRegs = CallConv == CallingConv::CHERI_CCall;
   bool IsVarArg = CLI.IsVarArg;
-
+  bool IsCapabilityCall = Callee.getValueType() == MVT::iFATPTR128;
   MachineFunction &MF = DAG.getMachineFunction();
   MachineFunction::CallSiteInfo CSInfo;
   bool IsThisReturn = false;
@@ -6196,13 +6693,16 @@ AArch64TargetLowering::LowerCall(CallLoweringInfo &CLI,
   if (!IsSibCall)
     Chain = DAG.getCALLSEQ_START(Chain, IsTailCall ? 0 : NumBytes, 0, DL);
 
-  SDValue StackPtr = DAG.getCopyFromReg(Chain, DL, AArch64::SP,
-                                        getPointerTy(DAG.getDataLayout()));
+  const DataLayout &TDL = DAG.getDataLayout();
+  const AArch64RegisterInfo *TRI = Subtarget->getRegisterInfo();
+  SDValue StackPtr =
+      DAG.getCopyFromReg(Chain, DL, TRI->getStackPointerRegister(MF),
+                         getPointerTy(TDL, TDL.getAllocaAddrSpace()));
 
   SmallVector<std::pair<unsigned, SDValue>, 8> RegsToPass;
   SmallSet<unsigned, 8> RegsUsed;
   SmallVector<SDValue, 8> MemOpChains;
-  auto PtrVT = getPointerTy(DAG.getDataLayout());
+  auto PtrVT = getPointerTy(TDL, TDL.getAllocaAddrSpace());
 
   if (IsVarArg && CLI.CB && CLI.CB->isMustTailCall()) {
     const auto &Forwards = FuncInfo->getForwardedMustTailRegParms();
@@ -6375,8 +6875,6 @@ AArch64TargetLowering::LowerCall(CallLoweringInfo &CLI,
       }
       unsigned LocMemOffset = VA.getLocMemOffset();
       int32_t Offset = LocMemOffset + BEAlign;
-      SDValue PtrOff = DAG.getIntPtrConstant(Offset, DL);
-      PtrOff = DAG.getNode(ISD::ADD, DL, PtrVT, StackPtr, PtrOff);
 
       if (IsTailCall) {
         Offset = Offset + FPDiff;
@@ -6390,9 +6888,7 @@ AArch64TargetLowering::LowerCall(CallLoweringInfo &CLI,
         // clobbered.
         Chain = addTokenForArgument(Chain, DAG, MF.getFrameInfo(), FI);
       } else {
-        SDValue PtrOff = DAG.getIntPtrConstant(Offset, DL);
-
-        DstAddr = DAG.getNode(ISD::ADD, DL, PtrVT, StackPtr, PtrOff);
+        DstAddr = DAG.getPointerAdd(DL, StackPtr, Offset);
         DstInfo = MachinePointerInfo::getStack(MF, LocMemOffset);
       }
 
@@ -6442,7 +6938,8 @@ AArch64TargetLowering::LowerCall(CallLoweringInfo &CLI,
         Subtarget->classifyGlobalFunctionReference(GV, getTargetMachine());
     if (OpFlags & AArch64II::MO_GOT) {
       Callee = DAG.getTargetGlobalAddress(GV, DL, PtrVT, 0, OpFlags);
-      Callee = DAG.getNode(AArch64ISD::LOADgot, DL, PtrVT, Callee);
+      Callee = getGOTAccess(DL, PtrVT,
+                            Callee, Subtarget, DAG);
     } else {
       const GlobalValue *GV = G->getGlobal();
       Callee = DAG.getTargetGlobalAddress(GV, DL, PtrVT, 0, 0);
@@ -6452,7 +6949,7 @@ AArch64TargetLowering::LowerCall(CallLoweringInfo &CLI,
         Subtarget->isTargetMachO()) {
       const char *Sym = S->getSymbol();
       Callee = DAG.getTargetExternalFunctionSymbol(Sym, AArch64II::MO_GOT);
-      Callee = DAG.getNode(AArch64ISD::LOADgot, DL, PtrVT, Callee);
+      Callee = getGOTAccess(DL, PtrVT, Callee, Subtarget, DAG);
     } else {
       const char *Sym = S->getSymbol();
       Callee = DAG.getTargetExternalFunctionSymbol(Sym, 0);
@@ -6488,7 +6985,6 @@ AArch64TargetLowering::LowerCall(CallLoweringInfo &CLI,
 
   // Add a register mask operand representing the call-preserved registers.
   const uint32_t *Mask;
-  const AArch64RegisterInfo *TRI = Subtarget->getRegisterInfo();
   if (IsThisReturn) {
     // For 'this' returns, use the X0-preserving mask if applicable
     Mask = TRI->getThisReturnPreservedMask(MF, CallConv);
@@ -6517,12 +7013,21 @@ AArch64TargetLowering::LowerCall(CallLoweringInfo &CLI,
   // actual call instruction.
   if (IsTailCall) {
     MF.getFrameInfo().setHasTailCall();
-    SDValue Ret = DAG.getNode(AArch64ISD::TC_RETURN, DL, NodeTys, Ops);
+    unsigned Opcode;
+    if (IsCapabilityCall)
+      Opcode = ClearRegs ? AArch64ISD::ClearCTC_RETURN : AArch64ISD::CTC_RETURN;
+    else
+      Opcode = ClearRegs ? AArch64ISD::ClearCTC_RETURN : AArch64ISD::TC_RETURN;
+    SDValue Ret = DAG.getNode(Opcode, DL, NodeTys, Ops);
     DAG.addCallSiteInfo(Ret.getNode(), std::move(CSInfo));
     return Ret;
   }
 
-  unsigned CallOpc = AArch64ISD::CALL;
+  unsigned CallOpc;
+  if (IsCapabilityCall)
+    CallOpc = ClearRegs ? AArch64ISD::ClearCCALL : AArch64ISD::CCALL;
+  else
+    CallOpc = ClearRegs ? AArch64ISD::ClearCALL : AArch64ISD::CALL;
   // Calls with operand bundle "clang.arc.attachedcall" are special. They should
   // be expanded to the call, directly followed by a special marker sequence and
   // a call to an ObjC library function.  Use CALL_RVMARKER to do that.
@@ -6632,7 +7137,7 @@ AArch64TargetLowering::LowerReturn(SDValue Chain, CallingConv::ID CallConv,
     }
   }
 
-  SmallVector<SDValue, 4> RetOps(1, Chain);
+  SmallVector<SDValue, 4> RetOps({Chain, DAG.getConstant(0, DL, MVT::i64)});
   for (auto &RetVal : RetVals) {
     Chain = DAG.getCopyToReg(Chain, DL, RetVal.first, RetVal.second, Flag);
     Flag = Chain.getValue(1);
@@ -6671,11 +7176,17 @@ AArch64TargetLowering::LowerReturn(SDValue Chain, CallingConv::ID CallConv,
 
   RetOps[0] = Chain; // Update chain.
 
+  if (CallConv == CallingConv::CHERI_CCall ||
+      CallConv == CallingConv::CHERI_CCallee)
+    RetOps[1] = DAG.getConstant(1, DL, MVT::i64);
+
   // Add the flag if we have it.
   if (Flag.getNode())
     RetOps.push_back(Flag);
 
-  return DAG.getNode(AArch64ISD::RET_FLAG, DL, MVT::Other, RetOps);
+  unsigned Opcode =
+      Subtarget->hasPureCap() ? AArch64ISD::CRET_FLAG : AArch64ISD::RET_FLAG;
+  return DAG.getNode(Opcode, DL, MVT::Other, RetOps);
 }
 
 //===----------------------------------------------------------------------===//
@@ -6718,8 +7229,21 @@ SDValue AArch64TargetLowering::getGOT(NodeTy *N, SelectionDAG &DAG,
   SDValue GotAddr = getTargetNode(N, Ty, DAG, AArch64II::MO_GOT | Flags);
   // FIXME: Once remat is capable of dealing with instructions with register
   // operands, expand this into two nodes instead of using a wrapper node.
-  return DAG.getNode(AArch64ISD::LOADgot, DL, Ty, GotAddr);
+
+  return getGOTAccess(DL, Ty, GotAddr, Subtarget, DAG);
 }
+
+template <class NodeTy>
+SDValue AArch64TargetLowering::getFatGOT(NodeTy *N, SelectionDAG &DAG,
+                                         unsigned Flags) const {
+  LLVM_DEBUG(dbgs() << "AArch64TargetLowering::getGOT\n");
+  SDLoc DL(N);
+  EVT Ty = getPointerTy(DAG.getDataLayout(), 200);
+  SDValue GotAddr = getTargetNode(N, Ty, DAG, AArch64II::MO_GOT | Flags);
+
+  return getGOTAccess(DL, Ty, GotAddr, Subtarget, DAG);
+}
+
 
 // (wrapper %highest(sym), %higher(sym), %hi(sym), %lo(sym))
 template <class NodeTy>
@@ -6737,6 +7261,7 @@ SDValue AArch64TargetLowering::getAddrLarge(NodeTy *N, SelectionDAG &DAG,
       getTargetNode(N, Ty, DAG, AArch64II::MO_G0 | MO_NC | Flags));
 }
 
+
 // (addlow (adrp %hi(sym)) %lo(sym))
 template <class NodeTy>
 SDValue AArch64TargetLowering::getAddr(NodeTy *N, SelectionDAG &DAG,
@@ -6744,11 +7269,36 @@ SDValue AArch64TargetLowering::getAddr(NodeTy *N, SelectionDAG &DAG,
   LLVM_DEBUG(dbgs() << "AArch64TargetLowering::getAddr\n");
   SDLoc DL(N);
   EVT Ty = getPointerTy(DAG.getDataLayout());
+  if (Subtarget->hasMorello() && Subtarget->hasC64()) {
+    SDValue CAddr = getFatAddr(N, DAG, Flags);
+    return DAG.getNode(ISD::PTRTOINT, DL, Ty, CAddr);
+  }
   SDValue Hi = getTargetNode(N, Ty, DAG, AArch64II::MO_PAGE | Flags);
   SDValue Lo = getTargetNode(N, Ty, DAG,
                              AArch64II::MO_PAGEOFF | AArch64II::MO_NC | Flags);
   SDValue ADRP = DAG.getNode(AArch64ISD::ADRP, DL, Ty, Hi);
   return DAG.getNode(AArch64ISD::ADDlow, DL, Ty, ADRP, Lo);
+}
+
+// (addlow (adrp %hi(sym)) %lo(sym))
+template <class NodeTy>
+SDValue AArch64TargetLowering::getFatAddr(NodeTy *N, SelectionDAG &DAG,
+                                          unsigned Flags) const {
+  LLVM_DEBUG(dbgs() << "AArch64TargetLowering::getFatAddr\n");
+  SDLoc DL(N);
+  EVT Ty = getPointerTy(DAG.getDataLayout(), 200);
+  SDValue Hi = getTargetNode(N, Ty, DAG, AArch64II::MO_PAGE | Flags);
+  SDValue Lo = getTargetNode(N, Ty, DAG,
+                             AArch64II::MO_PAGEOFF | AArch64II::MO_NC | Flags);
+  SDValue ADRP = DAG.getNode(AArch64ISD::ADRPC, DL, Ty, Hi);
+  return DAG.getNode(AArch64ISD::ADDClow, DL, Ty, ADRP, Lo);
+}
+
+template <class NodeTy>
+SDValue AArch64TargetLowering::getFatAddrLarge(NodeTy *N, SelectionDAG &DAG,
+                                               unsigned Flags) const {
+  LLVM_DEBUG(dbgs() << "AArch64TargetLowering::getFatAddrLarge\n");
+  llvm_unreachable("Large code model not implemented in Morello");
 }
 
 // (adr sym)
@@ -6764,6 +7314,8 @@ SDValue AArch64TargetLowering::getAddrTiny(NodeTy *N, SelectionDAG &DAG,
 
 SDValue AArch64TargetLowering::LowerGlobalAddress(SDValue Op,
                                                   SelectionDAG &DAG) const {
+  EVT PtrVT = Op.getValueType();
+  SDLoc DL(Op);
   GlobalAddressSDNode *GN = cast<GlobalAddressSDNode>(Op);
   const GlobalValue *GV = GN->getGlobal();
   unsigned OpFlags = Subtarget->ClassifyGlobalReference(GV, getTargetMachine());
@@ -6772,10 +7324,66 @@ SDValue AArch64TargetLowering::LowerGlobalAddress(SDValue Op,
     assert(cast<GlobalAddressSDNode>(Op)->getOffset() == 0 &&
            "unexpected offset in global node");
 
+  bool IsLargeCM = getTargetMachine().getCodeModel() == CodeModel::Large;
+
+  // FIXME: should we only use the fat GOT in purecap instead?
   // This also catches the large code model case for Darwin, and tiny code
   // model with got relocations.
   if ((OpFlags & AArch64II::MO_GOT) != 0) {
-    return getGOT(GN, DAG, OpFlags);
+    return PtrVT == MVT::iFATPTR128 ? getFatGOT(GN, DAG, OpFlags) :
+                                   getGOT(GN, DAG, OpFlags);
+  }
+
+  if (!IsLargeCM && Op.getSimpleValueType() == MVT::iFATPTR128) {
+    // Look after the MD_cap_addr to see if we already have a module level
+    // constant that holds this address.
+    const MDNode *SG = nullptr;
+    if (auto *GO = dyn_cast<GlobalObject>(GV)) {
+      SG = GO->getMetadata(LLVMContext::MD_cap_addr);
+    } else if (auto *GA = dyn_cast<GlobalAlias>(GV)) {
+      auto *GO = dyn_cast<GlobalObject>(GA->getAliasee());
+      if (GO) {
+        SG = GO->getMetadata(LLVMContext::MD_cap_addr);
+      }
+    }
+
+    if (SG) {
+      auto *VAM = cast<ValueAsMetadata>(SG->getOperand(0));
+      auto *AddrGV = cast<GlobalVariable>(VAM->getValue());
+      SDValue Addr =
+          DAG.getGlobalAddress(AddrGV, DL, Subtarget->hasC64() ? MVT::iFATPTR128
+                                                               : MVT::i64);
+      GlobalAddressSDNode *LGN = cast<GlobalAddressSDNode>(Addr);
+      SDValue LoadAddr = Subtarget->hasC64() ? getFatAddr(LGN, DAG)
+                                             : getAddr(LGN, DAG, OpFlags);
+      SDValue GlobalAddr = DAG.getLoad(
+          MVT::iFATPTR128, DL, DAG.getEntryNode(), LoadAddr,
+          MachinePointerInfo(AddrGV, 0), 16,
+          MachineMemOperand::MONonTemporal | MachineMemOperand::MOInvariant |
+          MachineMemOperand::MODereferenceable);
+
+      if (GN->getOffset() != 0)
+        GlobalAddr = DAG.getPointerAdd(DL, GlobalAddr, GN->getOffset());
+      return GlobalAddr;
+    }
+  }
+
+  if (Op.getSimpleValueType() == MVT::iFATPTR128 && !IsLargeCM) {
+    SDNode *CPNode = DAG.getTargetConstantPool(GV, PtrVT, Align(16), 0).getNode();
+    ConstantPoolSDNode *Pool = cast<ConstantPoolSDNode>(CPNode);
+    SDValue PoolAddr = (Subtarget->hasC64() ? getFatAddr(Pool, DAG)
+                                            : getAddr(Pool, DAG, OpFlags));
+
+    SDValue GlobalAddr = DAG.getLoad(
+        MVT::iFATPTR128, DL, DAG.getEntryNode(), PoolAddr,
+        MachinePointerInfo::getConstantPool(DAG.getMachineFunction()), 16,
+        MachineMemOperand::MONonTemporal | MachineMemOperand::MOInvariant |
+        MachineMemOperand::MODereferenceable);
+
+    if (GN->getOffset() != 0)
+      GlobalAddr = DAG.getPointerAdd(DL, GlobalAddr, GN->getOffset());
+
+    return GlobalAddr;
   }
 
   SDValue Result;
@@ -6786,10 +7394,10 @@ SDValue AArch64TargetLowering::LowerGlobalAddress(SDValue Op,
   } else {
     Result = getAddr(GN, DAG, OpFlags);
   }
-  EVT PtrVT = getPointerTy(DAG.getDataLayout());
-  SDLoc DL(GN);
+  EVT RPtrVT = getPointerTy(DAG.getDataLayout());
+  SDLoc RDL(GN);
   if (OpFlags & (AArch64II::MO_DLLIMPORT | AArch64II::MO_COFFSTUB))
-    Result = DAG.getLoad(PtrVT, DL, DAG.getEntryNode(), Result,
+    Result = DAG.getLoad(RPtrVT, RDL, DAG.getEntryNode(), Result,
                          MachinePointerInfo::getGOT(DAG.getMachineFunction()));
   return Result;
 }
@@ -7029,10 +7637,17 @@ AArch64TargetLowering::LowerELFGlobalTLSAddress(SDValue Op,
   SDValue ThreadBase = DAG.getNode(AArch64ISD::THREAD_POINTER, DL, PtrVT);
 
   if (Model == TLSModel::LocalExec) {
-    return LowerELFTLSLocalExec(GV, ThreadBase, DL, DAG);
+    SDValue TPWithOff = LowerELFTLSLocalExec(GV, ThreadBase, DL, DAG);
+    if (GV->getType()->getAddressSpace() == 200) {
+      TPWithOff = getAddrFromDDC(TPWithOff, DAG);
+    }
+    return TPWithOff;
   } else if (Model == TLSModel::InitialExec) {
+    if (Subtarget->hasCapGOT())
+      PtrVT = MVT::iFATPTR128;
     TPOff = DAG.getTargetGlobalAddress(GV, DL, PtrVT, 0, AArch64II::MO_TLS);
-    TPOff = DAG.getNode(AArch64ISD::LOADgot, DL, PtrVT, TPOff);
+    TPOff = getGOTAccess(DL, PtrVT,
+                         TPOff, Subtarget, DAG);
   } else if (Model == TLSModel::LocalDynamic) {
     // Local-dynamic accesses proceed in two phases. A general-dynamic TLS
     // descriptor call against the special symbol _TLS_MODULE_BASE_ to calculate
@@ -7080,7 +7695,11 @@ AArch64TargetLowering::LowerELFGlobalTLSAddress(SDValue Op,
   } else
     llvm_unreachable("Unsupported ELF TLS access model");
 
-  return DAG.getNode(ISD::ADD, DL, PtrVT, ThreadBase, TPOff);
+  SDValue Add = DAG.getPointerAdd(DL, TPOff, ThreadBase);
+  if (GV->getType()->getAddressSpace() == 200 && Add.getValueType() != MVT::iFATPTR128) {
+    Add = getAddrFromDDC(Add, DAG);
+  }
+  return Add;
 }
 
 SDValue
@@ -7201,6 +7820,27 @@ SDValue AArch64TargetLowering::LowerBR_CC(SDValue Op, SelectionDAG &DAG) const {
       RHS = DAG.getConstant(0, dl, LHS.getValueType());
       CC = ISD::SETNE;
     }
+  }
+
+  if (LHS.getValueType().isFatPointer()) {
+    if (isNullCapConstant(RHS)) {
+        if (CC == ISD::SETEQ)
+          return DAG.getNode(AArch64ISD::CBZ, dl, MVT::Other, Chain, LHS, Dest);
+        else if (CC == ISD::SETNE)
+          return DAG.getNode(AArch64ISD::CBNZ, dl, MVT::Other, Chain, LHS, Dest);
+    }
+    if (isNullCapConstant(LHS)) {
+        if (CC == ISD::SETEQ)
+          return DAG.getNode(AArch64ISD::CBZ, dl, MVT::Other, Chain, RHS, Dest);
+        else if (CC == ISD::SETNE)
+          return DAG.getNode(AArch64ISD::CBNZ, dl, MVT::Other, Chain, RHS, Dest);
+    }
+
+    SDValue Cmp = emitComparison(LHS, RHS, CC, dl, DAG);
+    AArch64CC::CondCode CC1 = changeIntCCToAArch64CC(CC);
+    SDValue CCVal = DAG.getConstant(CC1, dl, MVT::i32);
+    return DAG.getNode(AArch64ISD::BRCOND, dl, MVT::Other, Chain, Dest, CCVal,
+                       Cmp);
   }
 
   // Optimize {s|u}{add|sub|mul}.with.overflow feeding into a branch
@@ -7593,7 +8233,6 @@ SDValue AArch64TargetLowering::LowerBitreverse(SDValue Op,
 }
 
 SDValue AArch64TargetLowering::LowerSETCC(SDValue Op, SelectionDAG &DAG) const {
-
   if (Op.getValueType().isVector())
     return LowerVSETCC(Op, DAG);
 
@@ -7625,6 +8264,14 @@ SDValue AArch64TargetLowering::LowerSETCC(SDValue Op, SelectionDAG &DAG) const {
              "Unexpected setcc expansion!");
       return IsStrict ? DAG.getMergeValues({LHS, Chain}, dl) : LHS;
     }
+  }
+
+  if (LHS.getValueType().isFatPointer()) {
+    CC = ISD::getSetCCInverse(CC, MVT::iFATPTR128);
+    SDValue Cmp = emitComparison(LHS, RHS, CC, dl, DAG);
+    AArch64CC::CondCode CC1 = changeIntCCToAArch64CC(CC);
+    SDValue CCVal = DAG.getConstant(CC1, dl, MVT::i32);
+    return DAG.getNode(AArch64ISD::CSEL, dl, VT, FVal, TVal, CCVal, Cmp);
   }
 
   if (LHS.getValueType().isInteger()) {
@@ -7701,6 +8348,29 @@ SDValue AArch64TargetLowering::LowerSELECT_CC(ISD::CondCode CC, SDValue LHS,
   if (LHS.getValueType() == MVT::f16 && !Subtarget->hasFullFP16()) {
     LHS = DAG.getNode(ISD::FP_EXTEND, dl, MVT::f32, LHS);
     RHS = DAG.getNode(ISD::FP_EXTEND, dl, MVT::f32, RHS);
+  }
+
+  // Handle fat pointers integers.
+  if (LHS.getValueType().isFatPointer()) {
+    ConstantSDNode *CFVal = dyn_cast<ConstantSDNode>(FVal);
+    ConstantSDNode *CTVal = dyn_cast<ConstantSDNode>(TVal);
+    if (CTVal && CFVal && CFVal->isNullValue()) {
+      if (CTVal->isAllOnesValue()) {
+        std::swap(TVal, FVal);
+        std::swap(CTVal, CFVal);
+        CC = ISD::getSetCCInverse(CC, MVT::iFATPTR128);
+      } else if (CTVal->isOne()) {
+        std::swap(TVal, FVal);
+        std::swap(CTVal, CFVal);
+        CC = ISD::getSetCCInverse(CC, MVT::iFATPTR128);
+      }
+    }
+    SDValue Cmp = emitComparison(LHS, RHS, CC, dl, DAG);
+    AArch64CC::CondCode CC1, CC2;
+    changeFPCCToAArch64CC(CC, CC1, CC2);
+    SDValue CCVal = DAG.getConstant(CC1, dl, MVT::i32);
+    EVT VT = TVal.getValueType();
+    return DAG.getNode(AArch64ISD::CSEL, dl, VT, TVal, FVal, CCVal, Cmp);
   }
 
   // Next, handle integers.
@@ -7996,6 +8666,9 @@ SDValue AArch64TargetLowering::LowerJumpTable(SDValue Op,
   // is necessary here. Just get the address of the jump table.
   JumpTableSDNode *JT = cast<JumpTableSDNode>(Op);
 
+  if (Subtarget->hasPureCap())
+    return getFatAddr(JT, DAG);
+
   if (getTargetMachine().getCodeModel() == CodeModel::Large &&
       !Subtarget->isTargetMachO()) {
     return getAddrLarge(JT, DAG);
@@ -8017,9 +8690,17 @@ SDValue AArch64TargetLowering::LowerBR_JT(SDValue Op,
   auto *AFI = DAG.getMachineFunction().getInfo<AArch64FunctionInfo>();
   AFI->setJumpTableEntryInfo(JTI, 4, nullptr);
 
-  SDNode *Dest =
-      DAG.getMachineNode(AArch64::JumpTableDest32, DL, MVT::i64, MVT::i64, JT,
-                         Entry, DAG.getTargetJumpTable(JTI, MVT::i32));
+  SDNode *Dest = nullptr;
+  if (Subtarget->hasPureCap()) {
+    Dest =
+        DAG.getMachineNode(AArch64::MCJumpTableDest32, DL, MVT::iFATPTR128,
+                           MVT::i64, JT, Entry,
+                           DAG.getTargetJumpTable(JTI, MVT::i32));
+  } else
+    Dest =
+        DAG.getMachineNode(AArch64::JumpTableDest32, DL, MVT::i64, MVT::i64, JT,
+                           Entry, DAG.getTargetJumpTable(JTI, MVT::i32));
+
   return DAG.getNode(ISD::BRIND, DL, MVT::Other, Op.getOperand(0),
                      SDValue(Dest, 0));
 }
@@ -8033,17 +8714,52 @@ SDValue AArch64TargetLowering::LowerConstantPool(SDValue Op,
     if (Subtarget->isTargetMachO()) {
       return getGOT(CP, DAG);
     }
+    if (Subtarget->hasPureCap())
+      return getFatAddrLarge(CP, DAG);
+
     return getAddrLarge(CP, DAG);
   } else if (getTargetMachine().getCodeModel() == CodeModel::Tiny) {
     return getAddrTiny(CP, DAG);
   } else {
-    return getAddr(CP, DAG);
+    EVT PtrVT = getPointerTy(DAG.getDataLayout());
+    if (Subtarget->hasPureCap())
+      PtrVT = MVT::iFATPTR128;
+
+    SDLoc DL(Op);
+    SDNode *CPNode = DAG.getTargetConstantPool(CP->getConstVal(),
+                                               PtrVT, CP->getAlign(),
+                                               CP->getOffset()).getNode();
+    ConstantPoolSDNode *Pool = cast<ConstantPoolSDNode>(CPNode);
+
+    if (Subtarget->hasPureCap())
+      return getFatAddr(Pool, DAG);
+
+    return getAddr(Pool, DAG);
   }
 }
 
 SDValue AArch64TargetLowering::LowerBlockAddress(SDValue Op,
                                                SelectionDAG &DAG) const {
   BlockAddressSDNode *BA = cast<BlockAddressSDNode>(Op);
+  if (Op.getSimpleValueType() == MVT::iFATPTR128) {
+      SDLoc dl(Op);
+      const TargetLowering &TLI = DAG.getTargetLoweringInfo();
+      unsigned AddrSpace = DAG.getDataLayout().getGlobalsAddressSpace();
+
+      const BlockAddress *CBA = BA->getBlockAddress();
+      BlockAddress *BA = const_cast<BlockAddress *>(CBA);
+      Constant *C = cast<Constant>(BA);
+      SDValue CPIdx = DAG.getConstantPool(
+           C, TLI.getPointerTy(DAG.getDataLayout(), AddrSpace));
+      Align Alignment = cast<ConstantPoolSDNode>(CPIdx)->getAlign();
+      EVT VT = MVT::iFATPTR128;
+
+      SDValue Result = DAG.getLoad(
+          VT, dl, DAG.getEntryNode(), CPIdx,
+          MachinePointerInfo::getConstantPool(DAG.getMachineFunction()), Alignment);
+      return Result;
+  }
+
   if (getTargetMachine().getCodeModel() == CodeModel::Large &&
       !Subtarget->isTargetMachO()) {
     return getAddrLarge(BA, DAG);
@@ -8088,9 +8804,13 @@ SDValue AArch64TargetLowering::LowerAAPCS_VASTART(SDValue Op,
   // Standard, section B.3.
   MachineFunction &MF = DAG.getMachineFunction();
   AArch64FunctionInfo *FuncInfo = MF.getInfo<AArch64FunctionInfo>();
+  const DataLayout &TDL = DAG.getDataLayout();
+  auto PtrMemVT = getPointerMemTy(TDL, TDL.getAllocaAddrSpace());
+  auto PtrVT = getPointerTy(TDL, TDL.getAllocaAddrSpace());
+  bool HasPureCap = Subtarget->hasPureCap();
   unsigned PtrSize = Subtarget->isTargetILP32() ? 4 : 8;
-  auto PtrMemVT = getPointerMemTy(DAG.getDataLayout());
-  auto PtrVT = getPointerTy(DAG.getDataLayout());
+  if (HasPureCap)
+    PtrSize *= 2;
   SDLoc DL(Op);
 
   SDValue Chain = Op.getOperand(0);
@@ -8105,9 +8825,10 @@ SDValue AArch64TargetLowering::LowerAAPCS_VASTART(SDValue Op,
   MemOps.push_back(DAG.getStore(Chain, DL, Stack, VAList,
                                 MachinePointerInfo(SV), Align(PtrSize)));
 
-  // void *__gr_top at offset 8 (4 on ILP32)
+  // void *__gr_top at offset PtrSize
   Offset += PtrSize;
   int GPRSize = FuncInfo->getVarArgsGPRSize();
+  int GPROffset = FuncInfo->getVarArgsGPROffset();
   if (GPRSize > 0) {
     SDValue GRTop, GRTopAddr;
 
@@ -8115,8 +8836,7 @@ SDValue AArch64TargetLowering::LowerAAPCS_VASTART(SDValue Op,
                             DAG.getConstant(Offset, DL, PtrVT));
 
     GRTop = DAG.getFrameIndex(FuncInfo->getVarArgsGPRIndex(), PtrVT);
-    GRTop = DAG.getNode(ISD::ADD, DL, PtrVT, GRTop,
-                        DAG.getConstant(GPRSize, DL, PtrVT));
+    GRTop = DAG.getPointerAdd(DL, GRTop, GPRSize + GPROffset);
     GRTop = DAG.getZExtOrTrunc(GRTop, DL, PtrMemVT);
 
     MemOps.push_back(DAG.getStore(Chain, DL, GRTop, GRTopAddr,
@@ -8124,7 +8844,7 @@ SDValue AArch64TargetLowering::LowerAAPCS_VASTART(SDValue Op,
                                   Align(PtrSize)));
   }
 
-  // void *__vr_top at offset 16 (8 on ILP32)
+  // void *__vr_top at offset 2 * PtrSize
   Offset += PtrSize;
   int FPRSize = FuncInfo->getVarArgsFPRSize();
   if (FPRSize > 0) {
@@ -8142,7 +8862,7 @@ SDValue AArch64TargetLowering::LowerAAPCS_VASTART(SDValue Op,
                                   Align(PtrSize)));
   }
 
-  // int __gr_offs at offset 24 (12 on ILP32)
+  // int __gr_offs at offset 3 * PtrSize
   Offset += PtrSize;
   SDValue GROffsAddr = DAG.getNode(ISD::ADD, DL, PtrVT, VAList,
                                    DAG.getConstant(Offset, DL, PtrVT));
@@ -8150,7 +8870,7 @@ SDValue AArch64TargetLowering::LowerAAPCS_VASTART(SDValue Op,
       DAG.getStore(Chain, DL, DAG.getConstant(-GPRSize, DL, MVT::i32),
                    GROffsAddr, MachinePointerInfo(SV, Offset), Align(4)));
 
-  // int __vr_offs at offset 28 (16 on ILP32)
+  // int __vr_offs at offset 3 * PtrSize + 4
   Offset += 4;
   SDValue VROffsAddr = DAG.getNode(ISD::ADD, DL, PtrVT, VAList,
                                    DAG.getConstant(Offset, DL, PtrVT));
@@ -8178,11 +8898,12 @@ SDValue AArch64TargetLowering::LowerVACOPY(SDValue Op,
   // AAPCS has three pointers and two ints (= 32 bytes), Darwin has single
   // pointer.
   SDLoc DL(Op);
-  unsigned PtrSize = Subtarget->isTargetILP32() ? 4 : 8;
-  unsigned VaListSize =
-      (Subtarget->isTargetDarwin() || Subtarget->isTargetWindows())
-          ? PtrSize
-          : Subtarget->isTargetILP32() ? 20 : 32;
+  unsigned PtrSize = Subtarget->isTargetILP32() ? 4 :
+                     (Subtarget->hasPureCap() ? 16 : 8);
+  unsigned VaListSize = (Subtarget->isTargetDarwin() ||
+                         Subtarget->isTargetWindows()) ? PtrSize :
+                         Subtarget->isTargetILP32() ? 20 :
+                         (Subtarget->hasPureCap() ? 56 : 32);
   const Value *DestSV = cast<SrcValueSDNode>(Op.getOperand(3))->getValue();
   const Value *SrcSV = cast<SrcValueSDNode>(Op.getOperand(4))->getValue();
 
@@ -8264,17 +8985,23 @@ SDValue AArch64TargetLowering::LowerVAARG(SDValue Op, SelectionDAG &DAG) const {
 
 SDValue AArch64TargetLowering::LowerFRAMEADDR(SDValue Op,
                                               SelectionDAG &DAG) const {
-  MachineFrameInfo &MFI = DAG.getMachineFunction().getFrameInfo();
+  MachineFunction &MF = DAG.getMachineFunction();
+  MachineFrameInfo &MFI = MF.getFrameInfo();
   MFI.setFrameAddressIsTaken(true);
 
-  EVT VT = Op.getValueType();
+  MVT VT = Op.getSimpleValueType();
   SDLoc DL(Op);
   unsigned Depth = cast<ConstantSDNode>(Op.getOperand(0))->getZExtValue();
-  SDValue FrameAddr =
-      DAG.getCopyFromReg(DAG.getEntryNode(), DL, AArch64::FP, MVT::i64);
-  while (Depth--)
+  const AArch64RegisterInfo *TRI = Subtarget->getRegisterInfo();
+  unsigned FP = TRI->getFramePointerRegister(MF);
+  if (FP == AArch64::CFP) {
+    assert(VT == MVT::iFATPTR128);
+  }
+  SDValue FrameAddr = DAG.getCopyFromReg(DAG.getEntryNode(), DL, FP, VT);
+  while (Depth--) {
     FrameAddr = DAG.getLoad(VT, DL, DAG.getEntryNode(), FrameAddr,
                             MachinePointerInfo());
+  }
 
   if (Subtarget->isTargetILP32())
     FrameAddr = DAG.getNode(ISD::AssertZext, DL, MVT::i64, FrameAddr,
@@ -8331,23 +9058,30 @@ SDValue AArch64TargetLowering::LowerRETURNADDR(SDValue Op,
                                                SelectionDAG &DAG) const {
   MachineFunction &MF = DAG.getMachineFunction();
   MachineFrameInfo &MFI = MF.getFrameInfo();
+  bool HasCap = Subtarget->hasMorello();
+  bool HasPureCap = Subtarget->hasPureCap();
   MFI.setReturnAddressIsTaken(true);
 
-  EVT VT = Op.getValueType();
+  MVT VT = Op.getSimpleValueType();
   SDLoc DL(Op);
   unsigned Depth = cast<ConstantSDNode>(Op.getOperand(0))->getZExtValue();
   SDValue ReturnAddress;
   if (Depth) {
     SDValue FrameAddr = LowerFRAMEADDR(Op, DAG);
-    SDValue Offset = DAG.getConstant(8, DL, getPointerTy(DAG.getDataLayout()));
+    SDValue Offset = DAG.getConstant(HasCap ? 16 : 8, DL, getPointerTy(DAG.getDataLayout()));
     ReturnAddress = DAG.getLoad(
         VT, DL, DAG.getEntryNode(),
-        DAG.getNode(ISD::ADD, DL, VT, FrameAddr, Offset), MachinePointerInfo());
+        DAG.getPointerAdd(DL, FrameAddr, Offset), MachinePointerInfo());
+    if (HasPureCap)
+      return ReturnAddress;
   } else {
     // Return LR, which contains the return address. Mark it an implicit
     // live-in.
-    Register Reg = MF.addLiveIn(AArch64::LR, &AArch64::GPR64RegClass);
+    Register LR = HasPureCap ? AArch64::CLR : AArch64::LR;
+    Register Reg = MF.addLiveIn(LR, &AArch64::GPR64RegClass);
     ReturnAddress = DAG.getCopyFromReg(DAG.getEntryNode(), DL, Reg, VT);
+    if (HasPureCap)
+      return ReturnAddress;
   }
 
   // The XPACLRI instruction assembles to a hint-space instruction before
@@ -8544,6 +9278,7 @@ SDValue AArch64TargetLowering::getRecipEstimate(SDValue Operand,
 // S - A symbolic address
 // Y - Floating point constant zero
 // Z - Integer constant zero
+// C - A capability register
 //
 //   Note that general register operands will be output using their 64-bit x
 // register name, whatever the size of the variable, unless the asm operand
@@ -8597,6 +9332,7 @@ AArch64TargetLowering::getConstraintType(StringRef Constraint) const {
       break;
     case 'x':
     case 'w':
+    case 'C':
     case 'y':
       return C_RegisterClass;
     // An address with a single base register. Due to the way we
@@ -8663,6 +9399,8 @@ AArch64TargetLowering::getRegForInlineAsmConstraint(
   if (Constraint.size() == 1) {
     switch (Constraint[0]) {
     case 'r':
+      if (Subtarget->hasMorello() && VT == MVT::iFATPTR128)
+        return std::make_pair(0U, &AArch64::CapcommonRegClass);
       if (VT.isScalableVector())
         return std::make_pair(0U, nullptr);
       if (Subtarget->hasLS64() && VT.getSizeInBits() == 512)
@@ -8689,6 +9427,10 @@ AArch64TargetLowering::getRegForInlineAsmConstraint(
         return std::make_pair(0U, &AArch64::FPR128RegClass);
       break;
     }
+    case 'C':
+      if (Subtarget->hasMorello() && VT == MVT::iFATPTR128)
+        return std::make_pair(0U, &AArch64::CapRegClass);
+      break;
     // The instructions that this constraint is designed for can
     // only take 128-bit registers so just use that regclass.
     case 'x':
@@ -10359,20 +11101,6 @@ static bool isAllConstantBuildVector(const SDValue &PotentialBVec,
   return true;
 }
 
-static unsigned getIntrinsicID(const SDNode *N) {
-  unsigned Opcode = N->getOpcode();
-  switch (Opcode) {
-  default:
-    return Intrinsic::not_intrinsic;
-  case ISD::INTRINSIC_WO_CHAIN: {
-    unsigned IID = cast<ConstantSDNode>(N->getOperand(0))->getZExtValue();
-    if (IID < Intrinsic::num_intrinsics)
-      return IID;
-    return Intrinsic::not_intrinsic;
-  }
-  }
-}
-
 // Attempt to form a vector S[LR]I from (or (and X, BvecC1), (lsl Y, C2)),
 // to (SLI X, Y, C2), where X and Y have matching vector types, BvecC1 is a
 // BUILD_VECTORs with constant element C1, C2 is a constant, and:
@@ -11660,7 +12388,14 @@ SDValue AArch64TargetLowering::LowerVECREDUCE(SDValue Op,
 
 SDValue AArch64TargetLowering::LowerATOMIC_LOAD_SUB(SDValue Op,
                                                     SelectionDAG &DAG) const {
+  SDNode *Node = Op.getNode();
+  bool FatPtrBase =
+    cast<AtomicSDNode>(Node)->getBasePtr().getValueType().isFatPointer();
   auto &Subtarget = static_cast<const AArch64Subtarget &>(DAG.getSubtarget());
+  // Morello alternate-base atomics go through library calls.
+  if (FatPtrBase != Subtarget.hasC64())
+    return LowerAtomic(Op, DAG);
+
   if (!Subtarget.hasLSE() && !Subtarget.outlineAtomics())
     return SDValue();
 
@@ -11677,7 +12412,14 @@ SDValue AArch64TargetLowering::LowerATOMIC_LOAD_SUB(SDValue Op,
 
 SDValue AArch64TargetLowering::LowerATOMIC_LOAD_AND(SDValue Op,
                                                     SelectionDAG &DAG) const {
+  SDNode *Node = Op.getNode();
+  bool FatPtrBase =
+    cast<AtomicSDNode>(Node)->getBasePtr().getValueType().isFatPointer();
   auto &Subtarget = static_cast<const AArch64Subtarget &>(DAG.getSubtarget());
+  // Morello alternate-base atomics go through library calls.
+  if (FatPtrBase != Subtarget.hasC64())
+    return LowerAtomic(Op, DAG);
+
   if (!Subtarget.hasLSE() && !Subtarget.outlineAtomics())
     return SDValue();
 
@@ -11866,10 +12608,15 @@ bool AArch64TargetLowering::getTgtMemIntrinsic(IntrinsicInfo &Info,
     return true;
   }
   case Intrinsic::aarch64_ldaxr:
-  case Intrinsic::aarch64_ldxr: {
+  case Intrinsic::aarch64_ldxr:
+  case Intrinsic::aarch64_cldaxr:
+  case Intrinsic::aarch64_cldxr: {
     PointerType *PtrTy = cast<PointerType>(I.getArgOperand(0)->getType());
     Info.opc = ISD::INTRINSIC_W_CHAIN;
     Info.memVT = MVT::getVT(PtrTy->getPointerElementType());
+    if (Intrinsic == Intrinsic::aarch64_cldaxr ||
+        Intrinsic == Intrinsic::aarch64_cldxr)
+      Info.memVT = MVT::iFATPTR128;
     Info.ptrVal = I.getArgOperand(0);
     Info.offset = 0;
     Info.align = DL.getABITypeAlign(PtrTy->getPointerElementType());
@@ -11877,10 +12624,15 @@ bool AArch64TargetLowering::getTgtMemIntrinsic(IntrinsicInfo &Info,
     return true;
   }
   case Intrinsic::aarch64_stlxr:
-  case Intrinsic::aarch64_stxr: {
+  case Intrinsic::aarch64_stxr:
+  case Intrinsic::aarch64_cstlxr:
+  case Intrinsic::aarch64_cstxr: {
     PointerType *PtrTy = cast<PointerType>(I.getArgOperand(1)->getType());
     Info.opc = ISD::INTRINSIC_W_CHAIN;
     Info.memVT = MVT::getVT(PtrTy->getPointerElementType());
+    if (Intrinsic == Intrinsic::aarch64_cstlxr ||
+        Intrinsic == Intrinsic::aarch64_cstxr)
+      Info.memVT = MVT::iFATPTR128;
     Info.ptrVal = I.getArgOperand(1);
     Info.offset = 0;
     Info.align = DL.getABITypeAlign(PtrTy->getPointerElementType());
@@ -12406,9 +13158,11 @@ bool AArch64TargetLowering::lowerInterleavedLoad(
   // Skip if we do not have NEON and skip illegal vector types. We can
   // "legalize" wide vector types into multiple interleaved accesses as long as
   // the vector types are divisible by 128.
+  bool CapabilityBase =  DL.isFatPointer(LI->getPointerOperand()->getType());
   bool UseScalable;
   if (!Subtarget->hasNEON() ||
-      !isLegalInterleavedAccessType(VTy, DL, UseScalable))
+      !isLegalInterleavedAccessType(VTy, DL, UseScalable) ||
+      (Subtarget->hasC64() != CapabilityBase))
     return false;
 
   unsigned NumLoads = getNumInterleavedAccesses(VTy, DL, UseScalable);
@@ -12582,8 +13336,10 @@ bool AArch64TargetLowering::lowerInterleavedStore(StoreInst *SI,
   // Skip if we do not have NEON and skip illegal vector types. We can
   // "legalize" wide vector types into multiple interleaved accesses as long as
   // the vector types are divisible by 128.
+  bool CapabilityBase =  DL.isFatPointer(SI->getPointerOperand()->getType());
   if (!Subtarget->hasNEON() ||
-      !isLegalInterleavedAccessType(SubVecTy, DL, UseScalable))
+      !isLegalInterleavedAccessType(SubVecTy, DL, UseScalable) ||
+      (Subtarget->hasC64() != CapabilityBase))
     return false;
 
   unsigned NumStores = getNumInterleavedAccesses(SubVecTy, DL, UseScalable);
@@ -12772,6 +13528,13 @@ SDValue AArch64TargetLowering::LowerSVEStructLoad(unsigned Intrinsic,
 
 EVT AArch64TargetLowering::getOptimalMemOpType(
     const MemOp &Op, const AttributeList &FuncAttributes) const {
+  // The copied area may contain capabilities, so inlining needs to be done
+  // wisely, resorting to the memcpy if there is any risk. Don't use capabilities
+  // for memset since the resulting tag is always 0.
+  if (Subtarget->hasMorello() && Op.size() >= 16 && !Op.isMemset()) {
+    if (Op.isAligned(Align(16)))
+      return MVT::iFATPTR128;
+  }
   bool CanImplicitFloat = !FuncAttributes.hasFnAttr(Attribute::NoImplicitFloat);
   bool CanUseNEON = Subtarget->hasNEON() && CanImplicitFloat;
   bool CanUseFP = Subtarget->hasFPARMv8() && CanImplicitFloat;
@@ -12791,7 +13554,8 @@ EVT AArch64TargetLowering::getOptimalMemOpType(
   if (CanUseNEON && Op.isMemset() && !IsSmallMemset &&
       AlignmentIsAcceptable(MVT::v16i8, Align(16)))
     return MVT::v16i8;
-  if (CanUseFP && !IsSmallMemset && AlignmentIsAcceptable(MVT::f128, Align(16)))
+  if (CanUseFP && !IsSmallMemset &&
+      AlignmentIsAcceptable(MVT::f128, Align(16)) && Op.size() >= 16)
     return MVT::f128;
   if (Op.size() >= 8 && AlignmentIsAcceptable(MVT::i64, Align(8)))
     return MVT::i64;
@@ -14820,6 +15584,109 @@ static SDValue performAddSubCombine(SDNode *N,
   return performAddSubLongCombine(N, DCI, DAG);
 }
 
+// (ptradd (x,
+//         (sub 0, (and (address_get x), mask)))
+// ->alignd x
+static SDValue combineToAlignD(SDNode *N,
+                               SelectionDAG &DAG) {
+  SDValue CapBase = N->getOperand(0);
+  SDValue Sub = N->getOperand(1);
+  if (Sub->getOpcode() != ISD::SUB)
+    return SDValue();
+
+  ConstantSDNode *SubConst = dyn_cast<ConstantSDNode>(Sub->getOperand(0));
+  if (!SubConst || SubConst->getZExtValue() != 0)
+    return SDValue();
+
+  SDValue And = Sub->getOperand(1);
+  if (And->getOpcode() != ISD::AND)
+    return SDValue();
+
+  SDValue GetAddr = And->getOperand(0);
+  if (GetAddr->getOpcode() != ISD::INTRINSIC_WO_CHAIN)
+    return SDValue();
+  if (cast<ConstantSDNode>(GetAddr->getOperand(0))->getZExtValue() !=
+    Intrinsic::cheri_cap_address_get)
+    return SDValue();
+  if (GetAddr->getOperand(1) != CapBase)
+    return SDValue();
+
+  ConstantSDNode *AndConst = dyn_cast<ConstantSDNode>(And->getOperand(1));
+  if (!AndConst)
+    return SDValue();
+
+  APInt V = AndConst->getAPIntValue() + 1;
+  if (!V.isPowerOf2())
+    return SDValue();
+  uint64_t AlignFactor = V.logBase2();
+
+  SDValue AlignConst = DAG.getConstant(AlignFactor, SDLoc(N), MVT::i64);
+  return DAG.getNode(AArch64ISD::CapAlignDown,
+                     SDLoc(N), MVT::iFATPTR128, CapBase, AlignConst);
+}
+
+//         (sub (and (add (address_get x), mask1), mask2)
+//              (address_get x)))
+// -> alignu
+static SDValue combineToAlignU(SDNode *N,
+                               SelectionDAG &DAG) {
+  SDValue CapBase = N->getOperand(0);
+  SDValue Sub = N->getOperand(1);
+  if (Sub->getOpcode() != ISD::SUB)
+    return SDValue();
+
+  SDValue GetAddr = Sub->getOperand(1);
+  if (GetAddr->getOpcode() != ISD::INTRINSIC_WO_CHAIN)
+    return SDValue();
+  if (cast<ConstantSDNode>(GetAddr->getOperand(0))->getZExtValue() !=
+    Intrinsic::cheri_cap_address_get)
+    return SDValue();
+  if (GetAddr->getOperand(1) != CapBase)
+    return SDValue();
+
+  SDValue And = Sub->getOperand(0);
+  if (And->getOpcode() != ISD::AND)
+    return SDValue();
+
+  ConstantSDNode *AndConst = dyn_cast<ConstantSDNode>(And->getOperand(1));
+  if (!AndConst)
+    return SDValue();
+
+  APInt V = ~AndConst->getAPIntValue() + 1;
+  if (!V.isPowerOf2())
+    return SDValue();
+  uint64_t AlignFactor = V.logBase2();
+
+  SDValue Add = And->getOperand(0);
+  if (Add->getOpcode() != ISD::ADD || Add->getOperand(0) != GetAddr)
+    return SDValue();
+
+  ConstantSDNode *AddConst = dyn_cast<ConstantSDNode>(Add->getOperand(1));
+  if (!AddConst || AddConst->getAPIntValue() != V - 1)
+    return SDValue();
+
+  SDValue AlignConst = DAG.getConstant(AlignFactor, SDLoc(N), MVT::i64);
+  return DAG.getNode(AArch64ISD::CapAlignUp,
+                     SDLoc(N), MVT::iFATPTR128, CapBase, AlignConst);
+}
+
+static SDValue performPtrAddCombine(SDNode *N,
+                                    TargetLowering::DAGCombinerInfo &DCI,
+                                    SelectionDAG &DAG,
+                                    const AArch64Subtarget *Subtarget) {
+  if (DCI.isBeforeLegalizeOps() || !Subtarget->hasMorello())
+    return SDValue();
+
+  // We only need these until the mid-end can emit the ptrmask intrinsic.
+  if (SDValue AlignU = combineToAlignU(N, DAG))
+    return AlignU;
+
+  if (SDValue AlignD = combineToAlignD(N, DAG))
+    return AlignD;
+
+  return SDValue();
+}
+
 // Massage DAGs which we can use the high-half "long" operations on into
 // something isel will recognize better. E.g.
 //
@@ -15225,6 +16092,98 @@ static SDValue convertMergedOpToPredOp(SDNode *N, unsigned Opc,
   return SDValue();
 }
 
+static SDValue performAddressSetCombine(SDNode *N, SelectionDAG &DAG,
+                                        const AArch64Subtarget *Subtarget) {
+  if (!Subtarget->hasMorello())
+    return SDValue();
+
+  // Attempt to combine to an align up or down node. We are looking for:
+  //    ptradd -> address_get -> add -> and -> address_set
+  // where both the ptradd and add nodes are optional. Depending on the
+  // case, the address_set node can use either the ptradd or address_get
+  // inputs without losing the tag.
+  SDValue CapOp = N->getOperand(1);
+  SDValue AndOp = N->getOperand(2);
+
+  if (AndOp->getOpcode() != ISD::AND)
+    return SDValue();
+
+  ConstantSDNode *Const = dyn_cast<ConstantSDNode>(AndOp->getOperand(1));
+  if (!Const)
+    return SDValue();
+
+  APInt V = Const->getAPIntValue();
+  V = ~V + 1;
+  if (!V.isPowerOf2())
+    return SDValue();
+
+  uint64_t AlignFactor = V.logBase2();
+  uint64_t FirstOffset = 0;
+  uint64_t SecondOffset = 0;
+  uint64_t ExpectedOffset = (V - 1).getZExtValue();
+
+  // Match the optional integer add node.
+  SDValue Val = AndOp->getOperand(0);
+  if (Val->getOpcode() == ISD::ADD) {
+    ConstantSDNode *AddConst = dyn_cast<ConstantSDNode>(Val->getOperand(1));
+    if (!AddConst)
+      return SDValue();
+    FirstOffset = AddConst->getZExtValue();
+    Val = Val->getOperand(0);
+  }
+
+  // Match the addres_get intrinsic node.
+  if (Val->getOpcode() != ISD::INTRINSIC_WO_CHAIN)
+    return SDValue();
+  if (cast<ConstantSDNode>(Val->getOperand(0))->getZExtValue() !=
+    Intrinsic::cheri_cap_address_get)
+    return SDValue();
+  SDValue GetAddr = Val;
+
+  // Match the optional ptradd node.
+  Val = GetAddr->getOperand(1);
+  SDValue PtrAddOp;
+  if (Val->getOpcode() == ISD::PTRADD) {
+    ConstantSDNode *AddConst = dyn_cast<ConstantSDNode>(Val->getOperand(1));
+    if (AddConst) {
+      SecondOffset = AddConst->getZExtValue();
+      PtrAddOp = Val->getOperand(0);
+    }
+  }
+
+  SDValue AlignInput;
+  bool AlignUp = false;
+  if (FirstOffset == ExpectedOffset) {
+    AlignUp = true;
+    AlignInput = GetAddr->getOperand(1);
+    // If the set address operand is the pointer add input and the pointer
+    // add loses the tag, performing this transformation would lose the tag.
+    // Therefore restrict the provenance to the get address operand.
+    if (CapOp != GetAddr->getOperand(1))
+      return SDValue();
+  } else if (SecondOffset != 0 &&
+             FirstOffset + SecondOffset == ExpectedOffset) {
+    AlignUp = true;
+    AlignInput = PtrAddOp;
+    // We're converting the whole thing to an alignment operation, so we
+    // cannot lose the tag. Therefore we can accept either capability as
+    // the set address operand.
+    if (CapOp != GetAddr->getOperand(1) && CapOp != PtrAddOp)
+      return SDValue();
+  } else if (FirstOffset == 0) {
+    AlignInput = GetAddr->getOperand(1);
+    // Same as above, restrict the final capability to the get address operand.
+    if (CapOp != GetAddr->getOperand(1))
+      return SDValue();
+  } else
+    return SDValue();
+
+  SDValue AlignConst = DAG.getConstant(AlignFactor, SDLoc(N), MVT::i64);
+  return DAG.getNode(AlignUp ? AArch64ISD::CapAlignUp : AArch64ISD::CapAlignDown,
+                     SDLoc(N), MVT::iFATPTR128, AlignInput, AlignConst);
+}
+
+
 static SDValue performIntrinsicCombine(SDNode *N,
                                        TargetLowering::DAGCombinerInfo &DCI,
                                        const AArch64Subtarget *Subtarget) {
@@ -15276,6 +16235,8 @@ static SDValue performIntrinsicCombine(SDNode *N,
   case Intrinsic::aarch64_crc32b:
   case Intrinsic::aarch64_crc32cb:
     return tryCombineCRC32(0xff, N, DAG);
+  case Intrinsic::cheri_cap_address_set:
+    return performAddressSetCombine(N, DAG, Subtarget);
   case Intrinsic::aarch64_crc32h:
   case Intrinsic::aarch64_crc32ch:
     return tryCombineCRC32(0xffff, N, DAG);
@@ -15555,7 +16516,8 @@ static SDValue splitStoreSplat(SelectionDAG &DAG, StoreSDNode &St,
                    OrigAlignment, St.getMemOperand()->getFlags());
 
   // As this in ISel, we will not merge this add which may degrade results.
-  if (BasePtr->getOpcode() == ISD::ADD &&
+  if ((BasePtr->getOpcode() == ISD::ADD ||
+       BasePtr->getOpcode() == ISD::PTRADD) &&
       isa<ConstantSDNode>(BasePtr->getOperand(1))) {
     BaseOffset = cast<ConstantSDNode>(BasePtr->getOperand(1))->getSExtValue();
     BasePtr = BasePtr->getOperand(0);
@@ -15564,9 +16526,8 @@ static SDValue splitStoreSplat(SelectionDAG &DAG, StoreSDNode &St,
   unsigned Offset = EltOffset;
   while (--NumVecElts) {
     unsigned Alignment = MinAlign(OrigAlignment, Offset);
-    SDValue OffsetPtr =
-        DAG.getNode(ISD::ADD, DL, MVT::i64, BasePtr,
-                    DAG.getConstant(BaseOffset + Offset, DL, MVT::i64));
+    SDValue OffsetPtr = DAG.getPointerAdd(DL, BasePtr,
+        DAG.getConstant(BaseOffset + Offset, DL, MVT::i64));
     NewST1 = DAG.getStore(NewST1.getValue(0), DL, SplatVal, OffsetPtr,
                           PtrInfo.getWithOffset(Offset), Alignment,
                           St.getMemOperand()->getFlags());
@@ -15935,8 +16896,7 @@ static SDValue splitStores(SDNode *N, TargetLowering::DAGCombinerInfo &DCI,
   SDValue NewST1 =
       DAG.getStore(S->getChain(), DL, SubVector0, BasePtr, S->getPointerInfo(),
                    S->getAlignment(), S->getMemOperand()->getFlags());
-  SDValue OffsetPtr = DAG.getNode(ISD::ADD, DL, MVT::i64, BasePtr,
-                                  DAG.getConstant(8, DL, MVT::i64));
+  SDValue OffsetPtr = DAG.getPointerAdd(DL, BasePtr, 8);
   return DAG.getStore(NewST1.getValue(0), DL, SubVector1, OffsetPtr,
                       S->getPointerInfo(), S->getAlignment(),
                       S->getMemOperand()->getFlags());
@@ -16121,6 +17081,14 @@ static SDValue performPostLD1Combine(SDNode *N,
   if (MemVT != VT.getVectorElementType())
     return SDValue();
 
+  // We can only create Advanced SIMD instructions with capabilities as
+  // base pointers in C64 mode. However, in C64 mode we can't create
+  // Advanced SIMD instructions with normal pointers.
+  bool HasC64 =
+      DAG.getMachineFunction().getSubtarget<AArch64Subtarget>().hasC64();
+  if (HasC64 != LoadSDN->getBasePtr().getValueType().isFatPointer())
+    return SDValue();
+
   // Check if there are other uses. If so, do not combine as it will introduce
   // an extra load.
   for (SDNode::use_iterator UI = LD->use_begin(), UE = LD->use_end(); UI != UE;
@@ -16130,14 +17098,14 @@ static SDValue performPostLD1Combine(SDNode *N,
     if (*UI != N)
       return SDValue();
   }
-
+  unsigned AddOpcode = HasC64 ? ISD::PTRADD : ISD::ADD;
   SDValue Addr = LD->getOperand(1);
   SDValue Vector = N->getOperand(0);
   // Search for a use of the address operand that is an increment.
   for (SDNode::use_iterator UI = Addr.getNode()->use_begin(), UE =
        Addr.getNode()->use_end(); UI != UE; ++UI) {
     SDNode *User = *UI;
-    if (User->getOpcode() != ISD::ADD
+    if (User->getOpcode() != AddOpcode
         || UI.getUse().getResNo() != Addr.getResNo())
       continue;
 
@@ -16172,7 +17140,7 @@ static SDValue performPostLD1Combine(SDNode *N,
     Ops.push_back(Addr);
     Ops.push_back(Inc);
 
-    EVT Tys[3] = { VT, MVT::i64, MVT::Other };
+    EVT Tys[3] = { VT, HasC64 ? MVT::iFATPTR128 : MVT::i64, MVT::Other };
     SDVTList SDTys = DAG.getVTList(Tys);
     unsigned NewOp = IsLaneOp ? AArch64ISD::LD1LANEpost : AArch64ISD::LD1DUPpost;
     SDValue UpdN = DAG.getMemIntrinsicNode(NewOp, SDLoc(N), SDTys, Ops,
@@ -16282,7 +17250,7 @@ static SDValue performNEONPostLDSTCombine(SDNode *N,
   for (SDNode::use_iterator UI = Addr.getNode()->use_begin(),
        UE = Addr.getNode()->use_end(); UI != UE; ++UI) {
     SDNode *User = *UI;
-    if (User->getOpcode() != ISD::ADD ||
+    if ((User->getOpcode() != ISD::ADD && User->getOpcode() != ISD::PTRADD) ||
         UI.getUse().getResNo() != Addr.getResNo())
       continue;
 
@@ -16382,7 +17350,7 @@ static SDValue performNEONPostLDSTCombine(SDNode *N,
     unsigned n;
     for (n = 0; n < NumResultVecs; ++n)
       Tys[n] = VecTy;
-    Tys[n++] = MVT::i64;  // Type of write back register
+    Tys[n++] = Addr.getValueType();
     Tys[n] = MVT::Other;  // Type of the chain
     SDVTList SDTys = DAG.getVTList(makeArrayRef(Tys, NumResultVecs + 2));
 
@@ -16700,10 +17668,10 @@ static SDValue performBRCONDCombine(SDNode *N,
   if (LHS.getValueType() != MVT::i32 && LHS.getValueType() != MVT::i64)
     return SDValue();
 
-  if (isNullConstant(LHS))
+  if (isNullConstant(LHS) || isNullCapConstant(LHS))
     std::swap(LHS, RHS);
 
-  if (!isNullConstant(RHS))
+  if (!(isNullConstant(RHS) || isNullCapConstant(RHS)))
     return SDValue();
 
   if (LHS.getOpcode() == ISD::SHL || LHS.getOpcode() == ISD::SRA ||
@@ -17685,6 +18653,8 @@ SDValue AArch64TargetLowering::PerformDAGCombine(SDNode *N,
   case ISD::ADD:
   case ISD::SUB:
     return performAddSubCombine(N, DCI, DAG);
+  case ISD::PTRADD:
+    return performPtrAddCombine(N, DCI, DAG, Subtarget);
   case ISD::XOR:
     return performXorCombine(N, DAG, DCI, Subtarget);
   case ISD::MUL:
@@ -18051,7 +19021,8 @@ bool AArch64TargetLowering::isUsedByReturnOnly(SDNode *N,
 
   bool HasRet = false;
   for (SDNode *Node : Copy->uses()) {
-    if (Node->getOpcode() != AArch64ISD::RET_FLAG)
+    if (Node->getOpcode() != AArch64ISD::RET_FLAG &&
+        Node->getOpcode() != AArch64ISD::CRET_FLAG)
       return false;
     HasRet = true;
   }
@@ -18073,26 +19044,40 @@ bool AArch64TargetLowering::mayBeEmittedAsTailCall(const CallInst *CI) const {
 
 bool AArch64TargetLowering::getIndexedAddressParts(SDNode *Op, SDValue &Base,
                                                    SDValue &Offset,
+                                                   EVT MemTy,
                                                    ISD::MemIndexedMode &AM,
                                                    bool &IsInc,
                                                    SelectionDAG &DAG) const {
-  if (Op->getOpcode() != ISD::ADD && Op->getOpcode() != ISD::SUB)
+  unsigned PtrOpc = Op->getOpcode();
+  if (PtrOpc != ISD::ADD && PtrOpc != ISD::SUB && PtrOpc != ISD::PTRADD)
     return false;
 
   Base = Op->getOperand(0);
-  // All of the indexed addressing mode instructions take a signed
-  // 9 bit immediate offset.
-  if (ConstantSDNode *RHS = dyn_cast<ConstantSDNode>(Op->getOperand(1))) {
-    int64_t RHSC = RHS->getSExtValue();
-    if (Op->getOpcode() == ISD::SUB)
-      RHSC = -(uint64_t)RHSC;
-    if (!isInt<9>(RHSC))
-      return false;
-    IsInc = (Op->getOpcode() == ISD::ADD);
-    Offset = Op->getOperand(1);
-    return true;
-  }
-  return false;
+  auto ConstantRHS = dyn_cast<ConstantSDNode>(Op->getOperand(1));
+
+  if (!ConstantRHS)
+    return false;
+
+  // Morello doesn't have pre/post indexed alternate base loads and stores.
+  if (Subtarget->hasC64() != ((PtrOpc == ISD::PTRADD)) &&
+      Subtarget->hasMorello())
+    return false;
+
+  int MaxBound = 256, MinBound;
+  int64_t Scale = 1;
+
+  if (Subtarget->hasMorello() && MemTy.isFatPointer())
+    Scale = 16;
+
+  MinBound = -MaxBound;
+  int64_t RHSC = (int64_t)ConstantRHS->getZExtValue();
+  if (RHSC % Scale != 0)
+    return false;
+  if (RHSC >= MaxBound * Scale || RHSC < MinBound * Scale)
+    return false;
+  IsInc = (PtrOpc == ISD::ADD || PtrOpc == ISD::PTRADD);
+  Offset = Op->getOperand(1);
+  return true;
 }
 
 bool AArch64TargetLowering::getPreIndexedAddressParts(SDNode *N, SDValue &Base,
@@ -18111,7 +19096,7 @@ bool AArch64TargetLowering::getPreIndexedAddressParts(SDNode *N, SDValue &Base,
     return false;
 
   bool IsInc;
-  if (!getIndexedAddressParts(Ptr.getNode(), Base, Offset, AM, IsInc, DAG))
+  if (!getIndexedAddressParts(Ptr.getNode(), Base, Offset, VT, AM, IsInc, DAG))
     return false;
   AM = IsInc ? ISD::PRE_INC : ISD::PRE_DEC;
   return true;
@@ -18132,7 +19117,7 @@ bool AArch64TargetLowering::getPostIndexedAddressParts(
     return false;
 
   bool IsInc;
-  if (!getIndexedAddressParts(Op, Base, Offset, AM, IsInc, DAG))
+  if (!getIndexedAddressParts(Op, Base, Offset, VT, AM, IsInc, DAG))
     return false;
   // Post-indexing updates the base, so it's not a valid transform
   // if that's not the same as the load's pointer.
@@ -18167,6 +19152,17 @@ void AArch64TargetLowering::ReplaceBITCASTResults(
       0);
   Op = DAG.getNode(ISD::BITCAST, DL, MVT::i32, Op);
   Results.push_back(DAG.getNode(ISD::TRUNCATE, DL, MVT::i16, Op));
+}
+
+static void ReplaceAtomicResults(SDNode *N, SmallVectorImpl<SDValue> &Results,
+                                  SelectionDAG &DAG) {
+  SDLoc DL(N);
+  SDValue Op = N->getOperand(0);
+
+  if (N->getValueType(0) != MVT::i16 || Op.getValueType() != MVT::i8)
+    return;
+
+  Results.push_back(DAG.getAnyExtOrTrunc(Op, DL, MVT::i32));
 }
 
 static void ReplaceReductionResults(SDNode *N,
@@ -18251,6 +19247,13 @@ static void ReplaceCMP_SWAP_128Results(SDNode *N,
   assert(N->getValueType(0) == MVT::i128 &&
          "AtomicCmpSwap on types less than 128 should be legal");
 
+  bool FatPtrBase =
+      cast<MemSDNode>(N)->getBasePtr().getValueType() == MVT::iFATPTR128;
+
+  // Morello alternate base cmpxchg end up as library calls..
+  if (Subtarget->hasMorello() && FatPtrBase != Subtarget->hasC64())
+    return;
+
   MachineMemOperand *MemOp = cast<MemSDNode>(N)->getMemOperand();
   if (Subtarget->hasLSE() || Subtarget->outlineAtomics()) {
     // LSE has a 128-bit compare and swap (CASP), but i128 is not a legal type,
@@ -18261,21 +19264,22 @@ static void ReplaceCMP_SWAP_128Results(SDNode *N,
         N->getOperand(1), // Ptr
         N->getOperand(0), // Chain in
     };
+    bool HasC64 = Subtarget->hasC64();
 
     unsigned Opcode;
     switch (MemOp->getMergedOrdering()) {
     case AtomicOrdering::Monotonic:
-      Opcode = AArch64::CASPX;
+      Opcode = HasC64 ? AArch64::ACASPX : AArch64::CASPX;
       break;
     case AtomicOrdering::Acquire:
-      Opcode = AArch64::CASPAX;
+      Opcode = HasC64 ? AArch64::ACASPAX : AArch64::CASPAX;
       break;
     case AtomicOrdering::Release:
-      Opcode = AArch64::CASPLX;
+      Opcode = HasC64 ? AArch64::ACASPLX : AArch64::CASPLX;
       break;
     case AtomicOrdering::AcquireRelease:
     case AtomicOrdering::SequentiallyConsistent:
-      Opcode = AArch64::CASPALX;
+      Opcode = HasC64 ? AArch64::ACASPALX : AArch64::CASPALX;
       break;
     default:
       llvm_unreachable("Unexpected ordering!");
@@ -18311,7 +19315,7 @@ static void ReplaceCMP_SWAP_128Results(SDNode *N,
     break;
   case AtomicOrdering::AcquireRelease:
   case AtomicOrdering::SequentiallyConsistent:
-    Opcode = AArch64::CMP_SWAP_128;
+    Opcode = FatPtrBase ? AArch64::CMP_SWAP_CAP_128 : AArch64::CMP_SWAP_128;
     break;
   default:
     llvm_unreachable("Unexpected ordering!");
@@ -18377,7 +19381,23 @@ void AArch64TargetLowering::ReplaceNodeResults(
     // Let normal code take care of it by not adding anything to Results.
     return;
   case ISD::ATOMIC_CMP_SWAP:
-    ReplaceCMP_SWAP_128Results(N, Results, DAG, Subtarget);
+    if (N->getValueType(0) == MVT::i128) {
+      ReplaceCMP_SWAP_128Results(N, Results, DAG, Subtarget);
+      return;
+    }
+    LLVM_FALLTHROUGH;
+  case ISD::ATOMIC_SWAP:
+  case ISD::ATOMIC_LOAD_ADD:
+  case ISD::ATOMIC_LOAD_SUB:
+  case ISD::ATOMIC_LOAD_OR:
+  case ISD::ATOMIC_LOAD_XOR:
+  case ISD::ATOMIC_LOAD_AND:
+  case ISD::ATOMIC_LOAD_NAND:
+  case ISD::ATOMIC_LOAD_MIN:
+  case ISD::ATOMIC_LOAD_MAX:
+  case ISD::ATOMIC_LOAD_UMIN:
+  case ISD::ATOMIC_LOAD_UMAX:
+    ReplaceAtomicResults(N, Results, DAG);
     return;
   case ISD::ATOMIC_LOAD:
   case ISD::LOAD: {
@@ -18385,7 +19405,9 @@ void AArch64TargetLowering::ReplaceNodeResults(
            "unexpected load's value type");
     MemSDNode *LoadNode = cast<MemSDNode>(N);
     if ((!LoadNode->isVolatile() && !LoadNode->isAtomic()) ||
-        LoadNode->getMemoryVT() != MVT::i128) {
+        LoadNode->getMemoryVT() != MVT::i128 ||
+        Subtarget->hasC64() ||
+        LoadNode->getBasePtr().getValueType() == MVT::iFATPTR128) {
       // Non-volatile or atomic loads are optimized later in AArch64's load/store
       // optimizer.
       return;
@@ -18409,16 +19431,39 @@ void AArch64TargetLowering::ReplaceNodeResults(
     // Custom lowering has been requested for INSERT_SUBVECTOR -- but delegate
     // to common code for result type legalisation
     return;
+  case ISD::INTRINSIC_W_CHAIN: {
+    // cheri_cap_load_tags can return any integer type, so we need to call the
+    // i64 variant and extend or truncate that result to the expected one.
+    EVT VT = N->getValueType(0);
+    ConstantSDNode *CN = cast<ConstantSDNode>(N->getOperand(1));
+    Intrinsic::ID IntID = static_cast<Intrinsic::ID>(CN->getZExtValue());
+    if (IntID != Intrinsic::cheri_cap_load_tags || VT == MVT::i64)
+      return;
+    SDValue Result = DAG.getNode(
+        ISD::INTRINSIC_W_CHAIN, SDLoc(N),
+        DAG.getVTList({MVT::i64, MVT::Other}),
+        {N->getOperand(0), N->getOperand(1), N->getOperand(2)});
+    Results.append({DAG.getZExtOrTrunc(Result.getValue(0),
+                                       SDLoc(N), VT),
+                    Result.getValue(1) /* Chain */ });
+    return;
+  }
   case ISD::INTRINSIC_WO_CHAIN: {
     EVT VT = N->getValueType(0);
-    assert((VT == MVT::i8 || VT == MVT::i16) &&
-           "custom lowering for unexpected type");
 
     ConstantSDNode *CN = cast<ConstantSDNode>(N->getOperand(0));
     Intrinsic::ID IntID = static_cast<Intrinsic::ID>(CN->getZExtValue());
     switch (IntID) {
     default:
       return;
+    case Intrinsic::cheri_cap_tag_get:
+    case Intrinsic::cheri_cap_sealed_get:
+    case Intrinsic::cheri_cap_bit_equals:
+    case Intrinsic::cheri_cap_subset_test:
+    case Intrinsic::morello_subset_test_unseal: {
+      Results.push_back(LowerINTRINSIC_WO_CHAIN(SDValue(N, 0), DAG));
+      return;
+    }
     case Intrinsic::aarch64_sve_clasta_n: {
       SDLoc DL(N);
       auto Op2 = DAG.getNode(ISD::ANY_EXTEND, DL, MVT::i32, N->getOperand(2));
@@ -18474,6 +19519,9 @@ AArch64TargetLowering::getPreferredVectorAction(MVT VT) const {
       VT == MVT::v1f32)
     return TypeWidenVector;
 
+  if (VT == MVT::v1iFATPTR128)
+    return TypeScalarizeVector;
+
   return TargetLoweringBase::getPreferredVectorAction(VT);
 }
 
@@ -18494,8 +19542,56 @@ bool AArch64TargetLowering::isOpSuitableForLDPSTP(const Instruction *I) const {
   return false;
 }
 
-bool AArch64TargetLowering::shouldInsertFencesForAtomic(
-    const Instruction *I) const {
+static bool isLegalAtomicType(Type *Ty, const DataLayout &DL) {
+  if (PointerType *PT = dyn_cast<PointerType>(Ty)) {
+    unsigned AS = PT->getAddressSpace();
+    if (DL.isFatPointer(AS))
+      return true;
+  }
+  return  Ty->getPrimitiveSizeInBits() != 128;
+}
+
+TailPaddingAmount AArch64TargetLowering::
+getTailPaddingForPreciseBounds(uint64_t Size) const {
+  uint64_t Pad =
+      AArch64TargetStreamer::getTargetSizeAlignReq(Size).first - Size;
+  return static_cast<TailPaddingAmount>(Pad);
+}
+
+Align AArch64TargetLowering::
+getAlignmentForPreciseBounds(uint64_t Size) const {
+  unsigned LogAlign =
+    AArch64TargetStreamer::getTargetSizeAlignReq(Size).second;
+  if (!LogAlign)
+    return Align(1);
+  return Align(1 << LogAlign);
+}
+
+bool AArch64TargetLowering::
+shouldInsertFencesForAtomic(const Instruction *I) const {
+  bool HasC64 = Subtarget->hasC64();
+  bool HasMorello = Subtarget->hasMorello();
+  const DataLayout &DL = I->getParent()->getModule()->getDataLayout();
+
+  if (!HasMorello)
+    return TargetLoweringBase::shouldInsertFencesForAtomic(I);
+
+  if (const LoadInst *LI = dyn_cast<LoadInst>(I)) {
+    Type *Ty = LI->getType();
+    unsigned Size = Ty->getPrimitiveSizeInBits();
+    if (Size != 8 && Size != 32 && !DL.isFatPointer(Ty) &&
+        DL.isFatPointer(LI->getPointerOperandType()) != HasC64 &&
+        isAcquireOrStronger(LI->getOrdering()))
+      return true;
+  }
+  if (const StoreInst *SI = dyn_cast<StoreInst>(I)) {
+    Type *Ty = SI->getValueOperand()->getType();
+    unsigned Size = Ty->getPrimitiveSizeInBits();
+    if (Size != 8 && Size != 32 && !DL.isFatPointer(Ty) &&
+        DL.isFatPointer(SI->getPointerOperandType()) != HasC64)
+      return true;
+  }
+
   return isOpSuitableForLDPSTP(I);
 }
 
@@ -18503,8 +19599,9 @@ bool AArch64TargetLowering::shouldInsertFencesForAtomic(
 // are doomed anyway, so defer to the default libcall and blame the OS when
 // things go wrong.
 bool AArch64TargetLowering::shouldExpandAtomicStoreInIR(StoreInst *SI) const {
-  unsigned Size = SI->getValueOperand()->getType()->getPrimitiveSizeInBits();
-  if (Size != 128)
+  const DataLayout &DL = SI->getModule()->getDataLayout();
+  Type *Ty = SI->getValueOperand()->getType();
+  if (!isLegalAtomicType(Ty, DL))
     return false;
 
   return !isOpSuitableForLDPSTP(SI);
@@ -18515,6 +19612,15 @@ bool AArch64TargetLowering::shouldExpandAtomicStoreInIR(StoreInst *SI) const {
 // things go wrong.
 TargetLowering::AtomicExpansionKind
 AArch64TargetLowering::shouldExpandAtomicLoadInIR(LoadInst *LI) const {
+  Type *Ty = LI->getType();
+  const DataLayout &DL = LI->getModule()->getDataLayout();
+  if (DL.isFatPointer(Ty)) {
+    return AtomicExpansionKind::None;
+  }
+  bool FatPtrBase =
+       DL.isFatPointer(LI->getPointerOperand()->getType());
+  if (FatPtrBase != Subtarget->hasC64())
+    return AtomicExpansionKind::None;
   unsigned Size = LI->getType()->getPrimitiveSizeInBits();
 
   if (Size != 128 || isOpSuitableForLDPSTP(LI))
@@ -18534,6 +19640,21 @@ AArch64TargetLowering::shouldExpandAtomicLoadInIR(LoadInst *LI) const {
 // For the real atomic operations, we have ldxr/stxr up to 128 bits,
 TargetLowering::AtomicExpansionKind
 AArch64TargetLowering::shouldExpandAtomicRMWInIR(AtomicRMWInst *AI) const {
+  Type *Ty = AI->getType();
+
+  const DataLayout &DL = AI->getModule()->getDataLayout();
+  bool FatPtrBase =
+       DL.isFatPointer(AI->getPointerOperand()->getType());
+
+  if (FatPtrBase != Subtarget->hasC64())
+    return AtomicExpansionKind::None;
+
+  if (DL.isFatPointer(Ty)) {
+    if (AI->getOperation() == AtomicRMWInst::Xchg)
+      return AtomicExpansionKind::None;
+    return AtomicExpansionKind::LLSC;
+  }
+
   if (AI->isFloatingPointOperation())
     return AtomicExpansionKind::CmpXChg;
 
@@ -18575,6 +19696,15 @@ AArch64TargetLowering::shouldExpandAtomicRMWInIR(AtomicRMWInst *AI) const {
 TargetLowering::AtomicExpansionKind
 AArch64TargetLowering::shouldExpandAtomicCmpXchgInIR(
     AtomicCmpXchgInst *AI) const {
+  const DataLayout &DL = AI->getModule()->getDataLayout();
+  bool FatPtrBase = DL.isFatPointer(AI->getPointerOperand()->getType());
+
+  if (FatPtrBase != Subtarget->hasC64())
+    return AtomicExpansionKind::None;
+
+  if (DL.isFatPointer(AI->getNewValOperand()->getType()))
+    return AtomicExpansionKind::None;
+
   // If subtarget has LSE, leave cmpxchg intact for codegen.
   if (Subtarget->hasLSE() || Subtarget->outlineAtomics())
     return AtomicExpansionKind::None;
@@ -18595,21 +19725,31 @@ AArch64TargetLowering::shouldExpandAtomicCmpXchgInIR(
   return AtomicExpansionKind::LLSC;
 }
 
+bool AArch64TargetLowering::canLowerPointerTypeCmpXchg(
+    const llvm::DataLayout &DL, llvm::AtomicCmpXchgInst *AI) const {
+  if (DL.isFatPointer(AI->getCompareOperand()->getType()))
+    return true;
+  return TargetLowering::canLowerPointerTypeCmpXchg(DL, AI);
+}
+
 Value *AArch64TargetLowering::emitLoadLinked(IRBuilderBase &Builder,
                                              Type *ValueTy, Value *Addr,
                                              AtomicOrdering Ord) const {
   Module *M = Builder.GetInsertBlock()->getParent()->getParent();
+  const DataLayout &DL = M->getDataLayout();
   bool IsAcquire = isAcquireOrStronger(Ord);
 
   // Since i128 isn't legal and intrinsics don't get type-lowered, the ldrexd
   // intrinsic must return {i64, i64} and we have to recombine them into a
   // single i128 here.
-  if (ValueTy->getPrimitiveSizeInBits() == 128) {
+  if (!isLegalAtomicType(ValueTy, DL)) {
     Intrinsic::ID Int =
         IsAcquire ? Intrinsic::aarch64_ldaxp : Intrinsic::aarch64_ldxp;
-    Function *Ldxr = Intrinsic::getDeclaration(M, Int);
+    unsigned AS = cast<PointerType>(Addr->getType())->getAddressSpace();
+    PointerType *PTy = Type::getInt8PtrTy(M->getContext(), AS);
+    Function *Ldxr = Intrinsic::getDeclaration(M, Int, PTy);
 
-    Addr = Builder.CreateBitCast(Addr, Type::getInt8PtrTy(M->getContext()));
+    Addr = Builder.CreateBitCast(Addr, PTy);
     Value *LoHi = Builder.CreateCall(Ldxr, Addr, "lohi");
 
     Value *Lo = Builder.CreateExtractValue(LoHi, 0, "lo");
@@ -18620,17 +19760,35 @@ Value *AArch64TargetLowering::emitLoadLinked(IRBuilderBase &Builder,
         Lo, Builder.CreateShl(Hi, ConstantInt::get(ValueTy, 64)), "val64");
   }
 
-
-  const DataLayout &DL = M->getDataLayout();
   IntegerType *IntEltTy = Builder.getIntNTy(DL.getTypeSizeInBits(ValueTy));
   if (ValueTy->isPointerTy())
     Addr = Builder.CreatePointerCast(
         Addr,
         IntEltTy->getPointerTo(Addr->getType()->getPointerAddressSpace()));
-  Type *Tys[] = {Addr->getType()};
-  Intrinsic::ID Int =
-      IsAcquire ? Intrinsic::aarch64_ldaxr : Intrinsic::aarch64_ldxr;
-  Function *Ldxr = Intrinsic::getDeclaration(M, Int, Tys);
+
+  bool IsFatPointer = false;
+  PointerType *BasePTy = cast<PointerType>(Addr->getType());
+  if (PointerType *PT = dyn_cast<PointerType>(BasePTy->getElementType())) {
+    unsigned AS = PT->getAddressSpace();
+    if (DL.isFatPointer(AS))
+      IsFatPointer = true;
+  }
+
+  Function *Ldxr = nullptr;
+  if (IsFatPointer) {
+    Intrinsic::ID Int = IsAcquire ? Intrinsic::aarch64_cldaxr :
+                                    Intrinsic::aarch64_cldxr;
+    Type *Tys[] = { Addr->getType() };
+    Ldxr = llvm::Intrinsic::getDeclaration(M, Int, Tys);
+    Type *EltTy = cast<PointerType>(Addr->getType())->getElementType();
+    return Builder.CreateBitCast(Builder.CreateCall(Ldxr, Addr), EltTy);
+  } else {
+    Intrinsic::ID Int = IsAcquire ? Intrinsic::aarch64_ldaxr :
+                                    Intrinsic::aarch64_ldxr;
+    Type *Tys[] = { Addr->getType() };
+    Ldxr = llvm::Intrinsic::getDeclaration(M, Int, Tys);
+  }
+
 
   Value *Trunc = Builder.CreateTrunc(Builder.CreateCall(Ldxr, Addr), IntEltTy);
   // For atomicrmw xchg it's possible that Addr is a pointer not an integer
@@ -18651,34 +19809,53 @@ Value *AArch64TargetLowering::emitStoreConditional(IRBuilderBase &Builder,
                                                    Value *Val, Value *Addr,
                                                    AtomicOrdering Ord) const {
   Module *M = Builder.GetInsertBlock()->getParent()->getParent();
+  const DataLayout &DL = M->getDataLayout();
   bool IsRelease = isReleaseOrStronger(Ord);
 
   // Since the intrinsics must have legal type, the i128 intrinsics take two
   // parameters: "i64, i64". We must marshal Val into the appropriate form
   // before the call.
-  if (Val->getType()->getPrimitiveSizeInBits() == 128) {
+  if (!isLegalAtomicType(Val->getType(), DL)) {
     Intrinsic::ID Int =
         IsRelease ? Intrinsic::aarch64_stlxp : Intrinsic::aarch64_stxp;
-    Function *Stxr = Intrinsic::getDeclaration(M, Int);
+    unsigned AS = cast<PointerType>(Addr->getType())->getAddressSpace();
+    PointerType *PTy = Type::getInt8PtrTy(M->getContext(), AS);
+    Function *Stxr = Intrinsic::getDeclaration(M, Int, PTy);
     Type *Int64Ty = Type::getInt64Ty(M->getContext());
 
     Value *Lo = Builder.CreateTrunc(Val, Int64Ty, "lo");
     Value *Hi = Builder.CreateTrunc(Builder.CreateLShr(Val, 64), Int64Ty, "hi");
-    Addr = Builder.CreateBitCast(Addr, Type::getInt8PtrTy(M->getContext()));
+    Addr = Builder.CreateBitCast(Addr, PTy);
     return Builder.CreateCall(Stxr, {Lo, Hi, Addr});
   }
 
-  Intrinsic::ID Int =
-      IsRelease ? Intrinsic::aarch64_stlxr : Intrinsic::aarch64_stxr;
-  const DataLayout &DL = M->getDataLayout();
+  bool IsFatPointer = false;
+  if (PointerType *PT = dyn_cast<PointerType>(Val->getType())) {
+    unsigned AS = PT->getAddressSpace();
+    if (M->getDataLayout().isFatPointer(AS))
+      IsFatPointer = true;
+  }
   IntegerType *IntValTy =
       Builder.getIntNTy(DL.getTypeSizeInBits(Val->getType()));
   if (Val->getType()->isPointerTy())
     Addr = Builder.CreatePointerCast(
         Addr,
         IntValTy->getPointerTo(Addr->getType()->getPointerAddressSpace()));
-  Type *Tys[] = {Addr->getType()};
-  Function *Stxr = Intrinsic::getDeclaration(M, Int, Tys);
+  Function *Stxr = nullptr;
+  if (IsFatPointer) {
+    Intrinsic::ID Int =
+        IsRelease ? Intrinsic::aarch64_cstlxr : Intrinsic::aarch64_cstxr;
+    Type *Tys[] = { Addr->getType() };
+    Stxr = Intrinsic::getDeclaration(M, Int, Tys);
+    Val = Builder.CreateBitCast(Val,
+                                Stxr->getFunctionType()->getParamType(0));
+    return Builder.CreateCall(Stxr, {Val, Addr});
+  } else {
+    Intrinsic::ID Int =
+        IsRelease ? Intrinsic::aarch64_stlxr : Intrinsic::aarch64_stxr;
+    Type *Tys[] = { Addr->getType() };
+    Stxr = Intrinsic::getDeclaration(M, Int, Tys);
+  }
 
   // For atomicrmw xchg it's possible that Addr is a pointer not an integer
   assert(!DL.isFatPointer(Val->getType()) && "Should not be handled here!");
@@ -18696,6 +19873,26 @@ Value *AArch64TargetLowering::emitStoreConditional(IRBuilderBase &Builder,
 bool AArch64TargetLowering::functionArgumentNeedsConsecutiveRegisters(
     Type *Ty, CallingConv::ID CallConv, bool isVarArg,
     const DataLayout &DL) const {
+  if (StructType *StrTy = dyn_cast<StructType>(Ty)) {
+    if (StrTy->isOpaque())
+      return false;
+    // Use consecutive registers If this contains a mix of 64 bit integers and
+    // capabilities. We should have at least one capability.
+    bool HasCapabilities = false;
+    for (auto *Ty : StrTy->elements()) {
+      if (IntegerType *ITy = dyn_cast<IntegerType>(Ty))
+        if (ITy->getBitWidth() == 64)
+          continue;
+      if (DL.isFatPointer(Ty)) {
+        HasCapabilities = true;
+        continue;
+      }
+      return false;
+    }
+    if (HasCapabilities)
+      return true;
+  }
+
   if (!Ty->isArrayTy()) {
     const TypeSize &TySize = Ty->getPrimitiveSizeInBits();
     return TySize.isScalable() && TySize.getKnownMinSize() > 128;

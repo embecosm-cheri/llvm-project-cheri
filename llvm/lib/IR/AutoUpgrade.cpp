@@ -744,6 +744,28 @@ static bool UpgradeIntrinsicFunction1(Function *F, Function *&NewFn) {
                                         {F->getReturnType()});
       return true;
     }
+    if (Name == "aarch64.ldxp" || Name == "aarch64.ldaxp") {
+      auto fArgs = F->getFunctionType()->params();
+      SmallVector<Type *, 4> Tys(fArgs.begin(), fArgs.end());
+      // Can't use Intrinsic::getDeclaration here as the return types might
+      // then only be structurally equal.
+      FunctionType* fType = FunctionType::get(F->getReturnType(), Tys, false);
+      NewFn = Function::Create(fType, F->getLinkage(), F->getAddressSpace(),
+                               "llvm." + Name + ".p0i8", F->getParent());
+
+      return true;
+    }
+    if (Name == "aarch64.stxp" || Name == "aarch64.stlxp") {
+      if (F->arg_size() != 3)
+        break; // Invalid IR.
+      NewFn = Intrinsic::getDeclaration(F->getParent(),
+                                        Name == "aarch64.stxp" ?
+                                            Intrinsic::aarch64_stxp :
+                                            Intrinsic::aarch64_stlxp,
+                                        F->getFunctionType()->params()[2]);
+      return true;
+    }
+
 
     break;
   }
@@ -1014,6 +1036,12 @@ static bool UpgradeIntrinsicFunction1(Function *F, Function *&NewFn) {
       NewFn = Intrinsic::getDeclaration(
           F->getParent(), Intrinsic::ptr_annotation,
           {F->arg_begin()->getType(), F->getArg(1)->getType()});
+      return true;
+    }
+    if (Name == "prefetch") {
+      auto *ArgTy = F->arg_begin()->getType();
+      NewFn = Intrinsic::getDeclaration(F->getParent(), Intrinsic::prefetch,
+                                        ArgTy);
       return true;
     }
     break;
@@ -4118,6 +4146,10 @@ void llvm::UpgradeIntrinsicCall(CallInst *CI, Function *NewFn) {
     // Memcpy/Memmove also support source alignment.
     if (auto *MTI = dyn_cast<MemTransferInst>(MemCI))
       MTI->setSourceAlignment(Align->getMaybeAlignValue());
+    MemCI->setTailCallKind(CI->getTailCallKind());
+    MemCI->setCallingConv(CI->getCallingConv());
+    if (CI->preservesTags())
+      MemCI->setPreservesTags();
     break;
   }
   }

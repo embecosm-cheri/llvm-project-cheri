@@ -4670,7 +4670,8 @@ RValue CodeGenFunction::EmitCall(const CGFunctionInfo &CallInfo,
                                  ReturnValueSlot ReturnValue,
                                  const CallArgList &CallArgs,
                                  llvm::CallBase **callOrInvoke, bool IsMustTail,
-                                 SourceLocation Loc) {
+                                 SourceLocation Loc,
+                                 bool PreserveTags) {
   // FIXME: We no longer need the types from CallArgs; lift up and simplify.
 
   assert(Callee.isOrdinary() || Callee.isVirtual());
@@ -4986,8 +4987,21 @@ RValue CodeGenFunction::EmitCall(const CGFunctionInfo &CallInfo,
         // If the argument doesn't match, perform a bitcast to coerce it.  This
         // can happen due to trivial type mismatches.
         if (FirstIRArg < IRFuncTy->getNumParams() &&
-            V->getType() != IRFuncTy->getParamType(FirstIRArg))
-          V = Builder.CreateBitCast(V, IRFuncTy->getParamType(FirstIRArg));
+            V->getType() != IRFuncTy->getParamType(FirstIRArg)) {
+          llvm::Type *ArgTy = V->getType();
+          llvm::Type *ParamTy = IRFuncTy->getParamType(FirstIRArg);
+          auto &TCGI = CGM.getTargetCodeGenInfo();
+          // Perform an implicit conversion from a capability to a pointer when
+          // the argument is a capability but the parameter is reference.
+          if (Target.SupportsCapabilities() &&
+              ArgTy->isPointerTy() && ParamTy->isPointerTy() &&
+              ArgTy->getPointerAddressSpace() == TCGI.getCHERICapabilityAS() &&
+              ParamTy->getPointerAddressSpace() == 0)
+            V = TCGI.getPointerFromCapability(
+                *this, V, IRFuncTy->getParamType(FirstIRArg));
+          else
+            V = Builder.CreateBitCast(V, IRFuncTy->getParamType(FirstIRArg));
+        }
 
         IRCallArgs[FirstIRArg] = V;
         break;
@@ -5329,6 +5343,9 @@ RValue CodeGenFunction::EmitCall(const CGFunctionInfo &CallInfo,
   // Apply the attributes and calling convention.
   CI->setAttributes(Attrs);
   CI->setCallingConv(static_cast<llvm::CallingConv::ID>(CallingConv));
+
+  if (PreserveTags)
+    cast<llvm::CallInst>(CI)->setPreservesTags();
 
   // Apply various metadata.
 

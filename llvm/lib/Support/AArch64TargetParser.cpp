@@ -64,6 +64,9 @@ bool AArch64::getExtensionFeatures(uint64_t Extensions,
   if (Extensions == AArch64::AEK_INVALID)
     return false;
 
+  if ((Extensions & AArch64::AEK_C64) && (Extensions & AArch64::AEK_A64C))
+    return false;
+
   if (Extensions & AEK_FP)
     Features.push_back("+fp-armv8");
   if (Extensions & AEK_SIMD)
@@ -121,6 +124,14 @@ bool AArch64::getExtensionFeatures(uint64_t Extensions,
   if (Extensions & AArch64::AEK_PERFMON)
     Features.push_back("+perfmon");
 
+  if (Extensions & AArch64::AEK_C64) {
+    Features.push_back("+morello");
+    Features.push_back("+c64");
+  }
+
+  if (Extensions & AArch64::AEK_A64C)
+    Features.push_back("+morello");
+
   return true;
 }
 
@@ -154,6 +165,16 @@ bool AArch64::getArchFeatures(AArch64::ArchKind AK,
     Features.push_back("+v9.3a");
   if(AK == AArch64::ArchKind::ARMV8R)
     Features.push_back("+v8r");
+  if (AK == ArchKind::MORELLO) {
+    Features.push_back("+v8.2a");
+    Features.push_back("+fp-armv8");
+    Features.push_back("+dotprod");
+    Features.push_back("+fullfp16");
+    Features.push_back("+spe");
+    Features.push_back("+ssbs");
+    Features.push_back("+rcpc");
+    Features.push_back("+morello");
+  }
 
   return AK != ArchKind::INVALID;
 }
@@ -224,6 +245,9 @@ bool AArch64::isX18ReservedByDefault(const Triple &TT) {
 
 // Allows partial match, ex. "v8a" matches "armv8a".
 AArch64::ArchKind AArch64::parseArch(StringRef Arch) {
+  if (Arch == "morello")
+    return ArchKind::MORELLO;
+
   Arch = ARM::getCanonicalArchName(Arch);
   if (checkArchVersion(Arch) < 8)
     return ArchKind::INVALID;

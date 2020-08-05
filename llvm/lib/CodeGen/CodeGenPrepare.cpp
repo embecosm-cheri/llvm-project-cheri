@@ -619,6 +619,11 @@ bool CodeGenPrepare::runOnFunction(Function &F) {
     verifyBFIUpdates(F);
 #endif
 
+  // Clear these to make sure that the AssertingVHs get removed.
+  LargeOffsetGEPMap.clear();
+  LargeOffsetGEPID.clear();
+  NewGEPBases.clear();
+
   return EverMadeChange;
 }
 

@@ -97,6 +97,14 @@ AARCH64_ARCH("armv8-r", ARMV8R, "8-R", "v8r",
               AArch64::AEK_DOTPROD | AArch64::AEK_FP   | AArch64::AEK_SIMD |
               AArch64::AEK_FP16    | AArch64::AEK_FP16FML | AArch64::AEK_RAS |
               AArch64::AEK_RCPC    | AArch64::AEK_SB))
+AARCH64_ARCH("morello", MORELLO, "", "",
+             ARMBuildAttrs::CPUArch::v8_A, FK_CRYPTO_NEON_FP_ARMV8,
+             (AArch64::AEK_CRC | AArch64::AEK_CRYPTO | AArch64::AEK_FP |
+              AArch64::AEK_SIMD | AArch64::AEK_RAS | AArch64::AEK_LSE |
+              AArch64::AEK_RDM | AArch64::AEK_DOTPROD | AArch64::AEK_FP16 |
+              AArch64::AEK_PROFILE | AArch64::AEK_RCPC | AArch64::AEK_SSBS |
+              AArch64::AEK_A64C))
+
 #undef AARCH64_ARCH
 
 #ifndef AARCH64_ARCH_EXT_NAME
@@ -147,6 +155,8 @@ AARCH64_ARCH_EXT_NAME("sme-i64",      AArch64::AEK_SMEI64,      "+sme-i64",     
 AARCH64_ARCH_EXT_NAME("hbc",          AArch64::AEK_HBC,         "+hbc",          "-hbc")
 AARCH64_ARCH_EXT_NAME("mops",         AArch64::AEK_MOPS,        "+mops",         "-mops")
 AARCH64_ARCH_EXT_NAME("pmuv3",        AArch64::AEK_PERFMON,     "+perfmon",      "-perfmon")
+AARCH64_ARCH_EXT_NAME("a64c",         AArch64::AEK_A64C,        "+a64c",  "-a64c")
+AARCH64_ARCH_EXT_NAME("c64",          AArch64::AEK_C64,         "+c64",  "-c64")
 #undef AARCH64_ARCH_EXT_NAME
 
 #ifndef AARCH64_CPU_NAME

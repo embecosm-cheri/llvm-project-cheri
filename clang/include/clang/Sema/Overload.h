@@ -312,6 +312,8 @@ class Sema;
     /// Objective-C lifetime qualifier.
     unsigned ObjCLifetimeConversionBinding : 1;
 
+    unsigned IsCHERIConversion : 1;
+
     /// FromType - The type that this conversion is converting
     /// from. This is an opaque pointer that can be translated into a
     /// QualType.

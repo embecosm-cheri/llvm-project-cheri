@@ -57,12 +57,25 @@ public:
 
   /// Returns true if a cast between SrcAS and DestAS is a noop.
   bool isNoopAddrSpaceCast(unsigned SrcAS, unsigned DestAS) const override {
-    // Addrspacecasts are always noops.
-    return true;
+    // Reserve the first 256 for software use (e.g. OpenCL) and treat casts
+    // between them as noops.
+    if (((SrcAS == 200) || (DestAS == 200)) && (DestAS != SrcAS))
+      return false;
+    return SrcAS < 256 && DestAS < 256;
+  }
+
+  bool IsMorello() const { return isMorello; }
+  bool IsPureCap() const { return isPureCap; }
+  bool IsC64() const { return isC64; }
+  bool padGlobalsForCheriCapabilities() const override {
+    return IsPureCap();
   }
 
 private:
   bool isLittle;
+  bool isPureCap;
+  bool isMorello;
+  bool isC64;
 };
 
 // AArch64 little endian target machine.

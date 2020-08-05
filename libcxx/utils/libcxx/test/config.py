@@ -60,7 +60,7 @@ class Configuration(object):
     # pylint: disable=redefined-outer-name
     def __init__(self, lit_config, config):
         if sys.version_info < (3, 3):
-            raise RuntimeError("Cannot run tests with python < 3.3")
+            lit_config.warning("There might be issues with timeouts with python < 3.3")
         self.lit_config = lit_config
         self.config = config
         self.cxx = None
@@ -358,7 +358,9 @@ class Configuration(object):
             if self.target_info.is_mingw():
                 self.cxx.link_flags += ['-nostdlib++']
             else:
-                self.cxx.link_flags += ['-nodefaultlibs']
+                use_default_libs = self.get_lit_bool('use_default_libs', False)
+                if not use_default_libs:
+                    self.cxx.link_flags += ['-nodefaultlibs']
             # FIXME: Handle MSVCRT as part of the ABI library handling.
             if self.target_info.is_windows() and not self.target_info.is_mingw():
                 self.cxx.link_flags += ['-nostdlib']

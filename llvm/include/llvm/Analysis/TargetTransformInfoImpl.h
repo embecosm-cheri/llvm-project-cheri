@@ -579,6 +579,10 @@ public:
     return 1;
   }
 
+  int getCheriIntrinsicNullCaseValue() {
+    return -1;
+  }
+
   InstructionCost getMaskedMemoryOpCost(unsigned Opcode, Type *Src,
                                         Align Alignment, unsigned AddressSpace,
                                         TTI::TargetCostKind CostKind) const {

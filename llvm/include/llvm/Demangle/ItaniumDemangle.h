@@ -428,6 +428,7 @@ enum Qualifiers {
   QualConst = 0x1,
   QualVolatile = 0x2,
   QualRestrict = 0x4,
+  QualCapability = 0x8,
 };
 
 inline Qualifiers operator|=(Qualifiers &Q1, Qualifiers Q2) {
@@ -446,6 +447,8 @@ protected:
       OB += " volatile";
     if (Quals & QualRestrict)
       OB += " restrict";
+    if (Quals & QualCapability)
+      OB += " __capability";
   }
 
 public:
@@ -826,6 +829,8 @@ public:
       OB += " volatile";
     if (CVQuals & QualRestrict)
       OB += " restrict";
+    if (CVQuals & QualCapability)
+      OB += " __capability";
 
     if (RefQual == FrefQualLValue)
       OB += " &";
@@ -922,6 +927,8 @@ public:
       OB += " volatile";
     if (CVQuals & QualRestrict)
       OB += " restrict";
+    if (CVQuals & QualCapability)
+      OB += " __capability";
 
     if (RefQual == FrefQualLValue)
       OB += " &";
@@ -3785,11 +3792,13 @@ Node *AbstractManglingParser<Derived, Alloc>::parseType() {
   //             ::= <qualified-type>
   case 'r':
   case 'V':
-  case 'K': {
+  case 'K':
+  case 'Q': {
     unsigned AfterQuals = 0;
     if (look(AfterQuals) == 'r') ++AfterQuals;
     if (look(AfterQuals) == 'V') ++AfterQuals;
     if (look(AfterQuals) == 'K') ++AfterQuals;
+    if (look(AfterQuals) == 'Q') ++AfterQuals;
 
     if (look(AfterQuals) == 'F' ||
         (look(AfterQuals) == 'D' &&
@@ -4158,6 +4167,8 @@ Qualifiers AbstractManglingParser<Alloc, Derived>::parseCVQualifiers() {
     CVR |= QualVolatile;
   if (consumeIf('K'))
     CVR |= QualConst;
+  if (consumeIf('Q'))
+    CVR |= QualCapability;
   return CVR;
 }
 

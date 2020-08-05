@@ -4463,6 +4463,12 @@ bool SelectionDAG::isBaseWithConstantOffset(SDValue Op) const {
   return true;
 }
 
+/// isCapabilityBaseWithConstantOffset - Return true if the specified operand is
+/// an ISD::PTRADD with a ConstantSDNode on the right-hand side.
+bool SelectionDAG::isCapabilityBaseWithConstantOffset(SDValue Op) const {
+  return Op.getOpcode() == ISD::PTRADD && isa<ConstantSDNode>(Op.getOperand(1));
+}
+
 bool SelectionDAG::isKnownNeverNaN(SDValue Op, bool SNaN, unsigned Depth) const {
   // If we're told that NaNs won't happen, assume they won't.
   if (getTarget().Options.NoNaNsFPMath || Op->getFlags().hasNoNaNs())
@@ -6504,7 +6510,7 @@ static bool isMemSrcFromConstant(SDValue Src, ConstantDataArraySlice &Slice) {
   GlobalAddressSDNode *G = nullptr;
   if (Src.getOpcode() == ISD::GlobalAddress)
     G = cast<GlobalAddressSDNode>(Src);
-  else if (Src.getOpcode() == ISD::ADD &&
+  else if ((Src.getOpcode() == ISD::ADD || Src.getOpcode() == ISD::PTRADD) &&
            Src.getOperand(0).getOpcode() == ISD::GlobalAddress &&
            Src.getOperand(1).getOpcode() == ISD::Constant) {
     G = cast<GlobalAddressSDNode>(Src.getOperand(0));
@@ -7128,8 +7134,13 @@ SDValue SelectionDAG::getMemcpy(SDValue Chain, const SDLoc &dl, SDValue Dst,
                                    SrcPtrInfo, AAInfo, CopyType, OptLevel);
   }
 
-  checkAddrSpaceIsValidForLibcall(TLI, DstPtrInfo.getAddrSpace());
-  checkAddrSpaceIsValidForLibcall(TLI, SrcPtrInfo.getAddrSpace());
+  if (!Dst.getValueType().isFatPointer())
+    checkAddrSpaceIsValidForLibcall(TLI, DstPtrInfo.getAddrSpace());
+  if (!Src.getValueType().isFatPointer())
+    checkAddrSpaceIsValidForLibcall(TLI, SrcPtrInfo.getAddrSpace());
+
+  RTLIB::Libcall MemOp = Src.getValueType().isFatPointer() ?
+                         RTLIB::MEMCPY_C : RTLIB::MEMCPY;
 
   // FIXME: If the memcpy is volatile (isVol), lowering it to a plain libc
   // memcpy is not guaranteed to be safe. libc memcpys aren't required to
@@ -7147,14 +7158,15 @@ SDValue SelectionDAG::getMemcpy(SDValue Chain, const SDLoc &dl, SDValue Dst,
 
   Entry.Ty = getDataLayout().getIntPtrType(*getContext());
   Entry.Node = Size; Args.push_back(Entry);
+
   // FIXME: pass in SDLoc
   TargetLowering::CallLoweringInfo CLI(*this);
   CLI.setDebugLoc(dl)
       .setChain(Chain)
       .setLibCallee(
-          TLI->getLibcallCallingConv(RTLIB::MEMCPY),
+          TLI->getLibcallCallingConv(MemOp),
           Dst.getValueType().getTypeForEVT(*getContext()),
-          getExternalFunctionSymbol(TLI->getLibcallName(RTLIB::MEMCPY)),
+          getExternalFunctionSymbol(TLI->getLibcallName(MemOp)),
           std::move(Args))
       .setDiscardResult()
       .setTailCall(isTailCall);
@@ -7237,11 +7249,15 @@ SDValue SelectionDAG::getMemmove(SDValue Chain, const SDLoc &dl, SDValue Dst,
       return Result;
   }
 
-  checkAddrSpaceIsValidForLibcall(TLI, DstPtrInfo.getAddrSpace());
-  checkAddrSpaceIsValidForLibcall(TLI, SrcPtrInfo.getAddrSpace());
+  if (!Dst.getValueType().isFatPointer())
+    checkAddrSpaceIsValidForLibcall(TLI, DstPtrInfo.getAddrSpace());
+  if (!Src.getValueType().isFatPointer())
+    checkAddrSpaceIsValidForLibcall(TLI, SrcPtrInfo.getAddrSpace());
 
   // FIXME: If the memmove is volatile, lowering it to plain libc memmove may
   // not be safe.  See memcpy above for more details.
+  RTLIB::Libcall MemOp = Src.getValueType().isFatPointer() ?
+                         RTLIB::MEMMOVE_C : RTLIB::MEMMOVE;
 
   // Emit a library call.
   TargetLowering::ArgListTy Args;
@@ -7258,9 +7274,9 @@ SDValue SelectionDAG::getMemmove(SDValue Chain, const SDLoc &dl, SDValue Dst,
   CLI.setDebugLoc(dl)
       .setChain(Chain)
       .setLibCallee(
-          TLI->getLibcallCallingConv(RTLIB::MEMMOVE),
+          TLI->getLibcallCallingConv(MemOp),
           Dst.getValueType().getTypeForEVT(*getContext()),
-          getExternalFunctionSymbol(TLI->getLibcallName(RTLIB::MEMMOVE)),
+          getExternalFunctionSymbol(TLI->getLibcallName(MemOp)),
           std::move(Args))
       .setDiscardResult()
       .setTailCall(isTailCall);
@@ -7339,7 +7355,11 @@ SDValue SelectionDAG::getMemset(SDValue Chain, const SDLoc &dl, SDValue Dst,
       return Result;
   }
 
-  checkAddrSpaceIsValidForLibcall(TLI, DstPtrInfo.getAddrSpace());
+  if (!Dst.getValueType().isFatPointer())
+    checkAddrSpaceIsValidForLibcall(TLI, DstPtrInfo.getAddrSpace());
+
+  RTLIB::Libcall MemOp = Dst.getValueType().isFatPointer() ?
+                         RTLIB::MEMSET_C : RTLIB::MEMSET;
 
   // Emit a library call.
   TargetLowering::ArgListTy Args;
@@ -7358,9 +7378,9 @@ SDValue SelectionDAG::getMemset(SDValue Chain, const SDLoc &dl, SDValue Dst,
   CLI.setDebugLoc(dl)
       .setChain(Chain)
       .setLibCallee(
-          TLI->getLibcallCallingConv(RTLIB::MEMSET),
+          TLI->getLibcallCallingConv(MemOp),
           Dst.getValueType().getTypeForEVT(*getContext()),
-          getExternalFunctionSymbol(TLI->getLibcallName(RTLIB::MEMSET)),
+          getExternalFunctionSymbol(TLI->getLibcallName(MemOp)),
           std::move(Args))
       .setDiscardResult()
       .setTailCall(isTailCall);
@@ -10145,6 +10165,13 @@ SDValue SelectionDAG::getSymbolFunctionGlobalAddress(SDValue Op,
 //===----------------------------------------------------------------------===//
 //                              SDNode Class
 //===----------------------------------------------------------------------===//
+bool llvm::isNullCapConstant(SDValue V) {
+  if (V.getOpcode() != ISD::INTTOPTR)
+    return false;
+
+  const ConstantSDNode *Const = dyn_cast<ConstantSDNode>(V.getOperand(0));
+  return Const != nullptr && Const->isNullValue();
+}
 
 bool llvm::isNullConstant(SDValue V) {
   ConstantSDNode *Const = dyn_cast<ConstantSDNode>(V);

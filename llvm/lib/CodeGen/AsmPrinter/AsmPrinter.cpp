@@ -729,7 +729,8 @@ void AsmPrinter::emitGlobalVariable(const GlobalVariable *GV) {
   if (MAI->hasDotTypeDotSizeDirective())
     // .size foo, 42
     OutStreamer->emitELFSize(EmittedInitSym,
-                             MCConstantExpr::create(Size, OutContext));
+        MCConstantExpr::create(Size + static_cast<unsigned>(TailPadding),
+                               OutContext));
 
   OutStreamer->AddBlankLine();
 }
@@ -1879,8 +1880,8 @@ bool AsmPrinter::doFinalization(Module &M) {
       for (const auto &Stub : Stubs) {
         OutStreamer->emitLabel(Stub.first);
         if (DL.isFatPointer(AS))
-          OutStreamer->EmitCheriCapability(Stub.second.getPointer(), nullptr,
-                                           Size);
+          OutStreamer->getTargetStreamer()->emitCHERICapability(
+              Stub.second.getPointer(), nullptr, Size);
         else
           OutStreamer->emitSymbolValue(Stub.second.getPointer(), Size);
       }
@@ -2315,6 +2316,7 @@ void AsmPrinter::emitJumpTableEntry(const MachineJumpTableInfo *MJTI,
   case MachineJumpTableInfo::EK_Inline:
     llvm_unreachable("Cannot emit EK_Inline jump table entry");
   case MachineJumpTableInfo::EK_Custom32:
+  case MachineJumpTableInfo::EK_Custom64:
     Value = MF->getSubtarget().getTargetLowering()->LowerCustomJumpTableEntry(
         MJTI, MBB, UID, OutContext);
     break;
@@ -3174,33 +3176,31 @@ static void emitGlobalConstantCHERICap(const DataLayout &DL, const Constant *CV,
     AP.OutStreamer->emitCheriIntcap(CE->getValue(), CapWidth);
     return;
   }
+
   GlobalValue *GV;
   APInt Addend;
+  auto *TS = AP.OutStreamer->getTargetStreamer();
   if (IsConstantOffsetFromGlobal(const_cast<Constant *>(CV), GV, Addend, DL,
                                  true)) {
-    AP.OutStreamer->EmitCheriCapability(AP.getSymbol(GV), Addend.getSExtValue(),
-                                        CapWidth);
+    TS->emitCHERICapability(AP.getSymbol(GV), Addend.getSExtValue(),
+                            CapWidth);
     return;
   } else if (const MCSymbolRefExpr *SRE = dyn_cast<MCSymbolRefExpr>(Expr)) {
     if (auto BA = dyn_cast<BlockAddress>(CV)) {
       // For block addresses we emit `.chericap FN+(.LtmpN - FN)`
       auto FnStart = AP.getSymbol(BA->getFunction());
       const MCExpr *DiffToStart = MCBinaryExpr::createSub(SRE, MCSymbolRefExpr::create(FnStart, AP.OutContext), AP.OutContext);
-      AP.OutStreamer->EmitCheriCapability(FnStart, DiffToStart, CapWidth);
+      TS->emitCHERICapability(FnStart, DiffToStart, CapWidth);
       return;
     }
     // Emit capability for label whose address is stored in a global variable
     // FIXME: Any more cases to handle other than blockaddress?
     if (SRE->getSymbol().isTemporary()) {
-      report_fatal_error(
-          "Cannot emit a global .chericap referring to a temporary since this "
-          "will result in the wrong value at runtime!");
-      AP.OutStreamer->EmitCheriCapability(&SRE->getSymbol(), nullptr, CapWidth);
+      TS->emitCHERICapability(&SRE->getSymbol(), nullptr, CapWidth);
       return;
     }
   }
-  llvm_unreachable("Tried to emit a capability which is neither a constant nor "
-                   "a global+offset");
+  TS->emitCHERICapability(Expr, CapWidth);
 }
 
 static void emitGlobalConstantImpl(const DataLayout &DL, const Constant *CV,

@@ -920,6 +920,11 @@ public:
     return getMemBasePlusOffset(Ptr, TypeSize::Fixed(Offset), DL, Flags);
   }
 
+  SDValue getPointerAdd(const SDLoc &DL, SDValue Ptr, APInt Offset,
+                        const SDNodeFlags Flags = SDNodeFlags()) {
+    return getMemBasePlusOffset(Ptr, TypeSize::Fixed(Offset.getSExtValue()), DL, Flags);
+  }
+
   // Unlike getObjectPtrOffset this does not set NoUnsignedWrap by default
   SDValue getPointerAdd(const SDLoc &DL, SDValue Ptr, SDValue Offset,
                         const SDNodeFlags Flags = SDNodeFlags()) {
@@ -1910,6 +1915,7 @@ public:
   /// equivalence:
   ///     X|Cst == X+Cst iff X&Cst = 0.
   bool isBaseWithConstantOffset(SDValue Op) const;
+  bool isCapabilityBaseWithConstantOffset(SDValue Op) const;
 
   /// Test whether the given SDValue is known to never be NaN. If \p SNaN is
   /// true, returns if \p Op is known to never be a signaling NaN (it may still

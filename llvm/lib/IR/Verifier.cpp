@@ -544,6 +544,7 @@ private:
   void verifySwiftErrorValue(const Value *SwiftErrorVal);
   void verifyTailCCMustTailAttrs(const AttrBuilder &Attrs, StringRef Context);
   void verifyMustTailCall(CallInst &CI);
+  void verifyMemcpyCapCall(CallInst &CI);
   bool verifyAttributeCount(AttributeList Attrs, unsigned Params);
   void verifyAttributeTypes(AttributeSet Attrs, const Value *V);
   void verifyParameterAttrs(AttributeSet Attrs, Type *Ty, const Value *V);
@@ -854,7 +855,7 @@ void Verifier::visitGlobalAlias(const GlobalAlias &GA) {
 
 void Verifier::visitGlobalIFunc(const GlobalIFunc &GI) {
   // Pierce through ConstantExprs and GlobalAliases and check that the resolver
-  // has a Function 
+  // has a Function
   const Function *Resolver = GI.getResolverFunction();
   Assert(Resolver, "IFunc must have a Function resolver", &GI);
 
@@ -3427,6 +3428,16 @@ static AttrBuilder getParameterABIAttributes(LLVMContext& C, unsigned I, Attribu
        Attrs.hasParamAttr(I, Attribute::ByRef)))
     Copy.addAlignmentAttr(Attrs.getParamAlignment(I));
   return Copy;
+}
+
+void Verifier::verifyMemcpyCapCall(CallInst &CI) {
+  Assert(CI.getCalledFunction()->getName() == "memcpy" ||
+         CI.getCalledFunction()->getName() == "memmove" ||
+         CI.getCalledFunction()->getName() == "__memcpy_chk" ||
+         CI.getCalledFunction()->getName() == "__memmove_chk" ||
+         CI.getCalledFunction()->getName().startswith("llvm.memcpy") ||
+         CI.getCalledFunction()->getName().startswith("llvm.memmove"),
+         "Can only have have memcpy capability attributes on memcpy and memmove variants");
 }
 
 void Verifier::verifyMustTailCall(CallInst &CI) {

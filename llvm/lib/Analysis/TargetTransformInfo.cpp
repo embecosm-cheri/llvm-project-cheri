@@ -872,6 +872,10 @@ InstructionCost TargetTransformInfo::getMaskedMemoryOpCost(
   return Cost;
 }
 
+int TargetTransformInfo::getCheriIntrinsicNullCaseValue() const {
+  return TTIImpl->getCheriIntrinsicNullCaseValue();
+}
+
 InstructionCost TargetTransformInfo::getGatherScatterOpCost(
     unsigned Opcode, Type *DataTy, const Value *Ptr, bool VariableMask,
     Align Alignment, TTI::TargetCostKind CostKind, const Instruction *I) const {

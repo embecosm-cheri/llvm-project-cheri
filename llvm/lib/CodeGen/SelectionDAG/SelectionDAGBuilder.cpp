@@ -1669,9 +1669,10 @@ SDValue SelectionDAGBuilder::getValueImpl(const Value *V) {
   if (const AllocaInst *AI = dyn_cast<AllocaInst>(V)) {
     DenseMap<const AllocaInst*, int>::iterator SI =
       FuncInfo.StaticAllocaMap.find(AI);
-    if (SI != FuncInfo.StaticAllocaMap.end())
+    if (SI != FuncInfo.StaticAllocaMap.end()) {
       return DAG.getFrameIndex(SI->second,
                                TLI.getFrameIndexTy(DAG.getDataLayout()));
+    }
   }
 
   // If this is an instruction which fast-isel has deferred, select it now.
@@ -2557,8 +2558,10 @@ void SelectionDAGBuilder::visitJumpTable(SwitchCG::JumpTable &JT) {
   assert(JT.Reg != -1U && "Should lower JT Header first!");
   const DataLayout &TD = DAG.getDataLayout();
   const auto &TLI = DAG.getTargetLoweringInfo();
-  EVT PTy = TLI.getPointerTy(TD, TD.getGlobalsAddressSpace());
-  EVT IndexTy = TLI.getPointerRangeTy(TD , TD.getProgramAddressSpace());
+  bool AddrSpace = TLI.useDefaultAddrSpaceForJT() ?
+    0 : TD.getGlobalsAddressSpace();
+  EVT PTy = TLI.getPointerTy(TD,  AddrSpace);
+  EVT IndexTy = TLI.getPointerRangeTy(TD, AddrSpace);
   SDValue Index =
       DAG.getCopyFromReg(getControlRoot(), getCurSDLoc(), JT.Reg, IndexTy);
   SDValue Table = DAG.getJumpTable(JT.JTI, PTy);
@@ -3888,14 +3891,8 @@ void SelectionDAGBuilder::visitGetElementPtr(const User &I) {
   SDLoc dl = getCurSDLoc();
   auto &TLI = DAG.getTargetLoweringInfo();
 
-  // FIXME: This does not work on GEPs with vectors and fat pointers, but CHERI
-  // currently doesn't have a vector unit so that is probably not a problem.
   bool FatPointer = N.getValueType().isFatPointer();
   SDValue OrigN = N;
-
-  if (FatPointer) {
-    N = DAG.getIntPtrConstant(0, dl);
-  }
 
   // Normalize Vector GEP - all scalar operands should be converted to the
   // splat vector.
@@ -3903,6 +3900,16 @@ void SelectionDAGBuilder::visitGetElementPtr(const User &I) {
   ElementCount VectorElementCount =
       IsVectorGEP ? cast<VectorType>(I.getType())->getElementCount()
                   : ElementCount::getFixed(0);
+
+  if (FatPointer) {
+    N = DAG.getIntPtrConstant(0, dl);
+    // Do a splat of the base as well for vector GEPs.
+    if (!OrigN.getValueType().isVector() && IsVectorGEP) {
+      LLVMContext &Context = *DAG.getContext();
+      EVT VT = EVT::getVectorVT(Context, OrigN.getValueType(), VectorElementCount);
+      OrigN = DAG.getSplatBuildVector(VT, dl, OrigN);
+    }
+  }
 
   if (IsVectorGEP && !N.getValueType().isVector()) {
     LLVMContext &Context = *DAG.getContext();
@@ -3928,9 +3935,10 @@ void SelectionDAGBuilder::visitGetElementPtr(const User &I) {
         SDNodeFlags Flags;
         if (int64_t(Offset) >= 0 && cast<GEPOperator>(I).isInBounds())
           Flags.setNoUnsignedWrap(true);
-
-        N = DAG.getNode(ISD::ADD, dl, N.getValueType(), N,
-                        DAG.getConstant(Offset, dl, N.getValueType()), Flags);
+        if (cast<GEPOperator>(I).isInBounds() && FatPointer)
+          OrigN = DAG.getPointerAdd(dl, OrigN, Offset, Flags);
+        else
+          N = DAG.getPointerAdd(dl, N, Offset, Flags);
       }
     } else {
       // IdxSize is the width of the arithmetic according to IR semantics.
@@ -3972,7 +3980,10 @@ void SelectionDAGBuilder::visitGetElementPtr(const User &I) {
 
         OffsVal = DAG.getSExtOrTrunc(OffsVal, dl, N.getValueType());
 
-        N = DAG.getNode(ISD::ADD, dl, N.getValueType(), N, OffsVal, Flags);
+        if (cast<GEPOperator>(I).isInBounds() && FatPointer)
+          OrigN = DAG.getPointerAdd(dl, OrigN, OffsVal, Flags);
+        else
+          N = DAG.getPointerAdd(dl, N, OffsVal, Flags);
         continue;
       }
 
@@ -4018,8 +4029,11 @@ void SelectionDAGBuilder::visitGetElementPtr(const User &I) {
         }
       }
 
-      N = DAG.getNode(ISD::ADD, dl,
-                      N.getValueType(), N, IdxN);
+      if (cast<GEPOperator>(I).isInBounds() && FatPointer)
+        OrigN = DAG.getPointerAdd(dl, OrigN, IdxN);
+      else
+        N = DAG.getNode(ISD::ADD, dl,
+                        N.getValueType(), N, IdxN);
     }
   }
 

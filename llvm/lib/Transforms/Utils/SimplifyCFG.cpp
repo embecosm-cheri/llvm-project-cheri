@@ -4314,6 +4314,10 @@ bool SimplifyCFGOpt::SimplifyBranchOnICmpChain(BranchInst *BI,
     // ctoptr in the hybrid ABI.
     if (isCheriPointer(CompVal->getType(), &DL)) {
       assert(cheri::isKnownUntaggedCapability(CompVal, &DL) && "This optimization should only be used with known untagged values");
+      PointerType *VoidTy = PointerType::get(
+          IntegerType::get(BI->getContext(), 8),
+          cast<PointerType>(CompVal->getType())->getAddressSpace());
+      CompVal = Builder.CreateBitCast(CompVal, VoidTy);
       CompVal = Builder.CreateIntrinsic(Intrinsic::cheri_cap_address_get, DL.getIntPtrType(CompVal->getType()),
         Builder.CreatePointerCast(CompVal, Builder.getInt8PtrTy(CompVal->getType()->getPointerAddressSpace())), nullptr, "magicptr");
     } else {

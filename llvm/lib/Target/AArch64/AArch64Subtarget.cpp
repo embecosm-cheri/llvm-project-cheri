@@ -231,7 +231,9 @@ AArch64Subtarget::AArch64Subtarget(const Triple &TT, const std::string &CPU,
                                    unsigned MinSVEVectorSizeInBitsOverride,
                                    unsigned MaxSVEVectorSizeInBitsOverride)
     : AArch64GenSubtargetInfo(TT, CPU, TuneCPU, FS),
+      HasPureCap(static_cast<const AArch64TargetMachine&>(TM).IsPureCap()),
       ReserveXRegister(AArch64::GPR64commonRegClass.getNumRegs()),
+      ReserveCRegister(AArch64::CapcommonRegClass.getNumRegs()),
       CustomCallSavedXRegs(AArch64::GPR64commonRegClass.getNumRegs()),
       IsLittle(LittleEndian),
       MinSVEVectorSizeInBits(MinSVEVectorSizeInBitsOverride),
@@ -286,18 +288,29 @@ AArch64Subtarget::ClassifyGlobalReference(const GlobalValue *GV,
   if (TM.getCodeModel() == CodeModel::Large && isTargetMachO())
     return AArch64II::MO_GOT;
 
-  if (!TM.shouldAssumeDSOLocal(*GV->getParent(), GV)) {
+  bool IsFat = GV->getParent()->getDataLayout().isFatPointer(GV->getType());
+  bool GOTMatch = (IsFat == hasCapGOT() || !IsFat);
+
+  unsigned Flags = GV->hasDLLImportStorageClass() ? AArch64II::MO_DLLIMPORT
+                                                  : AArch64II::MO_NO_FLAG;
+
+  if (GOTMatch && !TM.shouldAssumeDSOLocal(*GV->getParent(), GV)) {
     if (GV->hasDLLImportStorageClass())
       return AArch64II::MO_GOT | AArch64II::MO_DLLIMPORT;
     if (getTargetTriple().isOSWindows())
       return AArch64II::MO_GOT | AArch64II::MO_COFFSTUB;
-    return AArch64II::MO_GOT;
+    return AArch64II::MO_GOT | Flags;
   }
+
+  if (IsFat && hasCapGOT() && !GV->hasLocalLinkage() &&
+      !GV->hasProtectedVisibility())
+    return AArch64II::MO_GOT | Flags;
 
   // The small code model's direct accesses use ADRP, which cannot
   // necessarily produce the value 0 (if the code is above 4GB).
   // Same for the tiny code model, where we have a pc relative LDR.
-  if ((useSmallAddressing() || TM.getCodeModel() == CodeModel::Tiny) &&
+  if (GOTMatch &&
+      (useSmallAddressing() || TM.getCodeModel() == CodeModel::Tiny) &&
       GV->hasExternalWeakLinkage())
     return AArch64II::MO_GOT;
 

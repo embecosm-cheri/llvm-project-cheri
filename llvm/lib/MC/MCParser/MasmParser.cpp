@@ -5549,7 +5549,9 @@ bool MasmParser::parseDirectiveCFIStartProc() {
   // expansion which can *ONLY* happen if Clang's cc1as is the API consumer.
   // Tools like llvm-mc on the other hand are not affected by it, and report
   // correct context information.
-  getStreamer().emitCFIStartProc(!Simple.empty(), Lexer.getLoc());
+  getStreamer().emitCFIStartProc(Simple.empty() ? MCCFIProcType::Normal
+                                                : MCCFIProcType::Simple,
+                                 Lexer.getLoc());
   return false;
 }
 

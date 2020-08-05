@@ -547,6 +547,10 @@ private:
   /// void @llvm.lifetime.end(i64 %size, i8* nocapture <ptr>)
   llvm::Function *LifetimeEndFn = nullptr;
 
+  // Stack save & restore intrinsic
+  llvm::Constant *StackSaveFn = nullptr;
+  llvm::Constant *StackRestoreFn = nullptr;
+
   std::unique_ptr<SanitizerMetadata> SanitizerMD;
 
   llvm::MapVector<const Decl *, bool> DeferredEmptyCoverageMappingDecls;
@@ -1119,6 +1123,9 @@ public:
 
   llvm::Function *getLLVMLifetimeStartFn();
   llvm::Function *getLLVMLifetimeEndFn();
+
+  llvm::Constant *getStackSaveFn();
+  llvm::Constant *getStackRestoreFn();
 
   // Make sure that this type is translated.
   void UpdateCompletedType(const TagDecl *TD);

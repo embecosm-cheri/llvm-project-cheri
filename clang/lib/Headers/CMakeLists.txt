@@ -57,6 +57,7 @@ set(files
   __clang_hip_runtime_wrapper.h
   cetintrin.h
   cet.h
+  capability_cast.h
   cheri.h
   cheriintrin.h
   cheri_init_globals.h

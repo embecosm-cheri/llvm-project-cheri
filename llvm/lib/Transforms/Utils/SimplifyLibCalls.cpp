@@ -1119,6 +1119,7 @@ Value *LibCallSimplifier::optimizeMemCpy(CallInst *CI, IRBuilderBase &B) {
       B.CreateMemCpy(CI->getArgOperand(0), Align(1), CI->getArgOperand(1),
                      Align(1), Size, shouldPreserveTags(CI));
   mergeAttributesAndFlags(NewCI, *CI);
+  NewCI->setPreservesTags();
   return CI->getArgOperand(0);
 }
 
@@ -1188,6 +1189,7 @@ Value *LibCallSimplifier::optimizeMemMove(CallInst *CI, IRBuilderBase &B) {
       B.CreateMemMove(CI->getArgOperand(0), Align(1), CI->getArgOperand(1),
                       Align(1), Size, shouldPreserveTags(CI));
   mergeAttributesAndFlags(NewCI, *CI);
+  NewCI->setPreservesTags();
   return CI->getArgOperand(0);
 }
 
@@ -3288,6 +3290,7 @@ Value *FortifiedLibCallSimplifier::optimizeMemCpyChk(CallInst *CI,
         B.CreateMemCpy(CI->getArgOperand(0), Align(1), CI->getArgOperand(1),
                        Align(1), CI->getArgOperand(2), shouldPreserveTags(CI));
     mergeAttributesAndFlags(NewCI, *CI);
+    NewCI->setPreservesTags();
     return CI->getArgOperand(0);
   }
   return nullptr;
@@ -3300,6 +3303,7 @@ Value *FortifiedLibCallSimplifier::optimizeMemMoveChk(CallInst *CI,
         B.CreateMemMove(CI->getArgOperand(0), Align(1), CI->getArgOperand(1),
                         Align(1), CI->getArgOperand(2), shouldPreserveTags(CI));
     mergeAttributesAndFlags(NewCI, *CI);
+    NewCI->setPreservesTags();
     return CI->getArgOperand(0);
   }
   return nullptr;
@@ -3370,7 +3374,7 @@ Value *FortifiedLibCallSimplifier::optimizeStrpCpyChk(CallInst *CI,
   Type *SizeTTy = DL.getIntPtrType(CI->getContext(),
                                    Dst->getType()->getPointerAddressSpace());
   Value *LenV = ConstantInt::get(SizeTTy, Len);
-  Value *Ret = emitMemCpyChk(Dst, Src, LenV, ObjSize, B, DL, TLI);
+  Value *Ret = emitMemCpyChk(Dst, Src, LenV, ObjSize, B, DL, TLI, false);
   // If the function was an __stpcpy_chk, and we were able to fold it into
   // a __memcpy_chk, we still need to return the correct end pointer.
   if (Ret && Func == LibFunc_stpcpy_chk)

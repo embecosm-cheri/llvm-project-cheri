@@ -1692,6 +1692,13 @@ public:
     setTailCallKind(IsTc ? TCK_Tail : TCK_None);
   }
 
+  bool preservesTags() const {
+    return hasFnAttr("must-preserve-cheri-tags");
+  }
+  void setPreservesTags(){
+    addFnAttr(Attribute::get(getContext(), "must-preserve-cheri-tags"));
+  }
+
   /// Return true if the call can return twice
   bool canReturnTwice() const { return hasFnAttr(Attribute::ReturnsTwice); }
   void setCanReturnTwice() { addFnAttr(Attribute::ReturnsTwice); }

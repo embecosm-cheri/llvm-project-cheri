@@ -4017,16 +4017,17 @@ public:
   RValue EmitCall(const CGFunctionInfo &CallInfo, const CGCallee &Callee,
                   ReturnValueSlot ReturnValue, const CallArgList &Args,
                   llvm::CallBase **callOrInvoke, bool IsMustTail,
-                  SourceLocation Loc);
+                  SourceLocation Loc, bool PreserveTags = false);
   RValue EmitCall(const CGFunctionInfo &CallInfo, const CGCallee &Callee,
                   ReturnValueSlot ReturnValue, const CallArgList &Args,
                   llvm::CallBase **callOrInvoke = nullptr,
-                  bool IsMustTail = false) {
+                  bool IsMustTail = false, bool PreserveTags = false) {
     return EmitCall(CallInfo, Callee, ReturnValue, Args, callOrInvoke,
-                    IsMustTail, SourceLocation());
+                    IsMustTail, SourceLocation(), PreserveTags);
   }
   RValue EmitCall(QualType FnType, const CGCallee &Callee, const CallExpr *E,
-                  ReturnValueSlot ReturnValue, llvm::Value *Chain = nullptr);
+                  ReturnValueSlot ReturnValue, llvm::Value *Chain = nullptr,
+                  bool PreserveTags = false);
   RValue EmitCallExpr(const CallExpr *E,
                       ReturnValueSlot ReturnValue = ReturnValueSlot());
   RValue EmitSimpleCallExpr(const CallExpr *E, ReturnValueSlot ReturnValue);
@@ -4783,6 +4784,9 @@ public:
                     unsigned ParamsToSkip = 0,
                     EvaluationOrder Order = EvaluationOrder::Default);
 
+  llvm::Value *getPointerBase(llvm::Value *V) {
+    return getTargetHooks().getPointerBase(*this, V);
+  }
   llvm::Value *getPointerOffset(llvm::Value *V) {
     return getTargetHooks().getPointerOffset(*this, V);
   }
@@ -4827,6 +4831,9 @@ public:
                                 llvm::MaybeAlign KnownAlignment = None) {
     return setPointerBounds(V, llvm::ConstantInt::get(Int64Ty, Size), Loc, Name,
                             Pass, IsSubObject, Details, KnownAlignment);
+  }
+  llvm::Value *getPointerFromCapability(llvm::Value *Ptr, llvm::Type *DestTy) {
+    return getTargetHooks().getPointerFromCapability(*this, Ptr, DestTy);
   }
 
   /// EmitPointerWithAlignment - Given an expression with a pointer type,

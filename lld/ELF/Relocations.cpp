@@ -916,24 +916,51 @@ static void addGotEntry(Symbol &sym) {
 
   // If preemptible, emit a GLOB_DAT relocation.
   if (sym.isPreemptible) {
-    mainPart->relaDyn->addReloc({target->gotRel, in.got.get(), off,
-                                 DynamicReloc::AgainstSymbol, sym, 0, R_ABS});
+    if (config->morelloC64Plt)
+      // As with the Relative relocation there are additional static relocations
+      // needed to initialize the GOT entry. We do not do this for TLS symbols as
+      // the GOT generating TLS relocation is not a capability (offset from TP).
+      addMorelloC64GotRelocation(target->gotRel, &sym, off);
+    else
+      mainPart->relaDyn->addReloc({target->gotRel, in.got.get(), off,
+                                   DynamicReloc::AgainstSymbol, sym, 0, R_ABS});
     return;
   }
 
   // Otherwise, the value is either a link-time constant or the load base
   // plus a constant.
-  if (!config->isPic || isAbsolute(sym))
-    in.got->relocations.push_back({R_ABS, target->symbolicRel, off, 0, &sym});
-  else
-    addRelativeReloc(*in.got, off, sym, 0, R_ABS, target->symbolicRel);
+  if (!config->isPic || isAbsolute(sym)) {
+    if (config->morelloC64Plt)
+      // Even if there is a link time constant we cannot statically initialize
+      // a capability. When dynamic linking the dynamic loader creates the
+      // capability, when static linking the function adds an entry to the
+      // __cap_relocs table.
+      addMorelloC64GotRelocation(target->relativeRel, &sym, off);
+    else
+      in.got->relocations.push_back({R_ABS, target->symbolicRel, off, 0, &sym});
+  } else {
+    if (config->morelloC64Plt)
+      // As well as writing the Relative relocation there are additional
+      // static relocations needed to initialize the GOT entry. Delegate this
+      // to addMorelloC64GotRelocation.
+      addMorelloC64GotRelocation(target->relativeRel, &sym, off);
+    else
+      addRelativeReloc(*in.got, off, sym, 0, R_ABS, target->symbolicRel);
+  }
 }
 
 static void addTpOffsetGotEntry(Symbol &sym) {
   in.got->addEntry(sym);
   uint64_t off = sym.getGotOffset();
   if (!sym.isPreemptible && !config->isPic) {
-    in.got->relocations.push_back({R_TPREL, target->symbolicRel, off, 0, &sym});
+    if (config->morelloC64Plt)
+      // Even if there is a link time constant we cannot statically initialize
+      // a capability. When dynamic linking the dynamic loader creates the
+      // capability, when static linking the function adds an entry to the
+      // __cap_relocs table.
+      addMorelloC64GotRelocation(target->relativeRel, &sym, off);
+    else
+      in.got->relocations.push_back({R_TPREL, target->symbolicRel, off, 0, &sym});
     return;
   }
   mainPart->relaDyn->addAddendOnlyRelocIfNonPreemptible(
@@ -1505,6 +1532,16 @@ template <class ELFT, class RelTy> void RelocationScanner::scanOne(RelTy *&i) {
     in.cheriCapTable->addEntry(sym, expr, &sec, offset);
     // Write out the index into the instruction
     sec.relocations.push_back({expr, type, offset, addend, &sym});
+    return;
+  }
+  if (config->emachine == EM_AARCH64 && !config->morelloC64Plt &&
+      (needsGot(expr) || needsPlt(expr)) &&
+      (type == R_MORELLO_CALL26 || type == R_MORELLO_JUMP26 ||
+       type == R_MORELLO_LD128_GOT_LO12_NC)) {
+    // We require 16-byte GOT entries and a different PLT sequence, we
+    // need --morello-c64-plt to choose these prior to this point.
+    error("Morello PLT/GOT generating relocation " + toString(type) +
+          " requires --morello-c64-plt");
     return;
   }
 

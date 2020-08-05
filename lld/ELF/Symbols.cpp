@@ -131,6 +131,10 @@ SmallVector<std::tuple<std::string, const InputFile *, const Symbol &>, 0>
     elf::whyExtract;
 SmallVector<SymbolAux, 0> elf::symAux;
 
+Defined *ElfSym::newLibBss1;
+Defined *ElfSym::newLibBss2;
+Defined *ElfSym::newLibEnd;
+
 static uint64_t getSymVA(const Symbol &sym, int64_t addend) {
   switch (sym.kind()) {
   case Symbol::DefinedKind: {
@@ -217,6 +221,13 @@ uint64_t Symbol::getVA(int64_t addend) const {
   return getSymVA(*this, addend) + addend;
 }
 
+uint64_t Symbol::getAArch64FuncVA(int64_t addend) const {
+  uint64_t outVA = getSymVA(*this, addend);
+  uint64_t fixup = outVA & 0x1;
+  outVA &= ~1;
+  return (outVA + addend) | fixup;
+}
+
 uint64_t Symbol::getGotVA() const {
   if (gotInIgot)
     return in.igotPlt->getVA() + getGotPltOffset();
@@ -248,7 +259,10 @@ uint64_t Symbol::getPltVA() const {
   // While linking microMIPS code PLT code are always microMIPS
   // code. Set the less-significant bit to track that fact.
   // See detailed comment in the `getSymVA` function.
-  if (config->emachine == EM_MIPS && isMicroMips())
+  // When we are in pure capability mode the address of the Plt is a
+  // capability. At present getSymVA() has this already for non-linker
+  // generated symbols.
+  if (config->emachine == EM_MIPS && isMicroMips() || config->morelloC64Plt)
     outVA |= 1;
   return outVA;
 }

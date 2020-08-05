@@ -203,6 +203,7 @@ void StandardConversionSequence::setAsIdentityConversion() {
   BindsToRvalue = false;
   BindsImplicitObjectArgumentWithoutRefQualifier = false;
   ObjCLifetimeConversionBinding = false;
+  IsCHERIConversion = false;
   CopyConstructor = nullptr;
 }
 

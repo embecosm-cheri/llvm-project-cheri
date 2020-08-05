@@ -867,7 +867,6 @@ static bool shouldAdjustVA(const SectionRef &Section) {
   return false;
 }
 
-
 typedef std::pair<uint64_t, char> MappingSymbolPair;
 static char getMappingSymbolKind(ArrayRef<MappingSymbolPair> MappingSymbols,
                                  uint64_t Address) {
@@ -1115,6 +1114,8 @@ static void disassembleObject(const Target *TheTarget, const ObjectFile *Obj,
   bool PrimaryIsThumb = false;
   if (isArmElf(Obj))
     PrimaryIsThumb = STI->checkFeatures("+thumb-mode");
+  if (isAArch64Elf(Obj))
+    PrimaryIsThumb = STI->checkFeatures("+c64");
 
   std::map<SectionRef, std::vector<RelocationRef>> RelocMap;
   if (InlineRelocs)
@@ -1263,6 +1264,8 @@ static void disassembleObject(const Target *TheTarget, const ObjectFile *Obj,
           MappingSymbols.emplace_back(Address - SectionAddr, 'a');
         if (Name.startswith("$t"))
           MappingSymbols.emplace_back(Address - SectionAddr, 't');
+        if (Name.startswith("$c"))
+          MappingSymbols.emplace_back(Address - SectionAddr, 'c');
       }
     }
 
@@ -1299,7 +1302,7 @@ static void disassembleObject(const Target *TheTarget, const ObjectFile *Obj,
     // Subtract SectionAddr from the r_offset field of a relocation to get
     // the section offset.
     uint64_t RelAdjustment = Obj->isRelocatableObject() ? 0 : SectionAddr;
-    uint64_t Size = 0;
+    uint64_t Size;
     uint64_t Index;
     bool PrintedSection = false;
     std::vector<RelocationRef> Rels = RelocMap[Section];
@@ -1317,6 +1320,7 @@ static void disassembleObject(const Target *TheTarget, const ObjectFile *Obj,
         continue;
 
       uint64_t Start = Symbols[SI].Addr;
+
       if (Start < SectionAddr || StopAddress <= Start)
         continue;
       else
@@ -1839,6 +1843,17 @@ static void disassembleObject(const ObjectFile *Obj, bool InlineRelocs) {
       Features.AddFeature("-thumb-mode");
     else
       Features.AddFeature("+thumb-mode");
+    SecondarySTI.reset(TheTarget->createMCSubtargetInfo(TripleName, MCPU,
+                                                        Features.getString()));
+    SecondaryDisAsm.reset(TheTarget->createMCDisassembler(*SecondarySTI, Ctx));
+  }
+  bool HasCapabilities = STI->checkFeatures("+morello");
+  if (isAArch64Elf(Obj) && HasCapabilities) {
+    if (STI->checkFeatures("+c64")) {
+      Features.AddFeature("-c64");
+    } else {
+      Features.AddFeature("+c64");
+    }
     SecondarySTI.reset(TheTarget->createMCSubtargetInfo(TripleName, MCPU,
                                                         Features.getString()));
     SecondaryDisAsm.reset(TheTarget->createMCDisassembler(*SecondarySTI, Ctx));

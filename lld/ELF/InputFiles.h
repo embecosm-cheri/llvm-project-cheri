@@ -93,6 +93,13 @@ public:
     return symbols;
   }
 
+  // Returns undefined symbols of a shared library.
+  // It is a runtime error to call this function on files of other types.
+  const llvm::DenseSet<StringRef> &getUndefinedSymbols() {
+    assert(fileKind == SharedKind);
+    return Undefs;
+  }
+
   // Get filename to use for linker script processing.
   StringRef getNameForScript() const;
 
@@ -158,6 +165,7 @@ public:
   SmallString<0> archiveName;
   // Cache for toString(). Only toString() should use this member.
   mutable SmallString<0> toStringCache;
+  llvm::DenseSet<StringRef> Undefs;
 
 private:
   // Cache for getNameForScript().

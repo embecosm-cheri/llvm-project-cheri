@@ -1806,8 +1806,14 @@ void Clang::RenderTargetOptions(const llvm::Triple &EffectiveTriple,
   }
 }
 
+static void addMorelloFlags(const ArgList &Args, ArgStringList &CmdArgs,
+                          StringRef ABIName) {
+  CmdArgs.push_back("-mllvm");
+  CmdArgs.push_back(Args.MakeArgString("-cheri-cap-table-abi=pcrel"));
+}
+
 namespace {
-void RenderAArch64ABI(const llvm::Triple &Triple, const ArgList &Args,
+StringRef RenderAArch64ABI(const llvm::Triple &Triple, const ArgList &Args,
                       ArgStringList &CmdArgs) {
   const char *ABIName = nullptr;
   if (Arg *A = Args.getLastArg(options::OPT_mabi_EQ))
@@ -1819,6 +1825,7 @@ void RenderAArch64ABI(const llvm::Triple &Triple, const ArgList &Args,
 
   CmdArgs.push_back("-target-abi");
   CmdArgs.push_back(ABIName);
+  return ABIName;
 }
 }
 
@@ -1835,7 +1842,7 @@ void Clang::AddAArch64TargetArgs(const ArgList &Args,
                     options::OPT_mno_implicit_float, true))
     CmdArgs.push_back("-no-implicit-float");
 
-  RenderAArch64ABI(Triple, Args, CmdArgs);
+  auto ABIName = RenderAArch64ABI(Triple, Args, CmdArgs);
 
   // Forward the -mglobal-merge option for explicit control over the pass.
   if (Arg *A = Args.getLastArg(options::OPT_mglobal_merge,
@@ -1895,6 +1902,8 @@ void Clang::AddAArch64TargetArgs(const ArgList &Args,
       CmdArgs.push_back(Args.MakeArgString(TuneCPU));
     }
   }
+
+  addMorelloFlags(Args, CmdArgs, ABIName);
 }
 
 static void addCheriFlags(const ArgList &Args, ArgStringList &CmdArgs,

@@ -3439,6 +3439,10 @@ def mfix_cmse_cve_2021_35465 : Flag<["-"], "mfix-cmse-cve-2021-35465">,
 def mno_fix_cmse_cve_2021_35465 : Flag<["-"], "mno-fix-cmse-cve-2021-35465">,
   Group<m_arm_Features_Group>,
   HelpText<"Don't work around VLLDM erratum CVE-2021-35465 (ARM only)">;
+
+def m16_cap_regs : Flag<["-"], "m16-cap-regs">, Group<m_aarch64_Features_Group>,
+  HelpText<"Use 16 capability registers (aarch64 only)">;
+
 def mfix_cortex_a53_835769 : Flag<["-"], "mfix-cortex-a53-835769">,
   Group<m_aarch64_Features_Group>,
   HelpText<"Workaround Cortex-A53 erratum 835769 (AArch64 only)">;

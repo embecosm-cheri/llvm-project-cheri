@@ -22,10 +22,16 @@
  * THE SOFTWARE.
  *
 \*===----------------------------------------------------------------------===*/
+#ifndef _CHERI_H
+#define _CHERI_H
 
 #pragma once
 
+#ifdef __aarch64__
+typedef unsigned int cheri_perms_t;
+#else
 typedef unsigned short cheri_perms_t;
+#endif
 typedef unsigned short cheri_flags_t;
 typedef unsigned __INT32_TYPE__ cheri_type_t;
 #ifdef __cplusplus
@@ -107,6 +113,16 @@ void * __capability cheri_unseal(void * __capability __cap,
 }
 
 #ifndef __CHERI_PURE_CAPABILITY__
+
+#ifdef __aarch64__
+static inline
+void *__capability
+cheri_cap_from_pointer_nonnull_zero(const void* __capability  __cap, void * __ptr) {
+  return __IF_CAPS(__builtin_cheri_cap_from_pointer_nonnull_zero(__cap, __ptr),
+                   (void *)__ptr);
+}
+#endif
+
 static inline
 void * __capability
 cheri_cap_from_pointer(const void * __capability __cap, void *__ptr) {
@@ -118,7 +134,7 @@ static inline
 void * cheri_cap_to_pointer(const void * __capability __cap,
                             void * __capability __offset) {
   return __IF_CAPS(__builtin_cheri_cap_to_pointer(__cap, __offset),
-                   (void *)__offset);
+                   (__SIZE_TYPE__)__offset);
 }
 #endif
 
@@ -272,3 +288,7 @@ __cheri_low_bits_clear(uintcap_t ptr, __PTRADDR_TYPE__ bits_mask) {
 #undef __CHERI_SET
 #undef __cheri_bool
 #undef __IF_CAPS
+
+#include <capability_cast.h>
+
+#endif /* _CHERI_H */

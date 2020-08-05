@@ -215,8 +215,8 @@ const char *TargetInfo::getTypeConstantSuffix(IntType T) const {
   case UnsignedLong:     return "UL";
   case UnsignedLongLong: return "ULL";
   // FIXME: We probably should have a suffix for intcap_t literals!
-  case SignedIntCap:
-  case UnsignedIntCap:   return "";
+  case SignedIntCap:     return "L";
+  case UnsignedIntCap:   return "UL";
   }
 }
 
@@ -239,6 +239,26 @@ const char *TargetInfo::getTypeFormatModifier(IntType T) {
   case SignedIntCap:
   case UnsignedIntCap:   return "P";
   }
+}
+
+/// getTypeWidth - Return the width (in bits) of the specified integer type
+/// enum. For example, SignedInt -> getIntWidth().
+unsigned TargetInfo::getTypeRange(IntType T) const {
+  switch (T) {
+  default: llvm_unreachable("not an integer!");
+  case SignedChar:
+  case UnsignedChar:     return getCharWidth();
+  case SignedShort:
+  case UnsignedShort:    return getShortWidth();
+  case SignedInt:
+  case UnsignedInt:      return getIntWidth();
+  case SignedLong:
+  case UnsignedLong:     return getLongWidth();
+  case SignedLongLong:
+  case UnsignedLongLong: return getLongLongWidth();
+  case SignedIntCap:
+  case UnsignedIntCap: return getIntCapRange();
+  };
 }
 
 /// getTypeWidth - Return the width (in bits) of the specified integer type

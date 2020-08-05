@@ -2990,6 +2990,7 @@ Sema::PerformObjectMemberConversion(Expr *From,
   QualType FromRecordType;
   QualType FromType = From->getType();
   bool PointerConversions = false;
+  auto PtrKind = PIK_Integer;
   if (isa<FieldDecl>(Member)) {
     DestRecordType = Context.getCanonicalType(Context.getTypeDeclType(RD));
     auto FromPtrType = FromType->getAs<PointerType>();
@@ -3017,6 +3018,9 @@ Sema::PerformObjectMemberConversion(Expr *From,
     if (FromType->getAs<PointerType>()) {
       FromRecordType = FromType->getPointeeType();
       PointerConversions = true;
+      PtrKind = FromType->isCHERICapabilityType(Context) ?
+                    PIK_Capability :
+                    PIK_Integer;
     } else {
       FromRecordType = FromType;
       DestType = DestRecordType;
@@ -6658,9 +6662,9 @@ ExprResult Sema::BuildCallExpr(Scope *Scope, Expr *Fn, SourceLocation LParenLoc,
         auto ArgAS = ArgPtTy.getAddressSpace();
 
         // Add address space cast if target address spaces are different
-        bool NeedImplicitASC = 
+        bool NeedImplicitASC =
           ParamAS != LangAS::Default &&       // Pointer params in generic AS don't need special handling.
-          ( ArgAS == LangAS::Default  ||      // We do allow implicit conversion from generic AS 
+          ( ArgAS == LangAS::Default  ||      // We do allow implicit conversion from generic AS
                                               // or from specific AS which has target AS matching that of Param.
           getASTContext().getTargetAddressSpace(ArgAS) == getASTContext().getTargetAddressSpace(ParamAS));
         if (!NeedImplicitASC)
@@ -16348,6 +16352,10 @@ static void diagnoseBadVariadicFunctionPointerAssignment(Sema &S,
                                                          QualType SrcType,
                                                          QualType DstType,
                                                          Expr* SrcExpr) {
+  if (!S.Context.getTargetInfo().SupportsCapabilities()) {
+    return;
+  }
+
   const FunctionType *DstFnTy =
       DstType->getPointeeType()->getAs<FunctionType>();
 

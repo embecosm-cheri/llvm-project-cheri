@@ -301,6 +301,9 @@ def err_drv_optimization_remark_pattern : Error<
 def err_drv_optimization_remark_format : Error<
   "unknown remark serializer format: '%0'">;
 def err_drv_no_neon_modifier : Error<"[no]neon is not accepted as modifier, please use [no]simd instead">;
+def err_ambiguous_arch : Error<"Can only use one of +a64c and +c64 in arch string">;
+def err_ambiguous_a64c_arch : Error<"Ambiguous use of +a64c in arch string">;
+def err_ambiguous_c64_arch : Error<"Ambiguous use +c64 in arch string">;
 def err_drv_invalid_omp_target : Error<"OpenMP target is invalid: '%0'">;
 def err_drv_debug_no_new_runtime : Error<"OpenMP target device debugging enabled with incompatible runtime">;
 def err_drv_incompatible_omp_arch : Error<"OpenMP target architecture '%0' pointer size is incompatible with host '%1'">;

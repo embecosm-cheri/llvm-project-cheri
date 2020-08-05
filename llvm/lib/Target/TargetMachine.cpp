@@ -111,6 +111,19 @@ bool TargetMachine::shouldAssumeDSOLocal(const Module &M,
   if (GV->isDSOLocal())
     return true;
 
+  if (isPositionIndependent() && TT.isOSBinFormatELF() && GV &&
+      GV->hasProtectedVisibility())
+    return false;
+
+  // If the IR producer requested that this GV be treated as dso local, obey.
+  if (GV && GV->isDSOLocal())
+    return true;
+
+  // If we are not supossed to use a PLT, we cannot assume that intrinsics are
+  // local since the linker can convert some direct access to access via plt.
+  if (M.getRtLibUseGOT() && !GV)
+    return false;
+
   if (TT.isOSBinFormatCOFF()) {
     // DLLImport explicitly marks the GV as external.
     if (GV->hasDLLImportStorageClass())

@@ -173,6 +173,7 @@ public:
                                            unsigned Minor, unsigned Update,
                                            VersionTuple SDKVersion) override;
   void emitThumbFunc(MCSymbol *Func) override;
+  void EmitCapInit(const MCExpr *Func) override;
 
   void emitAssignment(MCSymbol *Symbol, const MCExpr *Value) override;
   void emitConditionalAssignment(MCSymbol *Symbol,
@@ -670,6 +671,11 @@ void MCAsmStreamer::emitThumbFunc(MCSymbol *Func) {
     OS << '\t';
     Func->print(OS, MAI);
   }
+  EmitEOL();
+}
+
+void MCAsmStreamer::EmitCapInit(const MCExpr *Expr) {
+  OS << "\t.capinit " << *Expr;
   EmitEOL();
 }
 
@@ -1883,8 +1889,16 @@ void MCAsmStreamer::emitCFISections(bool EH, bool Debug) {
 
 void MCAsmStreamer::emitCFIStartProcImpl(MCDwarfFrameInfo &Frame) {
   OS << "\t.cfi_startproc";
-  if (Frame.IsSimple)
+  switch (Frame.Type) {
+  case MCCFIProcType::Normal:
+    break;
+  case MCCFIProcType::Simple:
     OS << " simple";
+    break;
+  case MCCFIProcType::PureCap:
+    OS << " purecap";
+    break;
+  }
   EmitEOL();
 }
 

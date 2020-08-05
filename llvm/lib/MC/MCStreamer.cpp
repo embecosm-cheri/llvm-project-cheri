@@ -93,6 +93,21 @@ void MCTargetStreamer::emitRawBytes(StringRef Data) {
 
 void MCTargetStreamer::emitAssignment(MCSymbol *Symbol, const MCExpr *Value) {}
 
+void MCTargetStreamer::emitCHERICapability(const MCSymbol *Symbol, int64_t Offset,
+                                           unsigned CapSize, SMLoc Loc) {
+  getStreamer().EmitCheriCapability(Symbol, Offset, CapSize, Loc);
+}
+
+void MCTargetStreamer::emitCHERICapability(const MCSymbol *Symbol,
+                                           const MCExpr * Addend,
+                                           unsigned CapSize, SMLoc Loc) {
+  getStreamer().EmitCheriCapability(Symbol, Addend, CapSize, Loc);
+}
+
+void MCTargetStreamer::emitCheriIntcap(int64_t Value, unsigned CapSize, SMLoc Loc) {
+  getStreamer().emitCheriIntcap(Value, CapSize, Loc);
+}
+
 MCStreamer::MCStreamer(MCContext &Ctx)
     : Context(Ctx), CurrentWinFrameInfo(nullptr),
       CurrentProcWinFrameInfoStartIndex(0), UseAssemblerInfoForParsing(false) {
@@ -487,24 +502,25 @@ void MCStreamer::emitConditionalAssignment(MCSymbol *Symbol,
 
 void MCStreamer::emitCFISections(bool EH, bool Debug) {}
 
-void MCStreamer::emitCFIStartProc(bool IsSimple, SMLoc Loc) {
+void MCStreamer::emitCFIStartProc(MCCFIProcType Type, SMLoc Loc) {
   if (hasUnfinishedDwarfFrameInfo())
     return getContext().reportError(
         Loc, "starting new .cfi frame before finishing the previous one");
 
   MCDwarfFrameInfo Frame;
-  Frame.IsSimple = IsSimple;
+  Frame.Type = Type;
   emitCFIStartProcImpl(Frame);
 
   const MCAsmInfo* MAI = Context.getAsmInfo();
   if (MAI) {
-    for (const MCCFIInstruction& Inst : MAI->getInitialFrameState()) {
+    for (const MCCFIInstruction& Inst : MAI->getInitialFrameState(Frame.Type)) {
       if (Inst.getOperation() == MCCFIInstruction::OpDefCfa ||
           Inst.getOperation() == MCCFIInstruction::OpDefCfaRegister ||
           Inst.getOperation() == MCCFIInstruction::OpLLVMDefAspaceCfa) {
         Frame.CurrentCfaRegister = Inst.getRegister();
       }
     }
+    Frame.RAReg = MAI->getInitialRARegister(Type);
   }
 
   DwarfFrameInfos.push_back(Frame);
@@ -1053,10 +1069,10 @@ void MCStreamer::Finish(SMLoc EndLoc) {
 
   if (!FatRelocs.empty()) {
     MCSection *DefaultRelocSection = Context.getELFSection("__cap_relocs",
-        ELF::SHT_PROGBITS, ELF::SHF_ALLOC);
+        ELF::SHT_PROGBITS, ELF::SHF_ALLOC | ELF::SHF_WRITE);
     DefaultRelocSection->setAlignment(llvm::Align(8));
     for (auto &R : FatRelocs) {
-      MCSymbol *Sym;
+      const MCSymbol *Sym;
       const MCExpr *Value;
       MCSection *RelocSection;
       StringRef GroupName;

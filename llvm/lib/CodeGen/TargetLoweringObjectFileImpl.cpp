@@ -408,7 +408,7 @@ void TargetLoweringObjectFileELF::emitPersonalityValue(
   Streamer.emitLabel(Label);
 
   if (DL.isFatPointer(AS)) {
-    Streamer.EmitCheriCapability(Sym, nullptr, Size);
+    Streamer.getTargetStreamer()->emitCHERICapability(Sym, nullptr, Size);
   } else {
     Streamer.emitSymbolValue(Sym, Size);
   }

@@ -1180,6 +1180,87 @@ ByteCommand *ScriptParser::readByteCommand(StringRef tok) {
 static llvm::Optional<uint64_t> parseFlag(StringRef tok) {
   if (llvm::Optional<uint64_t> asInt = parseInt(tok))
     return asInt;
+  return StringSwitch<llvm::Optional<uint64_t>> (tok)
+    .Case("SHF_WRITE", 0x1)
+    .Case("SHF_ALLOC", 0x2)
+    .Case("SHF_EXECINSTR", 0x4)
+    .Case("SHF_MERGE", 0x10)
+    .Case("SHF_STRINGS", 0x20)
+    .Case("SHF_INFO_LINK", 0x40U)
+    .Case("SHF_LINK_ORDER", 0x80U)
+    .Case("SHF_OS_NONCONFORMING", 0x100U)
+    .Case("SHF_GROUP", 0x200U)
+    .Case("SHF_TLS", 0x400U)
+    .Case("SHF_COMPRESSED", 0x800U)
+    .Case("SHF_EXCLUDE", 0x80000000U)
+    .Case("SHF_MASKOS", 0x0ff00000)
+    .Case("SHF_MASKPROC", 0xf0000000)
+    .Case("XCORE_SHF_DP_SECTION", 0x10000000)
+    .Case("XCORE_SHF_CP_SECTION", 0x20000000)
+    .Case("SHF_X86_64_LARGE", 0x10000000)
+    .Case("SHF_HEX_GPREL", 0x10000000)
+    .Case("SHF_MIPS_NODUPES", 0x01000000)
+    .Case("SHF_MIPS_NAMES", 0x02000000)
+    .Case("SHF_MIPS_LOCAL", 0x04000000)
+    .Case("SHF_MIPS_NOSTRIP", 0x08000000)
+    .Case("SHF_MIPS_GPREL", 0x10000000)
+    .Case("SHF_MIPS_MERGE", 0x20000000)
+    .Case("SHF_MIPS_ADDR", 0x40000000)
+    .Case("SHF_MIPS_STRING", 0x80000000)
+    .Case("SHF_ARM_PURECODE", 0x2000000)
+    .Default(None);
+}
+
+// Reads the '(' <flags> ')' list of section flags in
+// INPUT_SECTION_FLAGS '(' <flags> ')' in the
+// following form:
+// <flags> ::= <flag>
+//           | <flags> & flag
+// <flag>  ::= Recognized Flag Name, or Integer value of flag.
+// If the first character of <flag> is a ! then this means without flag,
+// otherwise with flag.
+// Example: SHF_EXECINSTR & !SHF_WRITE means with flag SHF_EXECINSTR and
+// without flag SHF_WRITE.
+std::pair<uint64_t, uint64_t> ScriptParser::readInputSectionFlags() {
+  bool expectName = true;
+  uint64_t withFlags = 0;
+  uint64_t withoutFlags = 0;
+  expect("(");
+  while (!atEOF() && !errorCount()) {
+    if (expectName) {
+      if (consume("&") || consume(")"))
+        setError("expected SectionFlag or !SectionFlag");
+      StringRef tok = unquote(next());
+      bool without = tok.consume_front("!");
+      llvm::Optional<uint64_t> flag = parseFlag(tok);
+      if (!flag)
+        setError("unrecognised flag");
+      else {
+        if (without)
+          withoutFlags |= *flag;
+        else
+          withFlags |= *flag;
+      }
+      expectName = false;
+    } else {
+      if (consume("&")) {
+        expectName = true;
+        continue;
+      }
+      if (consume(")"))
+        break;
+      else {
+        next();
+        setError("expected & or )");
+      }
+    }
+  }
+  return std::make_pair(withFlags, withoutFlags);
+}
+
+static llvm::Optional<uint64_t> parseFlag(StringRef tok) {
+  if (llvm::Optional<uint64_t> asInt = parseInt(tok))
+    return asInt;
 #define CASE_ENT(enum) #enum, ELF::enum
   return StringSwitch<llvm::Optional<uint64_t>>(tok)
       .Case(CASE_ENT(SHF_WRITE))

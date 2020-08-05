@@ -529,9 +529,8 @@ static void createCmpXchgInstFun(IRBuilder<> &Builder, Value *Addr,
 /// Emit IR to implement the given atomicrmw operation on values in registers,
 /// returning the new value.
 static Value *performAtomicOp(AtomicRMWInst::BinOp Op, IRBuilder<> &Builder,
-                              Value *Loaded, Value *Inc) {
+                              Value *Loaded, Value *Inc, Module *M) {
 
-  Module *M = Builder.GetInsertBlock()->getModule();
   const DataLayout &DL = M->getDataLayout();
   if (DL.isFatPointer(Loaded->getType())) {
     switch (Op) {
@@ -557,7 +556,7 @@ static Value *performAtomicOp(AtomicRMWInst::BinOp Op, IRBuilder<> &Builder,
       Value *LoadedInt = Builder.CreateCall(GetAddress, {LoadedI8Cap});
       Value *IncI8Cap = Builder.CreateBitCast(Inc, I8CapTy);
       Value *IncInt = Builder.CreateCall(GetAddress, {IncI8Cap});
-      Value *NewInt = performAtomicOp(Op, Builder, LoadedInt, IncInt);
+      Value *NewInt = performAtomicOp(Op, Builder, LoadedInt, IncInt, M);
       Value *NewI8Cap = Builder.CreateCall(SetAddress, {LoadedI8Cap, NewInt});
       return Builder.CreateBitCast(NewI8Cap, Loaded->getType());
     }
@@ -575,6 +574,60 @@ static Value *performAtomicOp(AtomicRMWInst::BinOp Op, IRBuilder<> &Builder,
   }
 
   Value *NewVal;
+
+  unsigned AS = 0;
+  bool IsFatLoaded = false;
+  if (PointerType *PT = dyn_cast<PointerType>(Loaded->getType())) {
+    AS = PT->getAddressSpace();
+    IsFatLoaded = DL.isFatPointer(AS);
+  }
+
+  bool IsFatInc = false;
+  if (PointerType *PInc = dyn_cast<PointerType>(Inc->getType()))
+    IsFatInc = DL.isFatPointer(PInc->getAddressSpace());
+
+  bool SelectOp = false;
+  switch (Op) {
+  // For comparison operations envolving capabilities, we
+  // just use the values of the capabilities.
+  case AtomicRMWInst::Xchg:
+  case AtomicRMWInst::Max:
+  case AtomicRMWInst::Min:
+  case AtomicRMWInst::UMax:
+  case AtomicRMWInst::UMin:
+    SelectOp = true;
+    break;
+  default:
+   break;
+  }
+
+  if (IsFatLoaded && !(SelectOp && IsFatInc)) {
+    IntegerType *Char = IntegerType::get(M->getContext(), 8);
+    PointerType *Void = PointerType::get(Char, AS);
+    Type *IntPtrTy = Type::getIntNTy(M->getContext(),
+                                     DL.getIndexSizeInBits(200));
+
+    Intrinsic::ID CGetPtrID = Intrinsic::cheri_cap_address_get;
+    Function *CapGetPtr = Intrinsic::getDeclaration(M, CGetPtrID, IntPtrTy);
+
+    Value *ByteLoaded = Builder.CreateBitCast(Loaded, Void);
+    Value *ByteInc = Builder.CreateBitCast(Inc, Void);
+
+    Value *IntLoaded = Builder.CreateCall(CapGetPtr, {ByteLoaded});
+    Value *IntInc = Builder.CreateCall(CapGetPtr, {ByteInc});
+
+    Value *Result = performAtomicOp(Op, Builder, IntLoaded, IntInc, M);
+    Intrinsic::ID ID = Intrinsic::cheri_cap_address_set;
+    Function *CapFromPtr = Intrinsic::getDeclaration(M, ID, IntPtrTy);
+
+    PointerType *Original = cast<PointerType>(Loaded->getType());
+
+    // Cast to void * to match the intrinsics signature.
+    Value *LdNew = Builder.CreatePointerBitCastOrAddrSpaceCast(Loaded, Void);
+
+    Result = Builder.CreateCall(CapFromPtr, {LdNew, Result});
+    return Builder.CreatePointerBitCastOrAddrSpaceCast(Result, Original);
+  }
   switch (Op) {
   case AtomicRMWInst::Xchg:
     return Inc;
@@ -626,7 +679,7 @@ bool AtomicExpand::tryExpandAtomicRMW(AtomicRMWInst *AI) {
     } else {
       auto PerformOp = [&](IRBuilder<> &Builder, Value *Loaded) {
         return performAtomicOp(AI->getOperation(), Builder, Loaded,
-                               AI->getValOperand());
+                               AI->getValOperand(), AI->getModule());
       };
       expandAtomicOpToLLSC(AI, AI->getType(), AI->getPointerOperand(),
                            AI->getAlign(), AI->getOrdering(), PerformOp);
@@ -812,7 +865,8 @@ static Value *insertMaskedValue(IRBuilder<> &Builder, Value *WideWord,
 static Value *performMaskedAtomicOp(AtomicRMWInst::BinOp Op,
                                     IRBuilder<> &Builder, Value *Loaded,
                                     Value *Shifted_Inc, Value *Inc,
-                                    const PartwordMaskValues &PMV) {
+                                    const PartwordMaskValues &PMV,
+                                    Module *M) {
   // TODO: update to use
   // https://graphics.stanford.edu/~seander/bithacks.html#MaskedMerge in order
   // to merge bits from two values without requiring PMV.Inv_Mask.
@@ -830,7 +884,7 @@ static Value *performMaskedAtomicOp(AtomicRMWInst::BinOp Op,
   case AtomicRMWInst::Sub:
   case AtomicRMWInst::Nand: {
     // The other arithmetic ops need to be masked into place.
-    Value *NewVal = performAtomicOp(Op, Builder, Loaded, Shifted_Inc);
+    Value *NewVal = performAtomicOp(Op, Builder, Loaded, Shifted_Inc, M);
     Value *NewVal_Masked = Builder.CreateAnd(NewVal, PMV.Mask);
     Value *Loaded_MaskOut = Builder.CreateAnd(Loaded, PMV.Inv_Mask);
     Value *FinalVal = Builder.CreateOr(Loaded_MaskOut, NewVal_Masked);
@@ -844,7 +898,7 @@ static Value *performMaskedAtomicOp(AtomicRMWInst::BinOp Op,
     // truncate down to the original size, and expand out again after
     // doing the operation.
     Value *Loaded_Extract = extractMaskedValue(Builder, Loaded, PMV);
-    Value *NewVal = performAtomicOp(Op, Builder, Loaded_Extract, Inc);
+    Value *NewVal = performAtomicOp(Op, Builder, Loaded_Extract, Inc, M);
     Value *FinalVal = insertMaskedValue(Builder, Loaded, NewVal, PMV);
     return FinalVal;
   }
@@ -877,7 +931,8 @@ void AtomicExpand::expandPartwordAtomicRMW(
 
   auto PerformPartwordOp = [&](IRBuilder<> &Builder, Value *Loaded) {
     return performMaskedAtomicOp(AI->getOperation(), Builder, Loaded,
-                                 ValOperand_Shifted, AI->getValOperand(), PMV);
+                                 ValOperand_Shifted, AI->getValOperand(), PMV,
+                                 AI->getModule());
   };
 
   Value *OldResult;
@@ -1582,7 +1637,7 @@ bool llvm::expandAtomicRMWToCmpXchg(AtomicRMWInst *AI,
       AI->getOrdering(), AI->getSyncScopeID(),
       [&](IRBuilder<> &Builder, Value *Loaded) {
         return performAtomicOp(AI->getOperation(), Builder, Loaded,
-                               AI->getValOperand());
+                               AI->getValOperand(), AI->getModule());
       },
       CreateCmpXchg);
 

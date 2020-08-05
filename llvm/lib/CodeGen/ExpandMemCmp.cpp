@@ -282,10 +282,11 @@ MemCmpExpansion::LoadPair MemCmpExpansion::getLoadPair(Type *LoadSizeType,
   Value *RhsSource = CI->getArgOperand(1);
   Align LhsAlign = LhsSource->getPointerAlignment(DL);
   Align RhsAlign = RhsSource->getPointerAlignment(DL);
+  unsigned AS = cast<PointerType>(LhsSource->getType())->getAddressSpace();
   if (OffsetBytes > 0) {
     auto *ByteType = Type::getInt8Ty(CI->getContext());
     LhsSource = Builder.CreateConstGEP1_64(
-        ByteType, Builder.CreateBitCast(LhsSource, ByteType->getPointerTo()),
+        ByteType, Builder.CreateBitCast(LhsSource, ByteType->getPointerTo(AS)),
         OffsetBytes);
     RhsSource = Builder.CreateConstGEP1_64(
         ByteType, Builder.CreateBitCast(RhsSource, ByteType->getPointerTo()),

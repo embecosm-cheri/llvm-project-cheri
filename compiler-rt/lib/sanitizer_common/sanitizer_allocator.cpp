@@ -24,7 +24,7 @@ namespace __sanitizer {
 // Default allocator names.
 const char *PrimaryAllocatorName = "SizeClassAllocator";
 const char *SecondaryAllocatorName = "LargeMmapAllocator";
-static constexpr usize InternalDefaultAlign = Max((usize)8, sizeof(void*));
+static constexpr usize InternalDefaultAlign = Max((usize)8, (usize)sizeof(void*));
 
 static ALIGNED(64) char internal_alloc_placeholder[sizeof(InternalAllocator)];
 static atomic_uint8_t internal_allocator_initialized;

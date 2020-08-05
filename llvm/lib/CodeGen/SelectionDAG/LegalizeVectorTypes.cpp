@@ -151,6 +151,11 @@ void DAGTypeLegalizer::ScalarizeVectorResult(SDNode *N, unsigned ResNo) {
   case ISD::ROTR:
     R = ScalarizeVecRes_BinOp(N);
     break;
+
+  case ISD::PTRADD:
+    R = ScalarizeVecRes_PTRADD(N);
+    break;
+
   case ISD::FMA:
   case ISD::FSHL:
   case ISD::FSHR:
@@ -196,6 +201,25 @@ void DAGTypeLegalizer::ScalarizeVectorResult(SDNode *N, unsigned ResNo) {
 SDValue DAGTypeLegalizer::ScalarizeVecRes_BinOp(SDNode *N) {
   SDValue LHS = GetScalarizedVector(N->getOperand(0));
   SDValue RHS = GetScalarizedVector(N->getOperand(1));
+  return DAG.getNode(N->getOpcode(), SDLoc(N),
+                     LHS.getValueType(), LHS, RHS, N->getFlags());
+}
+
+SDValue DAGTypeLegalizer::ScalarizeVecRes_PTRADD(SDNode *N) {
+  SDValue LHS = GetScalarizedVector(N->getOperand(0));
+  SDValue RHS;
+  // Since PTRADD is asymmetric RHS might have not been scalarized.
+  // Do an extract element on RHS so that we can scalarize the PTRADD.
+  if (ScalarizedVectors.find(getTableId(N->getOperand(1))) ==
+      ScalarizedVectors.end()) {
+    SDLoc dl(N);
+    SDValue Idx = DAG.getConstant(0, dl, TLI.getVectorIdxTy(DAG.getDataLayout()));
+    RHS = DAG.getNode(ISD::EXTRACT_VECTOR_ELT, SDLoc(N),
+                      N->getOperand(1).getValueType().getVectorElementType(),
+                      N->getOperand(1), Idx);
+  } else {
+    RHS = GetScalarizedVector(N->getOperand(1));
+  }
   return DAG.getNode(N->getOpcode(), SDLoc(N),
                      LHS.getValueType(), LHS, RHS, N->getFlags());
 }
@@ -1053,6 +1077,11 @@ void DAGTypeLegalizer::SplitVectorResult(SDNode *N, unsigned ResNo) {
   case ISD::ROTR:
     SplitVecRes_BinOp(N, Lo, Hi);
     break;
+
+  case ISD::PTRADD:
+    SplitVecRes_PTRADD(N, Lo, Hi);
+    break;
+
   case ISD::FMA:
   case ISD::FSHL:
   case ISD::FSHR:
@@ -1164,6 +1193,36 @@ void DAGTypeLegalizer::SplitVecRes_BinOp(SDNode *N, SDValue &Lo, SDValue &Hi) {
   Hi = DAG.getNode(Opcode, dl, LHSHi.getValueType(),
                    {LHSHi, RHSHi, MaskHi, EVLHi}, Flags);
 }
+
+void DAGTypeLegalizer::SplitVecRes_PTRADD(SDNode *N, SDValue &Lo,
+                                         SDValue &Hi) {
+  SDLoc dl(N);
+  SDValue LHSLo, LHSHi;
+  GetSplitVector(N->getOperand(0), LHSLo, LHSHi);
+  SDValue RHSLo, RHSHi;
+
+  // PTRADD is asymmetric so RHS might not have been split at this point.
+  // If so, we need to create the operands.
+  if (SplitVectors.find(getTableId(N->getOperand(1))) == SplitVectors.end()) {
+    EVT LoVT, HiVT;
+    std::tie(LoVT, HiVT) = DAG.GetSplitDestVTs(N->getOperand(1).getValueType());
+    SDValue IdxLo = DAG.getConstant(0, dl, TLI.getVectorIdxTy(DAG.getDataLayout()));
+    SDValue IdxHi = DAG.getConstant(LoVT.getVectorNumElements(), dl,
+                                    TLI.getVectorIdxTy(DAG.getDataLayout()));
+
+    RHSLo = DAG.getNode(ISD::EXTRACT_SUBVECTOR, dl, LoVT, N->getOperand(1), IdxLo);
+    RHSHi = DAG.getNode(ISD::EXTRACT_SUBVECTOR, dl, HiVT, N->getOperand(1), IdxHi);
+  } else {
+    GetSplitVector(N->getOperand(1), RHSLo, RHSHi);
+  }
+
+
+  const SDNodeFlags Flags = N->getFlags();
+  unsigned Opcode = N->getOpcode();
+  Lo = DAG.getNode(Opcode, dl, LHSLo.getValueType(), LHSLo, RHSLo, Flags);
+  Hi = DAG.getNode(Opcode, dl, LHSHi.getValueType(), LHSHi, RHSHi, Flags);
+}
+
 
 void DAGTypeLegalizer::SplitVecRes_TernaryOp(SDNode *N, SDValue &Lo,
                                              SDValue &Hi) {

@@ -5321,6 +5321,13 @@ Instruction *InstCombinerImpl::foldICmpUsingKnownBits(ICmpInst &I) {
   //
   // For now just skip this optimization if one of the icmp operands is a CHERI
   // capability that might have the tag bit set.
+  if (Ty->isVectorTy() && isCheriPointer(Ty->getScalarType(), &DL)) {
+    // Skip the vector case for now. We either need a address_get that can act
+    // on a vector or to extract each element, or to do an address_get on each
+    // and build a new vector with the addresses.
+    return nullptr;
+  }
+
   if (isCheriPointer(Ty, &DL)) {
     if (!cheri::isKnownUntaggedCapability(I.getOperand(0), &DL) ||
         !cheri::isKnownUntaggedCapability(I.getOperand(1), &DL)) {

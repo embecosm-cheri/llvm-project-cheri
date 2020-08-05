@@ -1652,6 +1652,8 @@ public:
     return getPointerTy(DL, AS).getSizeInBits();
   }
 
+  virtual bool useDefaultAddrSpaceForJT() const { return false; }
+
   /// Get maximum # of store operations permitted for llvm.memset
   ///
   /// This function returns the maximum number of store operations permitted

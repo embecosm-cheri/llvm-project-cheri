@@ -37,8 +37,18 @@ public:
   /// Callback used to implement the .note.gnu.property section.
   void emitNoteSection(unsigned Flags);
 
+  /// Emit a capability initialization relocation and the data for the capability.
+  void emitCHERICapability(const MCSymbol *Value, int64_t Addend,
+                           unsigned CapSize, SMLoc Loc) override;
+  void emitCHERICapability(const MCSymbol *Value, const MCExpr *Addend,
+                           unsigned CapSize, SMLoc Loc) override;
+  void emitCHERICapability(const MCExpr *Value, unsigned CapSize,
+                           SMLoc Loc) override;
+  void emitCheriIntcap(int64_t Value, unsigned CapSize,
+                       SMLoc Loc) override;
+
   /// Callback used to implement the .inst directive.
-  virtual void emitInst(uint32_t Inst);
+  virtual void emitInst(uint32_t Inst, const MCSubtargetInfo &STI);
 
   /// Callback used to implement the .variant_pcs directive.
   virtual void emitDirectiveVariantPCS(MCSymbol *Symbol) {};
@@ -68,6 +78,9 @@ public:
   virtual void emitARM64WinCFIContext() {}
   virtual void emitARM64WinCFIClearUnwoundToCall() {}
 
+  static const std::pair<uint64_t, uint64_t>
+  getTargetSizeAlignReq(uint64_t Size);
+
 private:
   std::unique_ptr<AssemblerConstantPools> ConstantPools;
 };
@@ -76,11 +89,13 @@ class AArch64TargetELFStreamer : public AArch64TargetStreamer {
 private:
   AArch64ELFStreamer &getStreamer();
 
-  void emitInst(uint32_t Inst) override;
+  void emitInst(uint32_t Inst, const MCSubtargetInfo &STI) override;
+  void emitLabel(MCSymbol *Symbol) override;
   void emitDirectiveVariantPCS(MCSymbol *Symbol) override;
 
 public:
-  AArch64TargetELFStreamer(MCStreamer &S) : AArch64TargetStreamer(S) {}
+  AArch64TargetELFStreamer(MCStreamer &S, const MCSubtargetInfo &STI) :
+    AArch64TargetStreamer(S) {}
 };
 
 class AArch64TargetWinCOFFStreamer : public llvm::AArch64TargetStreamer {

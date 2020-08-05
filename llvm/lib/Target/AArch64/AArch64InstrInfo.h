@@ -270,6 +270,9 @@ public:
   ArrayRef<std::pair<MachineMemOperand::Flags, const char *>>
   getSerializableMachineMemOperandTargetFlags() const override;
 
+  bool supportsCapabilities() const override;
+  unsigned getCapabilitiesAddressSpace() const override;
+
   bool isFunctionSafeToOutlineFrom(MachineFunction &MF,
                                    bool OutlineFromLinkOnceODRs) const override;
   outliner::OutlinedFunction getOutliningCandidateInfo(

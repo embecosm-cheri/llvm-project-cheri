@@ -932,6 +932,9 @@ std::string TreePredicateFn::getPredCode() const {
     if (ScalarMemoryVT)
       PrintFatalError(getOrigPatFragRecord()->getRecord()->getLoc(),
                       "ScalarMemoryVT requires IsLoad or IsStore");
+    if (isCapability())
+      PrintFatalError(getOrigPatFragRecord()->getRecord()->getLoc(),
+                      "Capability requires IsLoad or IsStore");
   }
 
   if (isLoad() + isStore() + isAtomic() > 1)
@@ -1127,6 +1130,13 @@ std::string TreePredicateFn::getPredCode() const {
                ">(N)->getMemoryVT().getScalarType() != MVT::" +
                ScalarMemoryVT->getName() + ") return false;\n")
                   .str();
+
+    if (isCapability())
+      Code +=
+            " if (!accessesMemoryViaCapability(N)) return false;\n";
+    else
+      Code +=
+            " if (accessesMemoryViaCapability(N)) return false;\n";
   }
 
   std::string PredicateCode =
@@ -1189,6 +1199,9 @@ bool TreePredicateFn::isNonExtLoad() const {
 }
 bool TreePredicateFn::isAnyExtLoad() const {
   return isPredefinedPredicateEqualTo("IsAnyExtLoad", true);
+}
+bool TreePredicateFn::isCapability() const {
+  return isPredefinedPredicateEqualTo("IsCapability", true);
 }
 bool TreePredicateFn::isSignExtLoad() const {
   return isPredefinedPredicateEqualTo("IsSignExtLoad", true);
@@ -1520,6 +1533,10 @@ SDTypeConstraint::SDTypeConstraint(Record *R, const CodeGenHwModes &CGH) {
         PrintFatalError(R->getLoc(), "Cannot use 'Void' as type to SDTCisVT");
   } else if (R->isSubClassOf("SDTCisPtrTy")) {
     ConstraintType = SDTCisPtrTy;
+  } else if (R->isSubClassOf("SDTCisAnyPtrTy")) {
+    ConstraintType = SDTCisAnyPtrTy;
+  } else if (R->isSubClassOf("SDTCisFatPtrTy")) {
+    ConstraintType = SDTCisFatPtrTy;
   } else if (R->isSubClassOf("SDTCisInt")) {
     ConstraintType = SDTCisInt;
   } else if (R->isSubClassOf("SDTCisFP")) {
@@ -1612,8 +1629,8 @@ bool SDTypeConstraint::ApplyTypeConstraint(TreePatternNode *N,
   case SDTCisVT:
     // Operand must be a particular type.
     return NodeToApply->UpdateNodeType(ResNo, VVT, TP);
-  case SDTCisPtrTy: {
-    // Operand must be a pointer type.
+  case SDTCisAnyPtrTy: {
+    // Operand must be a pointer-like type.
     // If we support fat pointers, then this narrows it down to two types.
     if (TP.getDAGPatterns().enableFatPointers()) {
       // FIXME: We should be able to do the type inference correctly from the
@@ -1624,6 +1641,17 @@ bool SDTypeConstraint::ApplyTypeConstraint(TreePatternNode *N,
                                           ValueTypeByHwMode(MVT::iPTR)});
       return NodeToApply->UpdateNodeType(ResNo, PtrTys, TP);
     }
+    return NodeToApply->UpdateNodeType(ResNo, MVT::iPTR, TP);
+  }
+  case SDTCisFatPtrTy: {
+    // Operand must be a fat pointer type.
+    return NodeToApply->UpdateNodeType(ResNo, MVT(MVT::iFATPTRAny), TP);
+  }
+  case SDTCisPtrTy: {
+    // FIXME: ugly hack to keep the Mips backend building...
+    if (TP.getDAGPatterns().enableFatPointers())
+      return false;
+    // Operand must be a pointer type.
     return NodeToApply->UpdateNodeType(ResNo, MVT::iPTR, TP);
   }
   case SDTCisInt:
@@ -1839,6 +1867,8 @@ MVT::SimpleValueType SDNodeInfo::getKnownType(unsigned ResNo) const {
       break;
     case SDTypeConstraint::SDTCisPtrTy:
       return MVT::iPTR;
+    case SDTypeConstraint::SDTCisFatPtrTy:
+      return MVT::iFATPTRAny;
     }
   }
   return MVT::Other;

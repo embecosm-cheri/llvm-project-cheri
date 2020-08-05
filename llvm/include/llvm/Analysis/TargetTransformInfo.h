@@ -425,6 +425,7 @@ public:
     unsigned ImmCost;
     unsigned SetupCost;
     unsigned ScaleCost;
+    unsigned NumFatRegs;
   };
 
   /// Parameters that control the generic loop unrolling transformation.
@@ -1168,6 +1169,10 @@ public:
       Align Alignment, TTI::TargetCostKind CostKind = TTI::TCK_RecipThroughput,
       const Instruction *I = nullptr) const;
 
+  /// \return The implementation-defined values when taking the null capability
+  ///        as input for some intrinsics like get_length or get_type.
+  int getCheriIntrinsicNullCaseValue() const;
+
   /// \return The cost of the interleaved memory operation.
   /// \p Opcode is the memory operation code
   /// \p VecTy is the vector type of the interleaved access.
@@ -1703,7 +1708,7 @@ public:
                          bool VariableMask, Align Alignment,
                          TTI::TargetCostKind CostKind,
                          const Instruction *I = nullptr) = 0;
-
+  virtual int getCheriIntrinsicNullCaseValue() = 0;
   virtual InstructionCost getInterleavedMemoryOpCost(
       unsigned Opcode, Type *VecTy, unsigned Factor, ArrayRef<unsigned> Indices,
       Align Alignment, unsigned AddressSpace, TTI::TargetCostKind CostKind,
@@ -2242,6 +2247,9 @@ public:
                          const Instruction *I = nullptr) override {
     return Impl.getGatherScatterOpCost(Opcode, DataTy, Ptr, VariableMask,
                                        Alignment, CostKind, I);
+  }
+  int getCheriIntrinsicNullCaseValue() override {
+    return Impl.getCheriIntrinsicNullCaseValue();
   }
   InstructionCost getInterleavedMemoryOpCost(
       unsigned Opcode, Type *VecTy, unsigned Factor, ArrayRef<unsigned> Indices,

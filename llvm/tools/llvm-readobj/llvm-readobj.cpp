@@ -398,6 +398,9 @@ static void dumpObject(ObjectFile &Obj, ScopedPrinter &Writer,
       Dumper->printDependentLibs();
     if (opts::ELFLinkerOptions)
       Dumper->printELFLinkerOptions();
+    if (Obj.getArch() == llvm::Triple::aarch64)
+      if (opts::CheriCapRelocs)
+        Dumper->printCheriCapRelocs();
     if (opts::ArchSpecificInfo)
       Dumper->printArchSpecificInfo();
     if (opts::CheriCapRelocs)

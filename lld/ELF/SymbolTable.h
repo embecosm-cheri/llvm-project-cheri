@@ -41,6 +41,7 @@ public:
 
   Symbol *addSymbol(const Symbol &newSym);
 
+  template <class ELFT> void scanShlibUndefined();
   void scanVersionScript();
 
   Symbol *find(StringRef name);
