@@ -330,9 +330,11 @@ Value *LibCallSimplifier::emitStrLenMemCpy(Value *Src, Value *Dst, uint64_t Len,
 
   // We have enough information to now generate the memcpy call to do the
   // concatenation for us.  Make a memcpy to copy the nul byte with align = 1.
-  B.CreateMemCpy(
-      CpyDst, Align(1), Src, Align(1),
-      ConstantInt::get(DL.getIntPtrType(Src->getContext()), Len + 1));
+  B.CreateMemCpy(CpyDst, Align(1), Src, Align(1),
+                 ConstantInt::get(
+                     DL.getIntPtrType(Src->getContext(),
+                                      Src->getType()->getPointerAddressSpace()),
+                     Len + 1));
   return Dst;
 }
 
@@ -430,7 +432,8 @@ Value *LibCallSimplifier::optimizeStrChr(CallInst *CI, IRBuilderBase &B) {
     return copyFlags(
         *CI,
         emitMemChr(SrcStr, CharVal, // include nul.
-                   ConstantInt::get(DL.getIntPtrType(CI->getContext()), Len), B,
+                   ConstantInt::get(DL.getIntPtrType(CI->getContext(),
+                             SrcStr->getType()->getPointerAddressSpace()), Len), B,
                    DL, TLI));
   }
 
@@ -439,6 +442,8 @@ Value *LibCallSimplifier::optimizeStrChr(CallInst *CI, IRBuilderBase &B) {
     if (isOnlyUsedInEqualityComparison(CI, NullPtr))
       // Pre-empt the transformation to strlen below and fold
       // strchr(A, '\0') == null to false.
+      // FIXME: Are we okay to rely on this being folded to false on CHERI to
+      // avoid invalid creation of pointers?
       return B.CreateIntToPtr(B.getTrue(), CI->getType());
   }
 
@@ -481,7 +486,7 @@ Value *LibCallSimplifier::optimizeStrRChr(CallInst *CI, IRBuilderBase &B) {
   // Try to expand strrchr to the memrchr nonstandard extension if it's
   // available, or simply fail otherwise.
   uint64_t NBytes = Str.size() + 1;   // Include the terminating nul.
-  Type *IntPtrType = DL.getIntPtrType(CI->getContext());
+  Type *IntPtrType = DL.getIntPtrType(CI->getContext(), SrcStr->getType()->getPointerAddressSpace());
   Value *Size = ConstantInt::get(IntPtrType, NBytes);
   return copyFlags(*CI, emitMemRChr(SrcStr, CharVal, Size, B, DL, TLI));
 }
@@ -518,7 +523,8 @@ Value *LibCallSimplifier::optimizeStrCmp(CallInst *CI, IRBuilderBase &B) {
   if (Len1 && Len2) {
     return copyFlags(
         *CI, emitMemCmp(Str1P, Str2P,
-                        ConstantInt::get(DL.getIntPtrType(CI->getContext()),
+                        ConstantInt::get(DL.getIntPtrType(CI->getContext(),
+                                                          Str1P->getType()->getPointerAddressSpace()),
                                          std::min(Len1, Len2)),
                         B, DL, TLI));
   }
@@ -529,14 +535,14 @@ Value *LibCallSimplifier::optimizeStrCmp(CallInst *CI, IRBuilderBase &B) {
       return copyFlags(
           *CI,
           emitMemCmp(Str1P, Str2P,
-                     ConstantInt::get(DL.getIntPtrType(CI->getContext()), Len2),
+                     ConstantInt::get(DL.getIntPtrType(CI->getContext(), Str1P->getType()->getPointerAddressSpace()), Len2),
                      B, DL, TLI));
   } else if (HasStr1 && !HasStr2) {
     if (canTransformToMemCmp(CI, Str2P, Len1, DL))
       return copyFlags(
           *CI,
           emitMemCmp(Str1P, Str2P,
-                     ConstantInt::get(DL.getIntPtrType(CI->getContext()), Len1),
+                     ConstantInt::get(DL.getIntPtrType(CI->getContext(), Str1P->getType()->getPointerAddressSpace()), Len1),
                      B, DL, TLI));
   }
 
@@ -606,16 +612,15 @@ Value *LibCallSimplifier::optimizeStrNCmp(CallInst *CI, IRBuilderBase &B) {
       return copyFlags(
           *CI,
           emitMemCmp(Str1P, Str2P,
-                     ConstantInt::get(DL.getIntPtrType(CI->getContext()), Len2),
+                     ConstantInt::get(DL.getIntPtrType(CI->getContext(), Str1P->getType()->getPointerAddressSpace()), Len2),
                      B, DL, TLI));
   } else if (HasStr1 && !HasStr2) {
     Len1 = std::min(Len1, Length);
     if (canTransformToMemCmp(CI, Str2P, Len1, DL))
-      return copyFlags(
-          *CI,
-          emitMemCmp(Str1P, Str2P,
-                     ConstantInt::get(DL.getIntPtrType(CI->getContext()), Len1),
-                     B, DL, TLI));
+      return emitMemCmp(
+          Str1P, Str2P,
+          ConstantInt::get(DL.getIntPtrType(CI->getContext(), Str1P->getType()->getPointerAddressSpace()), Len1), B, DL,
+          TLI);
   }
 
   return nullptr;
@@ -651,7 +656,7 @@ Value *LibCallSimplifier::optimizeStrCpy(CallInst *CI, IRBuilderBase &B) {
   // copy for us.  Make a memcpy to copy the nul byte with align = 1.
   CallInst *NewCI =
       B.CreateMemCpy(Dst, Align(1), Src, Align(1),
-                     ConstantInt::get(DL.getIntPtrType(CI->getContext()), Len));
+                     ConstantInt::get(DL.getIndexType(Dst->getType()), Len));
   NewCI->setAttributes(CI->getAttributes());
   NewCI->removeRetAttrs(AttributeFuncs::typeIncompatible(NewCI->getType()));
   copyFlags(*CI, NewCI);
@@ -1360,12 +1365,14 @@ static Value *optimizeMemCmpConstantSize(CallInst *CI, Value *LHS, Value *RHS,
     // First, see if we can fold either argument to a constant.
     Value *LHSV = nullptr;
     if (auto *LHSC = dyn_cast<Constant>(LHS)) {
-      LHSC = ConstantExpr::getBitCast(LHSC, IntType->getPointerTo());
+      unsigned AS = LHSC->getType()->getPointerAddressSpace();
+      LHSC = ConstantExpr::getBitCast(LHSC, IntType->getPointerTo(AS));
       LHSV = ConstantFoldLoadFromConstPtr(LHSC, IntType, DL);
     }
     Value *RHSV = nullptr;
     if (auto *RHSC = dyn_cast<Constant>(RHS)) {
-      RHSC = ConstantExpr::getBitCast(RHSC, IntType->getPointerTo());
+      unsigned AS = RHSC->getType()->getPointerAddressSpace();
+      RHSC = ConstantExpr::getBitCast(RHSC, IntType->getPointerTo(AS));
       RHSV = ConstantFoldLoadFromConstPtr(RHSC, IntType, DL);
     }
 
@@ -2731,7 +2738,10 @@ Value *LibCallSimplifier::optimizePrintFString(CallInst *CI, IRBuilderBase &B) {
     // Create a string literal with no \n on it.  We expect the constant merge
     // pass to be run after this pass, to merge duplicate strings.
     FormatStr = FormatStr.drop_back();
-    Value *GV = B.CreateGlobalString(FormatStr, "str");
+    Type *Ty = CI->getArgOperand(0)->getType();
+    Value *GV = B.CreateGlobalString(FormatStr, "str",
+                                     Ty->getPointerAddressSpace());
+    GV = B.CreatePointerBitCastOrAddrSpaceCast(GV, Ty);
     return copyFlags(*CI, emitPutS(GV, B, TLI));
   }
 
@@ -2803,8 +2813,11 @@ Value *LibCallSimplifier::optimizeSPrintFString(CallInst *CI,
     // sprintf(str, fmt) -> llvm.memcpy(align 1 str, align 1 fmt, strlen(fmt)+1)
     B.CreateMemCpy(
         Dest, Align(1), CI->getArgOperand(1), Align(1),
-        ConstantInt::get(DL.getIntPtrType(CI->getContext()),
-                         FormatStr.size() + 1)); // Copy the null byte.
+        ConstantInt::get(
+            DL.getIntPtrType(
+                CI->getContext(),
+                CI->getArgOperand(0)->getType()->getPointerAddressSpace()),
+            FormatStr.size() + 1)); // Copy the null byte.
     return ConstantInt::get(CI->getType(), FormatStr.size());
   }
 
@@ -2839,16 +2852,14 @@ Value *LibCallSimplifier::optimizeSPrintFString(CallInst *CI,
 
     uint64_t SrcLen = GetStringLength(CI->getArgOperand(2));
     if (SrcLen) {
-      B.CreateMemCpy(
-          Dest, Align(1), CI->getArgOperand(2), Align(1),
-          ConstantInt::get(DL.getIntPtrType(CI->getContext()), SrcLen));
+      B.CreateMemCpy(Dest, Align(1), CI->getArgOperand(2), Align(1), SrcLen);
       // Returns total number of characters written without null-character.
       return ConstantInt::get(CI->getType(), SrcLen - 1);
     } else if (Value *V = emitStpCpy(Dest, CI->getArgOperand(2), B, TLI)) {
       // sprintf(dest, "%s", str) -> stpcpy(dest, str) - dest
       // Handle mismatched pointer types (goes away with typeless pointers?).
-      V = B.CreatePointerCast(V, B.getInt8PtrTy());
-      Dest = B.CreatePointerCast(Dest, B.getInt8PtrTy());
+      V = B.CreatePointerCast(V, B.getInt8PtrTy(V->getType()->getPointerAddressSpace()));
+      Dest = B.CreatePointerCast(Dest, B.getInt8PtrTy(Dest->getType()->getPointerAddressSpace()));
       Value *PtrDiff = B.CreatePtrDiff(B.getInt8Ty(), V, Dest);
       return B.CreateIntCast(PtrDiff, CI->getType(), false);
     }
@@ -2939,7 +2950,7 @@ Value *LibCallSimplifier::optimizeSnPrintFString(CallInst *CI,
         *CI,
         B.CreateMemCpy(
             CI->getArgOperand(0), Align(1), CI->getArgOperand(2), Align(1),
-            ConstantInt::get(DL.getIntPtrType(CI->getContext()),
+            ConstantInt::get(DL.getIntPtrType(CI->getContext(), CI->getArgOperand(0)->getType()->getPointerAddressSpace()),
                              FormatStr.size() + 1))); // Copy the null byte.
     return ConstantInt::get(CI->getType(), FormatStr.size());
   }
@@ -3023,7 +3034,7 @@ Value *LibCallSimplifier::optimizeFPrintFString(CallInst *CI,
 
     return copyFlags(
         *CI, emitFWrite(CI->getArgOperand(1),
-                        ConstantInt::get(DL.getIntPtrType(CI->getContext()),
+                        ConstantInt::get(DL.getIntPtrType(CI->getContext(), CI->getArgOperand(1)->getType()->getPointerAddressSpace()),
                                          FormatStr.size()),
                         CI->getArgOperand(0), B, DL, TLI));
   }
@@ -3138,7 +3149,7 @@ Value *LibCallSimplifier::optimizeFPuts(CallInst *CI, IRBuilderBase &B) {
   return copyFlags(
       *CI,
       emitFWrite(CI->getArgOperand(0),
-                 ConstantInt::get(DL.getIntPtrType(CI->getContext()), Len - 1),
+                 ConstantInt::get(DL.getIntPtrType(CI->getContext(), CI->getArgOperand(0)->getType()->getPointerAddressSpace()), Len - 1),
                  CI->getArgOperand(1), B, DL, TLI));
 }
 
@@ -3690,11 +3701,7 @@ Value *FortifiedLibCallSimplifier::optimizeStrpCpyChk(CallInst *CI,
   else
     return nullptr;
 
-  // FIXME: There is really no guarantee that sizeof(size_t) is equal to
-  // sizeof(int*) for every target. So the assumption used here to derive the
-  // SizeTBits based on the size of an integer pointer in address space zero
-  // isn't always valid.
-  Type *SizeTTy = DL.getIntPtrType(CI->getContext(), /*AddressSpace=*/0);
+  Type *SizeTTy = DL.getIntPtrType(CI->getContext(), Dst->getType()->getPointerAddressSpace());
   Value *LenV = ConstantInt::get(SizeTTy, Len);
   Value *Ret = emitMemCpyChk(Dst, Src, LenV, ObjSize, B, DL, TLI);
   // If the function was an __stpcpy_chk, and we were able to fold it into

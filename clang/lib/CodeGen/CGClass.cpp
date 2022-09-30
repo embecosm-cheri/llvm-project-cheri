@@ -785,7 +785,8 @@ void CodeGenFunction::EmitAsanPrologueOrEpilogue(bool Prologue) {
     uint64_t Offset;
   };
 
-  unsigned PtrSize = CGM.getDataLayout().getPointerSizeInBits();
+  unsigned PtrSize = CGM.getDataLayout().getPointerSizeInBits(
+      CGM.getTargetCodeGenInfo().getDefaultAS());
   const ASTRecordLayout &Info = Context.getASTRecordLayout(ClassDecl);
 
   // Populate sizes and offsets of fields.
@@ -2232,7 +2233,9 @@ void CodeGenFunction::EmitInheritedCXXConstructorCall(
     const CXXConstructorDecl *D, bool ForVirtualBase, Address This,
     bool InheritedFromVBase, const CXXInheritedCtorInitExpr *E) {
   CallArgList Args;
-  CallArg ThisArg(RValue::get(This.getPointer()), D->getThisType());
+  CallArg ThisArg(
+      RValue::get(This.getPointer(), This.getAlignment().getQuantity()),
+      D->getThisType());
 
   // Forward the parameters.
   if (InheritedFromVBase &&
@@ -2357,13 +2360,14 @@ CodeGenFunction::EmitSynthesizedCXXCopyCtorCall(const CXXConstructorDecl *D,
   CallArgList Args;
 
   // Push the this ptr.
-  Args.add(RValue::get(This.getPointer()), D->getThisType());
+  Args.add(RValue::get(This.getPointer(), This.getAlignment().getQuantity()),
+           D->getThisType());
 
   // Push the src ptr.
   QualType QT = *(FPT->param_type_begin());
   llvm::Type *t = CGM.getTypes().ConvertType(QT);
   llvm::Value *SrcVal = Builder.CreateBitCast(Src.getPointer(), t);
-  Args.add(RValue::get(SrcVal), QT);
+  Args.add(RValue::get(SrcVal, Src.getAlignment().getQuantity()), QT);
 
   // Skip over first argument (Src).
   EmitCallArgs(Args, FPT, drop_begin(E->arguments(), 1), E->getConstructor(),
@@ -2387,7 +2391,9 @@ CodeGenFunction::EmitDelegateCXXConstructorCall(const CXXConstructorDecl *Ctor,
 
   // this
   Address This = LoadCXXThisAddress();
-  DelegateArgs.add(RValue::get(This.getPointer()), (*I)->getType());
+  DelegateArgs.add(
+      RValue::get(This.getPointer(), This.getAlignment().getQuantity()),
+      (*I)->getType());
   ++I;
 
   // FIXME: The location of the VTT parameter in the parameter list is
@@ -2952,7 +2958,9 @@ void CodeGenFunction::EmitLambdaBlockInvokeBody() {
 
   QualType ThisType = getContext().getPointerType(getContext().getRecordType(Lambda));
   Address ThisPtr = GetAddrOfBlockDecl(variable);
-  CallArgs.add(RValue::get(ThisPtr.getPointer()), ThisType);
+  CallArgs.add(
+      RValue::get(ThisPtr.getPointer(), ThisPtr.getAlignment().getQuantity()),
+      ThisType);
 
   // Add the rest of the parameters.
   for (auto param : BD->parameters())

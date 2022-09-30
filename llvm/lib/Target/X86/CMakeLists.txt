@@ -89,6 +89,9 @@ set(sources
   X86InsertWait.cpp
   )
 
+# TODO: remove
+add_definitions(-DLLVM_TARGETLOWERINGINFO_DEFAULT_AS=0)
+
 add_llvm_target(X86CodeGen ${sources}
   LINK_COMPONENTS
   Analysis

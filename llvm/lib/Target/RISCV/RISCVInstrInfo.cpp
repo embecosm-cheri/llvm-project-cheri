@@ -53,8 +53,15 @@ using namespace RISCV;
 } // namespace RISCVVPseudosTable
 } // namespace llvm
 
+#define DEBUG_TYPE "riscv-isntrinfo"
+
 RISCVInstrInfo::RISCVInstrInfo(RISCVSubtarget &STI)
-    : RISCVGenInstrInfo(RISCV::ADJCALLSTACKDOWN, RISCV::ADJCALLSTACKUP),
+    : RISCVGenInstrInfo(RISCVABI::isCheriPureCapABI(STI.getTargetABI())
+                            ? RISCV::ADJCALLSTACKDOWNCAP
+                            : RISCV::ADJCALLSTACKDOWN,
+                        RISCVABI::isCheriPureCapABI(STI.getTargetABI())
+                            ? RISCV::ADJCALLSTACKUPCAP
+                            : RISCV::ADJCALLSTACKUP),
       STI(STI) {}
 
 MCInst RISCVInstrInfo::getNop() const {
@@ -81,6 +88,19 @@ unsigned RISCVInstrInfo::isLoadFromStackSlot(const MachineInstr &MI,
   case RISCV::LWU:
   case RISCV::LD:
   case RISCV::FLD:
+  case RISCV::LC_64:
+  case RISCV::LC_128:
+  case RISCV::CLB:
+  case RISCV::CLBU:
+  case RISCV::CLH:
+  case RISCV::CLHU:
+  case RISCV::CLW:
+  case RISCV::CFLW:
+  case RISCV::CLWU:
+  case RISCV::CLD:
+  case RISCV::CFLD:
+  case RISCV::CLC_64:
+  case RISCV::CLC_128:
     break;
   }
 
@@ -105,6 +125,16 @@ unsigned RISCVInstrInfo::isStoreToStackSlot(const MachineInstr &MI,
   case RISCV::FSW:
   case RISCV::SD:
   case RISCV::FSD:
+  case RISCV::SC_64:
+  case RISCV::SC_128:
+  case RISCV::CSB:
+  case RISCV::CSH:
+  case RISCV::CSW:
+  case RISCV::CFSW:
+  case RISCV::CSD:
+  case RISCV::CFSD:
+  case RISCV::CSC_64:
+  case RISCV::CSC_128:
     break;
   }
 
@@ -256,11 +286,18 @@ static bool isConvertibleToVMV_V_V(const RISCVSubtarget &STI,
 void RISCVInstrInfo::copyPhysReg(MachineBasicBlock &MBB,
                                  MachineBasicBlock::iterator MBBI,
                                  const DebugLoc &DL, MCRegister DstReg,
-                                 MCRegister SrcReg, bool KillSrc) const {
+                                 MCRegister SrcReg, bool KillSrc,
+                                 MachineInstr::MIFlag Flag) const {
   if (RISCV::GPRRegClass.contains(DstReg, SrcReg)) {
     BuildMI(MBB, MBBI, DL, get(RISCV::ADDI), DstReg)
         .addReg(SrcReg, getKillRegState(KillSrc))
-        .addImm(0);
+        .addImm(0)
+        .setMIFlag(Flag);
+    return;
+  } else if (RISCV::GPCRRegClass.contains(DstReg, SrcReg)) {
+    BuildMI(MBB, MBBI, DL, get(RISCV::CMove), DstReg)
+        .addReg(SrcReg, getKillRegState(KillSrc))
+        .setMIFlag(Flag);
     return;
   }
 
@@ -447,7 +484,8 @@ void RISCVInstrInfo::copyPhysReg(MachineBasicBlock &MBB,
   } else {
     BuildMI(MBB, MBBI, DL, get(Opc), DstReg)
         .addReg(SrcReg, getKillRegState(KillSrc))
-        .addReg(SrcReg, getKillRegState(KillSrc));
+        .addReg(SrcReg, getKillRegState(KillSrc))
+        .setMIFlag(Flag);
   }
 }
 
@@ -456,6 +494,7 @@ void RISCVInstrInfo::storeRegToStackSlot(MachineBasicBlock &MBB,
                                          Register SrcReg, bool IsKill, int FI,
                                          const TargetRegisterClass *RC,
                                          const TargetRegisterInfo *TRI) const {
+  const RISCVSubtarget &ST = MBB.getParent()->getSubtarget<RISCVSubtarget>();
   DebugLoc DL;
   if (I != MBB.end())
     DL = I->getDebugLoc();
@@ -466,55 +505,80 @@ void RISCVInstrInfo::storeRegToStackSlot(MachineBasicBlock &MBB,
   unsigned Opcode;
   bool IsScalableVector = true;
   bool IsZvlsseg = true;
-  if (RISCV::GPRRegClass.hasSubClassEq(RC)) {
-    Opcode = TRI->getRegSizeInBits(RISCV::GPRRegClass) == 32 ?
-             RISCV::SW : RISCV::SD;
-    IsScalableVector = false;
-  } else if (RISCV::FPR16RegClass.hasSubClassEq(RC)) {
-    Opcode = RISCV::FSH;
-    IsScalableVector = false;
-  } else if (RISCV::FPR32RegClass.hasSubClassEq(RC)) {
-    Opcode = RISCV::FSW;
-    IsScalableVector = false;
-  } else if (RISCV::FPR64RegClass.hasSubClassEq(RC)) {
-    Opcode = RISCV::FSD;
-    IsScalableVector = false;
-  } else if (RISCV::VRRegClass.hasSubClassEq(RC)) {
-    Opcode = RISCV::PseudoVSPILL_M1;
-    IsZvlsseg = false;
-  } else if (RISCV::VRM2RegClass.hasSubClassEq(RC)) {
-    Opcode = RISCV::PseudoVSPILL_M2;
-    IsZvlsseg = false;
-  } else if (RISCV::VRM4RegClass.hasSubClassEq(RC)) {
-    Opcode = RISCV::PseudoVSPILL_M4;
-    IsZvlsseg = false;
-  } else if (RISCV::VRM8RegClass.hasSubClassEq(RC)) {
-    Opcode = RISCV::PseudoVSPILL_M8;
-    IsZvlsseg = false;
-  } else if (RISCV::VRN2M1RegClass.hasSubClassEq(RC))
-    Opcode = RISCV::PseudoVSPILL2_M1;
-  else if (RISCV::VRN2M2RegClass.hasSubClassEq(RC))
-    Opcode = RISCV::PseudoVSPILL2_M2;
-  else if (RISCV::VRN2M4RegClass.hasSubClassEq(RC))
-    Opcode = RISCV::PseudoVSPILL2_M4;
-  else if (RISCV::VRN3M1RegClass.hasSubClassEq(RC))
-    Opcode = RISCV::PseudoVSPILL3_M1;
-  else if (RISCV::VRN3M2RegClass.hasSubClassEq(RC))
-    Opcode = RISCV::PseudoVSPILL3_M2;
-  else if (RISCV::VRN4M1RegClass.hasSubClassEq(RC))
-    Opcode = RISCV::PseudoVSPILL4_M1;
-  else if (RISCV::VRN4M2RegClass.hasSubClassEq(RC))
-    Opcode = RISCV::PseudoVSPILL4_M2;
-  else if (RISCV::VRN5M1RegClass.hasSubClassEq(RC))
-    Opcode = RISCV::PseudoVSPILL5_M1;
-  else if (RISCV::VRN6M1RegClass.hasSubClassEq(RC))
-    Opcode = RISCV::PseudoVSPILL6_M1;
-  else if (RISCV::VRN7M1RegClass.hasSubClassEq(RC))
-    Opcode = RISCV::PseudoVSPILL7_M1;
-  else if (RISCV::VRN8M1RegClass.hasSubClassEq(RC))
-    Opcode = RISCV::PseudoVSPILL8_M1;
-  else
-    llvm_unreachable("Can't store this register to stack slot");
+  if (RISCVABI::isCheriPureCapABI(ST.getTargetABI())) {
+    if (RISCV::GPRRegClass.hasSubClassEq(RC)) {
+      Opcode = TRI->getRegSizeInBits(RISCV::GPRRegClass) == 32 ? RISCV::CSW
+                                                               : RISCV::CSD;
+      IsScalableVector = false;
+    } else if (RISCV::GPCRRegClass.hasSubClassEq(RC)) {
+      Opcode = TRI->getRegSizeInBits(RISCV::GPCRRegClass) == 64
+                   ? RISCV::CSC_64
+                   : RISCV::CSC_128;
+      IsScalableVector = false;
+    } else if (RISCV::FPR32RegClass.hasSubClassEq(RC)) {
+      Opcode = RISCV::CFSW;
+      IsScalableVector = false;
+    } else if (RISCV::FPR64RegClass.hasSubClassEq(RC)) {
+      Opcode = RISCV::CFSD;
+      IsScalableVector = false;
+    } else {
+      llvm_unreachable("Can't store this register to stack slot");
+    }
+  } else {
+    if (RISCV::GPRRegClass.hasSubClassEq(RC)) {
+      Opcode = TRI->getRegSizeInBits(RISCV::GPRRegClass) == 32 ? RISCV::SW
+                                                               : RISCV::SD;
+      IsScalableVector = false;
+    } else if (RISCV::GPCRRegClass.hasSubClassEq(RC)) {
+      Opcode = TRI->getRegSizeInBits(RISCV::GPCRRegClass) == 64 ? RISCV::SC_64
+                                                                : RISCV::SC_128;
+      IsScalableVector = false;
+    } else if (RISCV::FPR16RegClass.hasSubClassEq(RC)) {
+      Opcode = RISCV::FSH;
+      IsScalableVector = false;
+    } else if (RISCV::FPR32RegClass.hasSubClassEq(RC)) {
+      Opcode = RISCV::FSW;
+      IsScalableVector = false;
+    } else if (RISCV::FPR64RegClass.hasSubClassEq(RC)) {
+      Opcode = RISCV::FSD;
+      IsScalableVector = false;
+    } else if (RISCV::VRRegClass.hasSubClassEq(RC)) {
+      Opcode = RISCV::PseudoVSPILL_M1;
+      IsZvlsseg = false;
+    } else if (RISCV::VRM2RegClass.hasSubClassEq(RC)) {
+      Opcode = RISCV::PseudoVSPILL_M2;
+      IsZvlsseg = false;
+    } else if (RISCV::VRM4RegClass.hasSubClassEq(RC)) {
+      Opcode = RISCV::PseudoVSPILL_M4;
+      IsZvlsseg = false;
+    } else if (RISCV::VRM8RegClass.hasSubClassEq(RC)) {
+      Opcode = RISCV::PseudoVSPILL_M8;
+      IsZvlsseg = false;
+    } else if (RISCV::VRN2M1RegClass.hasSubClassEq(RC))
+      Opcode = RISCV::PseudoVSPILL2_M1;
+    else if (RISCV::VRN2M2RegClass.hasSubClassEq(RC))
+      Opcode = RISCV::PseudoVSPILL2_M2;
+    else if (RISCV::VRN2M4RegClass.hasSubClassEq(RC))
+      Opcode = RISCV::PseudoVSPILL2_M4;
+    else if (RISCV::VRN3M1RegClass.hasSubClassEq(RC))
+      Opcode = RISCV::PseudoVSPILL3_M1;
+    else if (RISCV::VRN3M2RegClass.hasSubClassEq(RC))
+      Opcode = RISCV::PseudoVSPILL3_M2;
+    else if (RISCV::VRN4M1RegClass.hasSubClassEq(RC))
+      Opcode = RISCV::PseudoVSPILL4_M1;
+    else if (RISCV::VRN4M2RegClass.hasSubClassEq(RC))
+      Opcode = RISCV::PseudoVSPILL4_M2;
+    else if (RISCV::VRN5M1RegClass.hasSubClassEq(RC))
+      Opcode = RISCV::PseudoVSPILL5_M1;
+    else if (RISCV::VRN6M1RegClass.hasSubClassEq(RC))
+      Opcode = RISCV::PseudoVSPILL6_M1;
+    else if (RISCV::VRN7M1RegClass.hasSubClassEq(RC))
+      Opcode = RISCV::PseudoVSPILL7_M1;
+    else if (RISCV::VRN8M1RegClass.hasSubClassEq(RC))
+      Opcode = RISCV::PseudoVSPILL8_M1;
+    else
+      llvm_unreachable("Can't store this register to stack slot");
+  }
 
   if (IsScalableVector) {
     MachineMemOperand *MMO = MF->getMachineMemOperand(
@@ -550,6 +614,7 @@ void RISCVInstrInfo::loadRegFromStackSlot(MachineBasicBlock &MBB,
                                           Register DstReg, int FI,
                                           const TargetRegisterClass *RC,
                                           const TargetRegisterInfo *TRI) const {
+  const RISCVSubtarget &ST = MBB.getParent()->getSubtarget<RISCVSubtarget>();
   DebugLoc DL;
   if (I != MBB.end())
     DL = I->getDebugLoc();
@@ -560,55 +625,81 @@ void RISCVInstrInfo::loadRegFromStackSlot(MachineBasicBlock &MBB,
   unsigned Opcode;
   bool IsScalableVector = true;
   bool IsZvlsseg = true;
-  if (RISCV::GPRRegClass.hasSubClassEq(RC)) {
-    Opcode = TRI->getRegSizeInBits(RISCV::GPRRegClass) == 32 ?
-             RISCV::LW : RISCV::LD;
-    IsScalableVector = false;
-  } else if (RISCV::FPR16RegClass.hasSubClassEq(RC)) {
-    Opcode = RISCV::FLH;
-    IsScalableVector = false;
-  } else if (RISCV::FPR32RegClass.hasSubClassEq(RC)) {
-    Opcode = RISCV::FLW;
-    IsScalableVector = false;
-  } else if (RISCV::FPR64RegClass.hasSubClassEq(RC)) {
-    Opcode = RISCV::FLD;
-    IsScalableVector = false;
-  } else if (RISCV::VRRegClass.hasSubClassEq(RC)) {
-    Opcode = RISCV::PseudoVRELOAD_M1;
-    IsZvlsseg = false;
-  } else if (RISCV::VRM2RegClass.hasSubClassEq(RC)) {
-    Opcode = RISCV::PseudoVRELOAD_M2;
-    IsZvlsseg = false;
-  } else if (RISCV::VRM4RegClass.hasSubClassEq(RC)) {
-    Opcode = RISCV::PseudoVRELOAD_M4;
-    IsZvlsseg = false;
-  } else if (RISCV::VRM8RegClass.hasSubClassEq(RC)) {
-    Opcode = RISCV::PseudoVRELOAD_M8;
-    IsZvlsseg = false;
-  } else if (RISCV::VRN2M1RegClass.hasSubClassEq(RC))
-    Opcode = RISCV::PseudoVRELOAD2_M1;
-  else if (RISCV::VRN2M2RegClass.hasSubClassEq(RC))
-    Opcode = RISCV::PseudoVRELOAD2_M2;
-  else if (RISCV::VRN2M4RegClass.hasSubClassEq(RC))
-    Opcode = RISCV::PseudoVRELOAD2_M4;
-  else if (RISCV::VRN3M1RegClass.hasSubClassEq(RC))
-    Opcode = RISCV::PseudoVRELOAD3_M1;
-  else if (RISCV::VRN3M2RegClass.hasSubClassEq(RC))
-    Opcode = RISCV::PseudoVRELOAD3_M2;
-  else if (RISCV::VRN4M1RegClass.hasSubClassEq(RC))
-    Opcode = RISCV::PseudoVRELOAD4_M1;
-  else if (RISCV::VRN4M2RegClass.hasSubClassEq(RC))
-    Opcode = RISCV::PseudoVRELOAD4_M2;
-  else if (RISCV::VRN5M1RegClass.hasSubClassEq(RC))
-    Opcode = RISCV::PseudoVRELOAD5_M1;
-  else if (RISCV::VRN6M1RegClass.hasSubClassEq(RC))
-    Opcode = RISCV::PseudoVRELOAD6_M1;
-  else if (RISCV::VRN7M1RegClass.hasSubClassEq(RC))
-    Opcode = RISCV::PseudoVRELOAD7_M1;
-  else if (RISCV::VRN8M1RegClass.hasSubClassEq(RC))
-    Opcode = RISCV::PseudoVRELOAD8_M1;
-  else
-    llvm_unreachable("Can't load this register from stack slot");
+  if (RISCVABI::isCheriPureCapABI(ST.getTargetABI())) {
+    if (RISCV::GPRRegClass.hasSubClassEq(RC)) {
+      Opcode = TRI->getRegSizeInBits(RISCV::GPRRegClass) == 32 ? RISCV::CLW
+                                                               : RISCV::CLD;
+      IsScalableVector = false;
+    } else if (RISCV::GPCRRegClass.hasSubClassEq(RC)) {
+      Opcode = TRI->getRegSizeInBits(RISCV::GPCRRegClass) == 64
+                   ? RISCV::CLC_64
+                   : RISCV::CLC_128;
+      IsScalableVector = false;
+    } else if (RISCV::FPR32RegClass.hasSubClassEq(RC)) {
+      Opcode = RISCV::CFLW;
+      IsScalableVector = false;
+    } else if (RISCV::FPR64RegClass.hasSubClassEq(RC)) {
+      Opcode = RISCV::CFLD;
+      IsScalableVector = false;
+    } else {
+      llvm_unreachable("Can't load this register from stack slot");
+    }
+  } else {
+    if (RISCV::GPRRegClass.hasSubClassEq(RC)) {
+      Opcode = TRI->getRegSizeInBits(RISCV::GPRRegClass) == 32 ? RISCV::LW
+                                                               : RISCV::LD;
+      IsScalableVector = false;
+
+    } else if (RISCV::GPCRRegClass.hasSubClassEq(RC)) {
+      Opcode = TRI->getRegSizeInBits(RISCV::GPCRRegClass) == 64 ? RISCV::LC_64
+                                                                : RISCV::LC_128;
+      IsScalableVector = false;
+    } else if (RISCV::FPR16RegClass.hasSubClassEq(RC)) {
+      Opcode = RISCV::FLH;
+      IsScalableVector = false;
+    } else if (RISCV::FPR32RegClass.hasSubClassEq(RC)) {
+      Opcode = RISCV::FLW;
+      IsScalableVector = false;
+    } else if (RISCV::FPR64RegClass.hasSubClassEq(RC)) {
+      Opcode = RISCV::FLD;
+      IsScalableVector = false;
+    } else if (RISCV::VRRegClass.hasSubClassEq(RC)) {
+      Opcode = RISCV::PseudoVRELOAD_M1;
+      IsZvlsseg = false;
+    } else if (RISCV::VRM2RegClass.hasSubClassEq(RC)) {
+      Opcode = RISCV::PseudoVRELOAD_M2;
+      IsZvlsseg = false;
+    } else if (RISCV::VRM4RegClass.hasSubClassEq(RC)) {
+      Opcode = RISCV::PseudoVRELOAD_M4;
+      IsZvlsseg = false;
+    } else if (RISCV::VRM8RegClass.hasSubClassEq(RC)) {
+      Opcode = RISCV::PseudoVRELOAD_M8;
+      IsZvlsseg = false;
+    } else if (RISCV::VRN2M1RegClass.hasSubClassEq(RC))
+      Opcode = RISCV::PseudoVRELOAD2_M1;
+    else if (RISCV::VRN2M2RegClass.hasSubClassEq(RC))
+      Opcode = RISCV::PseudoVRELOAD2_M2;
+    else if (RISCV::VRN2M4RegClass.hasSubClassEq(RC))
+      Opcode = RISCV::PseudoVRELOAD2_M4;
+    else if (RISCV::VRN3M1RegClass.hasSubClassEq(RC))
+      Opcode = RISCV::PseudoVRELOAD3_M1;
+    else if (RISCV::VRN3M2RegClass.hasSubClassEq(RC))
+      Opcode = RISCV::PseudoVRELOAD3_M2;
+    else if (RISCV::VRN4M1RegClass.hasSubClassEq(RC))
+      Opcode = RISCV::PseudoVRELOAD4_M1;
+    else if (RISCV::VRN4M2RegClass.hasSubClassEq(RC))
+      Opcode = RISCV::PseudoVRELOAD4_M2;
+    else if (RISCV::VRN5M1RegClass.hasSubClassEq(RC))
+      Opcode = RISCV::PseudoVRELOAD5_M1;
+    else if (RISCV::VRN6M1RegClass.hasSubClassEq(RC))
+      Opcode = RISCV::PseudoVRELOAD6_M1;
+    else if (RISCV::VRN7M1RegClass.hasSubClassEq(RC))
+      Opcode = RISCV::PseudoVRELOAD7_M1;
+    else if (RISCV::VRN8M1RegClass.hasSubClassEq(RC))
+      Opcode = RISCV::PseudoVRELOAD8_M1;
+    else
+      llvm_unreachable("Can't load this register from stack slot");
+  }
 
   if (IsScalableVector) {
     MachineMemOperand *MMO = MF->getMachineMemOperand(
@@ -925,9 +1016,18 @@ unsigned RISCVInstrInfo::insertBranch(
   assert((Cond.size() == 3 || Cond.size() == 0) &&
          "RISCV branch conditions have two components!");
 
+  MachineFunction *MF = MBB.getParent();
+  const RISCVSubtarget &ST = MF->getSubtarget<RISCVSubtarget>();
+
+  unsigned PseudoOpcode;
+  if (RISCVABI::isCheriPureCapABI(ST.getTargetABI()))
+    PseudoOpcode = RISCV::PseudoCBR;
+  else
+    PseudoOpcode = RISCV::PseudoBR;
+
   // Unconditional branch.
   if (Cond.empty()) {
-    MachineInstr &MI = *BuildMI(&MBB, DL, get(RISCV::PseudoBR)).addMBB(TBB);
+    MachineInstr &MI = *BuildMI(&MBB, DL, get(PseudoOpcode)).addMBB(TBB);
     if (BytesAdded)
       *BytesAdded += getInstSizeInBytes(MI);
     return 1;
@@ -945,7 +1045,7 @@ unsigned RISCVInstrInfo::insertBranch(
     return 1;
 
   // Two-way conditional branch.
-  MachineInstr &MI = *BuildMI(&MBB, DL, get(RISCV::PseudoBR)).addMBB(FBB);
+  MachineInstr &MI = *BuildMI(&MBB, DL, get(PseudoOpcode)).addMBB(FBB);
   if (BytesAdded)
     *BytesAdded += getInstSizeInBytes(MI);
   return 2;
@@ -963,23 +1063,34 @@ void RISCVInstrInfo::insertIndirectBranch(MachineBasicBlock &MBB,
 
   MachineFunction *MF = MBB.getParent();
   MachineRegisterInfo &MRI = MF->getRegInfo();
+  const RISCVSubtarget &ST = MF->getSubtarget<RISCVSubtarget>();
 
   if (!isInt<32>(BrOffset))
     report_fatal_error(
         "Branch offsets outside of the signed 32-bit range not supported");
 
+  const TargetRegisterClass *RC;
+  unsigned PseudoOpcode;
+  if (RISCVABI::isCheriPureCapABI(ST.getTargetABI())) {
+    RC = &RISCV::GPCRRegClass;
+    PseudoOpcode = RISCV::PseudoCJump;
+  } else {
+    RC = &RISCV::GPRRegClass;
+    PseudoOpcode = RISCV::PseudoJump;
+  }
+
   // FIXME: A virtual register must be used initially, as the register
   // scavenger won't work with empty blocks (SIInstrInfo::insertIndirectBranch
   // uses the same workaround).
-  Register ScratchReg = MRI.createVirtualRegister(&RISCV::GPRRegClass);
+  Register ScratchReg = MRI.createVirtualRegister(RC);
   auto II = MBB.end();
 
-  MachineInstr &MI = *BuildMI(MBB, II, DL, get(RISCV::PseudoJump))
+  MachineInstr &MI = *BuildMI(MBB, II, DL, get(PseudoOpcode))
                           .addReg(ScratchReg, RegState::Define | RegState::Dead)
                           .addMBB(&DestBB, RISCVII::MO_CALL);
 
   RS->enterBasicBlockEnd(MBB);
-  Register Scav = RS->scavengeRegisterBackwards(RISCV::GPRRegClass,
+  Register Scav = RS->scavengeRegisterBackwards(*RC,
                                                 MI.getIterator(), false, 0);
   // TODO: The case when there is no scavenged register needs special handling.
   assert(Scav != RISCV::NoRegister && "No register is scavenged!");
@@ -1021,9 +1132,12 @@ bool RISCVInstrInfo::isBranchOffsetInRange(unsigned BranchOp,
   case RISCV::BGEU:
     return isIntN(13, BrOffset);
   case RISCV::JAL:
+  case RISCV::CJAL:
   case RISCV::PseudoBR:
+  case RISCV::PseudoCBR:
     return isIntN(21, BrOffset);
   case RISCV::PseudoJump:
+  case RISCV::PseudoCJump:
     return isIntN(32, SignExtend64(BrOffset + 0x800, XLen));
   }
 }
@@ -1059,6 +1173,26 @@ bool RISCVInstrInfo::isAsCheapAsAMove(const MachineInstr &MI) const {
   switch (Opcode) {
   default:
     break;
+  case RISCV::CMove:
+    return true;
+  case RISCV::CIncOffset:
+    // Creating a NULL-derived capability is fast since it's the same as moving
+    // to another register and zeroing the capability metadata.
+    // While incrementing a capability by zero is not quite as fast as a move
+    // since it needs to special-case sealed capabilities, we should return true
+    // here to allow for improved code generation.
+    //
+    // Note: this name of hook is confusing and should probably be something
+    // like "isAlmostAsCheapAsAMove" instead since other targets (e.g. AArch64)
+    // also return true for any fast and re-materializable instructions.
+    // Returning true here is required for rematerialization since it will not
+    // be attempted unless isAsCheapAsAMove returns true!
+    return (MI.getOperand(2).isReg() &&
+            MI.getOperand(2).getReg() == RISCV::X0) ||
+           (MI.getOperand(1).isReg() && MI.getOperand(1).getReg() == RISCV::C0);
+  case RISCV::CIncOffsetImm:
+    return (MI.getOperand(2).isImm() && MI.getOperand(2).getImm() == 0) ||
+           (MI.getOperand(1).isReg() && MI.getOperand(1).getReg() == RISCV::C0);
   case RISCV::FSGNJ_D:
   case RISCV::FSGNJ_S:
   case RISCV::FSGNJ_H:
@@ -1073,6 +1207,61 @@ bool RISCVInstrInfo::isAsCheapAsAMove(const MachineInstr &MI) const {
            (MI.getOperand(2).isImm() && MI.getOperand(2).getImm() == 0);
   }
   return MI.isAsCheapAsAMove();
+}
+
+Optional<int64_t>
+RISCVInstrInfo::getAsIntImmediate(const MachineOperand &Op,
+                                  const MachineRegisterInfo &MRI) const {
+  if (Op.isImm())
+    return Op.getImm();
+  if (Op.isReg()) {
+    Register Reg = Op.getReg();
+    if (Reg == RISCV::X0)
+      return 0;
+    if (Reg.isVirtual()) {
+      auto *Def = MRI.getUniqueVRegDef(Reg);
+      switch (Def->getOpcode()) {
+      default:
+        return None; // Unknown immediate
+      case RISCV::ADDI:
+      case RISCV::ADDIW:
+      case RISCV::ORI:
+        if (Def->getOperand(1).getReg() == RISCV::X0)
+          return Def->getOperand(2).getImm();
+        return None;
+      }
+    }
+  }
+  return None; // Unknown immediate
+}
+
+bool RISCVInstrInfo::isSetBoundsInstr(const MachineInstr &I,
+                                      const MachineOperand *&Base,
+                                      const MachineOperand *&Size) const {
+  switch (I.getOpcode()) {
+  default:
+    return false;
+  case RISCV::CSetBounds:
+  case RISCV::CSetBoundsExact:
+  case RISCV::CSetBoundsImm:
+    Base = &I.getOperand(1);
+    Size = &I.getOperand(2);
+    return true;
+  }
+}
+
+bool RISCVInstrInfo::isPtrAddInstr(const MachineInstr &I,
+                                   const MachineOperand *&Base,
+                                   const MachineOperand *&Increment) const {
+  switch (I.getOpcode()) {
+  default:
+    return false;
+  case RISCV::CIncOffsetImm:
+  case RISCV::CIncOffset:
+    Base = &I.getOperand(1);
+    Increment = &I.getOperand(2);
+    return true;
+  }
 }
 
 Optional<DestSourcePair>
@@ -1234,7 +1423,12 @@ RISCVInstrInfo::getSerializableDirectMachineOperandTargetFlags() const {
       {MO_TPREL_HI, "riscv-tprel-hi"},
       {MO_TPREL_ADD, "riscv-tprel-add"},
       {MO_TLS_GOT_HI, "riscv-tls-got-hi"},
-      {MO_TLS_GD_HI, "riscv-tls-gd-hi"}};
+      {MO_TLS_GD_HI, "riscv-tls-gd-hi"},
+      {MO_CAPTAB_PCREL_HI, "riscv-captab-pcrel-hi"},
+      {MO_TPREL_CINCOFFSET, "riscv-tprel-cincoffset"},
+      {MO_TLS_IE_CAPTAB_PCREL_HI, "riscv-tls-ie-captab-pcrel-hi"},
+      {MO_TLS_GD_CAPTAB_PCREL_HI, "riscv-tls-gd-captab-pcrel-hi"},
+      {MO_CCALL, "riscv-ccall"}};
   return makeArrayRef(TargetFlags);
 }
 bool RISCVInstrInfo::isFunctionSafeToOutlineFrom(

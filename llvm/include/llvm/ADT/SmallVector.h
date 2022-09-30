@@ -44,7 +44,9 @@ template <typename IteratorT> class iterator_range;
 /// buffering bitcode output - which can exceed 4GB.
 template <class Size_T> class SmallVectorBase {
 protected:
-  void *BeginX;
+  // Note: Without the typedef clang complains about the attribute
+  typedef void *LLVM_ALIGN_VALUE(alignof(void *)) aligned_voidp;
+  aligned_voidp BeginX;
   Size_T Size = 0, Capacity;
 
   /// The maximum value of the Size_T used.

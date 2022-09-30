@@ -1339,6 +1339,39 @@ void CodeGenFunction::EmitReturnStmt(const ReturnStmt &S) {
     // rather than the value.
     RValue Result = EmitReferenceBindingToExpr(RV);
     Builder.CreateStore(Result.getScalarVal(), ReturnValue);
+  } else if (TEK_Scalar == getEvaluationKind(RV->getType())) {
+    llvm::Value *RetV = EmitScalarExpr(RV);
+    QualType Ty = RV->getType();
+    if (Ty->isPointerType()) {
+      if (const TypedefType *TT = dyn_cast<TypedefType>(Ty)) {
+        // TT->getDecl() could be a TypedefDecl or a TypedefNameDecl
+        const TypedefDecl* TD = dyn_cast<TypedefDecl>(TT->getDecl());
+        VarDecl *Key = TD ? TD->getOpaqueKey() : nullptr;
+        if (Key) {
+          llvm::Type *RetTy = RetV->getType();
+          llvm::Value *KeyV = CGM.GetAddrOfGlobalVar(Key);
+          CharUnits Alignment = getContext().getDeclAlign(Key);
+          Address Addr(KeyV, getTypes().ConvertTypeForMem(Key->getType()), Alignment);
+          KeyV = Builder.CreateLoad(Addr);
+          // If this is CHERI, enforce this in hardware
+          if (Ty->isCHERICapabilityType(getContext())) {
+            unsigned CapAS = CGM.getTargetCodeGenInfo().getCHERICapabilityAS();
+            auto *F = CGM.getIntrinsic(llvm::Intrinsic::cheri_cap_seal);
+            llvm::Type *CapPtrTy = llvm::PointerType::get(Int8Ty, CapAS);
+            RetV = Builder.CreateCall(F,
+               {Builder.CreateBitCast(RetV, CapPtrTy),
+                Builder.CreateBitCast(KeyV, CapPtrTy)});
+            RetV = Builder.CreateBitCast(RetV, RetTy);
+          } else {
+            KeyV = Builder.CreatePtrToInt(KeyV, IntPtrTy);
+            RetV = Builder.CreatePtrToInt(RetV, IntPtrTy);
+            RetV = Builder.CreateXor(RetV, KeyV);
+            RetV = Builder.CreateIntToPtr(RetV, RetTy);
+          }
+        }
+      }
+    }
+    Builder.CreateStore(RetV, ReturnValue);
   } else {
     switch (getEvaluationKind(RV->getType())) {
     case TEK_Scalar:
@@ -1409,6 +1442,8 @@ void CodeGenFunction::EmitCaseStmtRange(const CaseStmt &S,
   assert(S.getRHS() && "Expected RHS value in CaseStmt");
 
   llvm::APSInt LHS = S.getLHS()->EvaluateKnownConstInt(getContext());
+  if (S.getLHS()->getType()->isCHERICapabilityType(getContext()))
+    LHS = LHS.extOrTrunc(Target.getPointerRangeForCHERICapability());
   llvm::APSInt RHS = S.getRHS()->EvaluateKnownConstInt(getContext());
 
   // Emit the code for this case. We do this first to make sure it is
@@ -1506,9 +1541,12 @@ void CodeGenFunction::EmitCaseStmt(const CaseStmt &S,
     EmitCaseStmtRange(S, Attrs);
     return;
   }
-
-  llvm::ConstantInt *CaseVal =
-    Builder.getInt(S.getLHS()->EvaluateKnownConstInt(getContext()));
+  // SwitchInsn.getCondition()
+  llvm::APSInt CaseIntVal = S.getLHS()->EvaluateKnownConstInt(getContext());
+  if (S.getLHS()->getType()->isCHERICapabilityType(getContext()))
+    if (CaseIntVal.getBitWidth() > 64)
+      CaseIntVal = CaseIntVal.trunc(64);  // XXXAR: will this always be correct???
+  llvm::ConstantInt *CaseVal = Builder.getInt(CaseIntVal);
 
   // Emit debuginfo for the case value if it is an enum value.
   const ConstantExpr *CE;
@@ -1576,8 +1614,11 @@ void CodeGenFunction::EmitCaseStmt(const CaseStmt &S,
   // Otherwise, iteratively add consecutive cases to this switch stmt.
   while (NextCase && NextCase->getRHS() == nullptr) {
     CurCase = NextCase;
-    llvm::ConstantInt *CaseVal =
-      Builder.getInt(CurCase->getLHS()->EvaluateKnownConstInt(getContext()));
+    CaseIntVal = CurCase->getLHS()->EvaluateKnownConstInt(getContext());
+    if (S.getLHS()->getType()->isCHERICapabilityType(getContext()))
+      if (CaseIntVal.getBitWidth() > 64)
+        CaseIntVal = CaseIntVal.trunc(64);
+    llvm::ConstantInt *CaseVal = Builder.getInt(CaseIntVal);
 
     if (SwitchWeights)
       SwitchWeights->push_back(getProfileCount(NextCase));
@@ -1970,7 +2011,12 @@ void CodeGenFunction::EmitSwitchStmt(const SwitchStmt &S) {
   if (S.getConditionVariable())
     EmitDecl(*S.getConditionVariable());
   llvm::Value *CondV = EmitScalarExpr(S.getCond());
-
+  // If we're an intcap_t, then we actually want to switch on the offset.
+  if (S.getCond()->getType()->isCHERICapabilityType(getContext())) {
+    // XXXAR: In switch statements we want to switch on the virtual address and
+    // not the offset: https://github.com/CTSRD-CHERI/clang/issues/132
+    CondV = getPointerAddress(CondV, "intcap.vaddr");
+  }
   // Create basic block to hold stuff that comes after switch
   // statement. We also need to create a default block now so that
   // explicit case ranges tests can have a place to jump to on
@@ -2760,6 +2806,7 @@ void CodeGenFunction::EmitAsmStmt(const AsmStmt &S) {
       if (TruncTy->isFloatingPointTy())
         Tmp = Builder.CreateFPTrunc(Tmp, TruncTy);
       else if (TruncTy->isPointerTy() && Tmp->getType()->isIntegerTy()) {
+        assert(!CGM.getDataLayout().isFatPointer(TruncTy));
         uint64_t ResSize = CGM.getDataLayout().getTypeSizeInBits(TruncTy);
         Tmp = Builder.CreateTrunc(Tmp,
                    llvm::IntegerType::get(getLLVMContext(), (unsigned)ResSize));

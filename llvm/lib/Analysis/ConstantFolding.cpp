@@ -294,6 +294,7 @@ Constant *FoldBitCast(Constant *C, Type *DestTy, const DataLayout &DL) {
 /// the constant. Because of constantexprs, this function is recursive.
 bool llvm::IsConstantOffsetFromGlobal(Constant *C, GlobalValue *&GV,
                                       APInt &Offset, const DataLayout &DL,
+                                      bool LookThroughAddrSpaces,
                                       DSOLocalEquivalent **DSOEquiv) {
   if (DSOEquiv)
     *DSOEquiv = nullptr;
@@ -318,11 +319,13 @@ bool llvm::IsConstantOffsetFromGlobal(Constant *C, GlobalValue *&GV,
   auto *CE = dyn_cast<ConstantExpr>(C);
   if (!CE) return false;
 
+  // For CHERI we also need to look through AddrSpaceCasts
   // Look through ptr->int and ptr->ptr casts.
   if (CE->getOpcode() == Instruction::PtrToInt ||
-      CE->getOpcode() == Instruction::BitCast)
+      CE->getOpcode() == Instruction::BitCast ||
+      (LookThroughAddrSpaces && CE->getOpcode() == Instruction::AddrSpaceCast))
     return IsConstantOffsetFromGlobal(CE->getOperand(0), GV, Offset, DL,
-                                      DSOEquiv);
+                                      LookThroughAddrSpaces, DSOEquiv);
 
   // i32* getelementptr ([5 x i32]* @a, i32 0, i32 5)
   auto *GEP = dyn_cast<GEPOperator>(CE);
@@ -334,7 +337,7 @@ bool llvm::IsConstantOffsetFromGlobal(Constant *C, GlobalValue *&GV,
 
   // If the base isn't a global+constant, we aren't either.
   if (!IsConstantOffsetFromGlobal(CE->getOperand(0), GV, TmpOffset, DL,
-                                  DSOEquiv))
+                                  LookThroughAddrSpaces, DSOEquiv))
     return false;
 
   // Otherwise, add any offset that our operands provide.
@@ -365,9 +368,14 @@ Constant *llvm::ConstantFoldLoadThroughBitcast(Constant *C, Type *DestTy,
     // If the type sizes are the same and a cast is legal, just directly
     // cast the constant.
     // But be careful not to coerce non-integral pointers illegally.
+    // Similarly, we don't do conversions between capabilities and integers of
+    // the same size since that would require knowing the exact encoding format
+    // in this IR-level transformation (the common NULL case is handled above).
     if (SrcSize == DestSize &&
         DL.isNonIntegralPointerType(SrcTy->getScalarType()) ==
-            DL.isNonIntegralPointerType(DestTy->getScalarType())) {
+            DL.isNonIntegralPointerType(DestTy->getScalarType()) &&
+        DL.isFatPointer(SrcTy->getScalarType()) ==
+            DL.isFatPointer(DestTy->getScalarType())) {
       Instruction::CastOps Cast = Instruction::BitCast;
       // If we are going from a pointer to int or vice versa, we spell the cast
       // differently.
@@ -807,8 +815,8 @@ Constant *SymbolicallyEvaluateBinop(unsigned Opc, Constant *Op0, Constant *Op1,
     GlobalValue *GV1, *GV2;
     APInt Offs1, Offs2;
 
-    if (IsConstantOffsetFromGlobal(Op0, GV1, Offs1, DL))
-      if (IsConstantOffsetFromGlobal(Op1, GV2, Offs2, DL) && GV1 == GV2) {
+    if (IsConstantOffsetFromGlobal(Op0, GV1, Offs1, DL, false))
+      if (IsConstantOffsetFromGlobal(Op1, GV2, Offs2, DL, false) && GV1 == GV2) {
         unsigned OpSize = DL.getTypeSizeInBits(Op0->getType());
 
         // (&GV+C1) - (&GV+C2) -> C1-C2, pointer arithmetic cannot overflow.
@@ -945,7 +953,7 @@ Constant *SymbolicallyEvaluateGEP(const GEPOperator *GEP,
 
   auto *PTy = cast<PointerType>(Ptr->getType());
   if ((Ptr->isNullValue() || BasePtr != 0) &&
-      !DL.isNonIntegralPointerType(PTy)) {
+      !DL.isNonIntegralPointerType(PTy) && !DL.isFatPointer(PTy)) {
     Constant *C = ConstantInt::get(Ptr->getContext(), Offset + BasePtr);
     return ConstantExpr::getIntToPtr(C, ResTy);
   }

@@ -16,10 +16,14 @@
 #include "llvm/MC/MCELFStreamer.h"
 #include "llvm/MC/MCRegisterInfo.h"
 #include "llvm/MC/MCStreamer.h"
+#include "llvm/MC/SubtargetFeature.h"
 
 namespace llvm {
 
 class formatted_raw_ostream;
+
+// TODO: move this somewhere common
+llvm::Optional<unsigned> getCheriCapabilitySize(FeatureBitset Features);
 
 class MipsTargetStreamer : public MCTargetStreamer {
 public:
@@ -173,7 +177,7 @@ public:
   template <class PredicateLibrary>
   void updateABIInfo(const PredicateLibrary &P) {
     ABI = P.getABI();
-    ABIFlagsSection.setAllFromPredicates(P);
+    ABIFlagsSection.setAllFromPredicates(P, getABI());
   }
 
   MipsABIFlagsSection &getABIFlagsSection() { return ABIFlagsSection; }

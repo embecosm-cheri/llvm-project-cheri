@@ -731,6 +731,11 @@ public:
   const llvm::DataLayout &getDataLayout() const {
     return TheModule.getDataLayout();
   }
+  // This is the same as DataLayout::getProgramAddressSpace()
+  // TODO: remove. This was previously required but no longer is.
+  unsigned getFunctionAddrSpace() const {
+    return getDataLayout().getProgramAddressSpace();
+  }
   const TargetInfo &getTarget() const { return Target; }
   const llvm::Triple &getTriple() const { return Target.getTriple(); }
   bool supportsCOMDAT() const;
@@ -742,6 +747,14 @@ public:
   bool shouldUseTBAA() const { return TBAA != nullptr; }
 
   const TargetCodeGenInfo &getTargetCodeGenInfo();
+
+  unsigned getAddressSpaceForType(QualType T);
+
+  unsigned getTargetAddressSpace(LangAS AddrSpace);
+
+  inline unsigned getTargetAddressSpace(Qualifiers Q) {
+    return getTargetAddressSpace(Q.getAddressSpace());
+  }
 
   CodeGenTypes &getTypes() { return Types; }
 
@@ -1150,7 +1163,8 @@ public:
 
   /// Create a new runtime global variable with the specified type and name.
   llvm::Constant *CreateRuntimeVariable(llvm::Type *Ty,
-                                        StringRef Name);
+                                        StringRef Name,
+                                        unsigned AddressSpace = 0);
 
   ///@name Custom Blocks Runtime Interfaces
   ///@{
@@ -1288,6 +1302,31 @@ public:
 
   void setFunctionLinkage(GlobalDecl GD, llvm::Function *F) {
     F->setLinkage(getFunctionLinkage(GD));
+  }
+
+  /// Emit the metadata for a required method in a CHERI sandbox.
+  /// The return value is the address of the method number.
+  llvm::Value *EmitSandboxRequiredMethod(StringRef, StringRef);
+
+  struct PointerCastLocations {
+    SmallVector<std::pair<SourceRange, bool>, 8> PointerToInt;
+    SmallVector<std::pair<SourceRange, bool>, 8> IntToPointer;
+    SmallVector<std::pair<SourceRange, bool>, 8> CapToPointer;
+    SmallVector<std::pair<SourceRange, bool>, 8> PointerToCap;
+    void printStats(llvm::raw_ostream &OS, const CodeGenModule &CGM);
+  };
+  std::unique_ptr<PointerCastLocations> PointerCastStats;
+
+  /// Emit the metadata for a defined method in a CHERI sandbox
+  void EmitSandboxDefinedMethod(StringRef, StringRef, llvm::Function *);
+
+  llvm::Constant *getNullDerivedConstantCapability(llvm::Type *ResultTy,
+                                                   llvm::Constant *IntValue) {
+    assert(isa<llvm::PointerType>(ResultTy));
+    return llvm::ConstantExpr::getBitCast(
+        llvm::ConstantExpr::getGetElementPtr(
+            Int8Ty, llvm::ConstantPointerNull::get(Int8CheriCapTy), IntValue),
+        ResultTy);
   }
 
   /// Return the appropriate linkage for the vtable, VTT, and type information
@@ -1503,6 +1542,8 @@ public:
   /// \param QT is the clang QualType of the null pointer.
   llvm::Constant *getNullPointer(llvm::PointerType *T, QualType QT);
 
+  llvm::PointerType* getPointerInDefaultAS(llvm::Type* T);
+
   CharUnits getNaturalTypeAlignment(QualType T,
                                     LValueBaseInfo *BaseInfo = nullptr,
                                     TBAAAccessInfo *TBAAInfo = nullptr,
@@ -1590,11 +1631,13 @@ private:
   /// Emit the function that performs cleanup associated with C++ globals.
   void EmitCXXGlobalCleanUpFunc();
 
+public:
   /// Emit the function that initializes the specified global (if PerformInit is
   /// true) and registers its destructor.
   void EmitCXXGlobalVarDeclInitFunc(const VarDecl *D,
                                     llvm::GlobalVariable *Addr,
                                     bool PerformInit);
+private:
 
   void EmitPointerToInitFunc(const VarDecl *VD, llvm::GlobalVariable *Addr,
                              llvm::Function *InitFunc, InitSegAttr *ISA);

@@ -1326,6 +1326,10 @@ void StmtProfiler::VisitParenExpr(const ParenExpr *S) {
   VisitExpr(S);
 }
 
+void StmtProfiler::VisitNoChangeBoundsExpr(const NoChangeBoundsExpr *S) {
+  VisitExpr(S);
+}
+
 void StmtProfiler::VisitParenListExpr(const ParenListExpr *S) {
   VisitExpr(S);
 }

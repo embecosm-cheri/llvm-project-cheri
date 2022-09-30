@@ -1847,6 +1847,15 @@ public:
   /// Return true if the call should not be inlined.
   bool isNoInline() const { return hasFnAttr(Attribute::NoInline); }
   void setIsNoInline() { addFnAttr(Attribute::NoInline); }
+
+  /// Determine if the function has additional side-effects.
+  bool hasSideEffects() const {
+    return hasFnAttr(Attribute::HasSideEffects);
+  }
+  void setHasSideEffects() {
+    addFnAttr(Attribute::HasSideEffects);
+  }
+
   /// Determine if the call does not access memory.
   bool doesNotAccessMemory() const { return hasFnAttr(Attribute::ReadNone); }
   void setDoesNotAccessMemory() { addFnAttr(Attribute::ReadNone); }

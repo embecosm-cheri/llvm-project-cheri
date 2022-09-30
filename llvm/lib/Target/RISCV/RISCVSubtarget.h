@@ -17,6 +17,7 @@
 #include "RISCVFrameLowering.h"
 #include "RISCVISelLowering.h"
 #include "RISCVInstrInfo.h"
+#include "RISCVSelectionDAGInfo.h"
 #include "llvm/CodeGen/GlobalISel/CallLowering.h"
 #include "llvm/CodeGen/GlobalISel/InstructionSelector.h"
 #include "llvm/CodeGen/GlobalISel/LegalizerInfo.h"
@@ -92,9 +93,12 @@ private:
   bool HasStdExtZmmul = false;
   bool HasRV64 = false;
   bool IsRV32E = false;
+  bool HasCheri = false;
+  bool IsCapMode = false;
   bool EnableLinkerRelax = false;
   bool EnableRVCHintInstrs = true;
   bool EnableDefaultUnroll = true;
+  bool EnableCheriRVCInstrs = false;
   bool EnableSaveRestore = false;
   bool EnableUnalignedScalarMem = false;
   bool HasLUIADDIFusion = false;
@@ -108,7 +112,7 @@ private:
   RISCVInstrInfo InstrInfo;
   RISCVRegisterInfo RegInfo;
   RISCVTargetLowering TLInfo;
-  SelectionDAGTargetInfo TSInfo;
+  RISCVSelectionDAGInfo TSInfo;
 
   /// Initializes using the passed in CPU and feature strings so that we can
   /// use initializer lists for subtarget initialization.
@@ -188,9 +192,12 @@ public:
   bool hasStdExtZmmul() const { return HasStdExtZmmul; }
   bool is64Bit() const { return HasRV64; }
   bool isRV32E() const { return IsRV32E; }
+  bool hasCheri() const { return HasCheri; }
+  bool isCapMode() const { return IsCapMode; }
   bool enableLinkerRelax() const { return EnableLinkerRelax; }
   bool enableRVCHintInstrs() const { return EnableRVCHintInstrs; }
   bool enableDefaultUnroll() const { return EnableDefaultUnroll; }
+  bool enableCheriRVCInstrs() const { return EnableCheriRVCInstrs; }
   bool enableSaveRestore() const { return EnableSaveRestore; }
   bool enableUnalignedScalarMem() const { return EnableUnalignedScalarMem; }
   bool hasLUIADDIFusion() const { return HasLUIADDIFusion; }
@@ -221,6 +228,10 @@ public:
   bool isRegisterReservedByUser(Register i) const {
     assert(i < RISCV::NUM_TARGET_REGS && "Register out of range");
     return UserReservedRegister[i];
+  }
+  MVT typeForCapabilities() const {
+    assert(HasCheri && "Cannot get capability type for non-CHERI");
+    return is64Bit() ? MVT::iFATPTR128 : MVT::iFATPTR64;
   }
 
   bool hasMacroFusion() const { return hasLUIADDIFusion(); }

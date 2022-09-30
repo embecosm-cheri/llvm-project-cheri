@@ -1121,6 +1121,9 @@ class CodeGenDAGPatterns {
   /// emit.
   std::vector<PatternToMatch> PatternsToMatch;
 
+  /// Flag indicating whether fat pointers should be supported.
+  bool FatPointers;
+
   TypeSetByHwMode LegalVTS;
 
   using PatternRewriterFn = std::function<void (TreePattern *)>;
@@ -1135,6 +1138,8 @@ public:
   CodeGenTarget &getTargetInfo() { return Target; }
   const CodeGenTarget &getTargetInfo() const { return Target; }
   const TypeSetByHwMode &getLegalTypes() const { return LegalVTS; }
+
+  bool enableFatPointers() { return FatPointers; }
 
   Record *getSDNodeNamed(StringRef Name) const;
 

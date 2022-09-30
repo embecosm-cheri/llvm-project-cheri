@@ -52,6 +52,10 @@ enum class BsymbolicKind { None, NonWeakFunctions, Functions, All };
 // For --build-id.
 enum class BuildIdKind { None, Fast, Md5, Sha1, Hexstring, Uuid };
 
+enum class CapRelocsMode { Legacy, ElfReloc, CBuildCap };
+
+enum class CapTableScopePolicy { All, File, Function };
+
 // For --discard-{all,locals,none}.
 enum class DiscardPolicy { Default, All, Locals, None };
 
@@ -150,18 +154,23 @@ struct Configuration {
   std::vector<llvm::StringRef> symbolOrderingFile;
   std::vector<llvm::StringRef> thinLTOModulesToCompile;
   std::vector<llvm::StringRef> undefined;
+  std::vector<llvm::StringRef> warnIfFileLinked;
   std::vector<SymbolVersion> dynamicList;
   std::vector<uint8_t> buildIdVector;
   llvm::MapVector<std::pair<const InputSectionBase *, const InputSectionBase *>,
                   uint64_t>
       callGraphProfile;
   bool allowMultipleDefinition;
+  bool allowUndefinedCapRelocs = false;
   bool androidPackDynRelocs = false;
   bool armHasBlx = false;
   bool armHasMovtMovw = false;
   bool armJ1J2BranchEncoding = false;
   bool asNeeded = false;
   BsymbolicKind bsymbolic = BsymbolicKind::None;
+  // make dynamic relocations that are not supported by
+  // FreeBSD _rtld_relocate_nonplt_self an error.
+  bool buildingFreeBSDRtld;
   bool callGraphProfileSort;
   bool checkSections;
   bool checkDynamicRelocs;
@@ -218,6 +227,7 @@ struct Configuration {
   bool relrPackDynRelocs = false;
   llvm::DenseSet<llvm::StringRef> saveTempsArgs;
   std::vector<std::pair<llvm::GlobPattern, uint32_t>> shuffleSections;
+  bool sortCapRelocs;
   bool singleRoRx;
   bool shared;
   bool symbolic;
@@ -234,12 +244,16 @@ struct Configuration {
   bool undefinedVersion;
   bool unique;
   bool useAndroidRelrTags = false;
+  bool verboseCapRelocs = false;
   bool warnBackrefs;
   std::vector<llvm::GlobPattern> warnBackrefsExclude;
   bool warnCommon;
   bool warnMissingEntry;
   bool warnSymbolOrdering;
   bool writeAddends;
+  // -z captabledebug: add additional symbols $captable_load_<symbols> before
+  // each captable clc instruction that indicates which symbol should be loaded
+  bool zCapTableDebug;
   bool zCombreloc;
   bool zCopyreloc;
   bool zForceBti;
@@ -273,6 +287,13 @@ struct Configuration {
   UnresolvedPolicy unresolvedSymbols;
   UnresolvedPolicy unresolvedSymbolsInShlib;
   Target2Policy target2;
+  // Method used for capability relocations for preemptible symbols
+  CapRelocsMode preemptibleCapRelocsMode;
+  // Method used for capability relocations for non-preemptible symbols
+  CapRelocsMode localCapRelocsMode;
+  CapTableScopePolicy capTableScope;
+  bool relativeCapRelocsOnly;
+
   bool power10Stubs;
   ARMVFPArgKind armVFPArgs = ARMVFPArgKind::Default;
   BuildIdKind buildId = BuildIdKind::None;

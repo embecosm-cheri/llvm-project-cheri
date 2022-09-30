@@ -130,6 +130,8 @@ unsigned AsmPrinter::GetSizeOfEncodedValue(unsigned Encoding) const {
   default:
     llvm_unreachable("Invalid encoded value.");
   case dwarf::DW_EH_PE_absptr:
+    assert(!MF->getDataLayout().isFatPointer(0u) &&
+           "Should not use GetSizeOfEncodedValue when emitting capabilities");
     return MF->getDataLayout().getPointerSize();
   case dwarf::DW_EH_PE_udata2:
     return 2;
@@ -219,6 +221,24 @@ void AsmPrinter::emitCallSiteValue(uint64_t Value, unsigned Encoding) const {
     emitULEB128(Value);
   else
     OutStreamer->emitIntValue(Value, GetSizeOfEncodedValue(Encoding));
+}
+
+void AsmPrinter::emitCallSiteCheriCapability(const MCSymbol *Hi,
+                                             const MCSymbol *Lo) const {
+  const TargetLoweringObjectFile &TLOF = getObjFileLowering();
+  // Get the Hi-Lo expression. We use (and need) Lo since the offset needs to
+  // be a constant expression, whereas CurrentFnSym is preemptible.
+  const MCExpr *DiffToStart = MCBinaryExpr::createSub(
+      MCSymbolRefExpr::create(Hi, OutContext),
+      MCSymbolRefExpr::create(Lo, OutContext),
+      OutContext);
+  // Note: we cannot use Lo here since that is an assembler-local symbol and
+  // this would result in EmitCheriCapability() creating a relocation against
+  // section plus offset rather than function + offset. We need the right
+  // bounds and permissions info and need to use a non-preemptible alias.
+  assert(CurrentFnBeginForEH && "Missing local function entry alias for EH!");
+  OutStreamer->EmitCheriCapability(CurrentFnBeginForEH, DiffToStart,
+                                   TLOF.getCheriCapabilitySize(TM));
 }
 
 //===----------------------------------------------------------------------===//

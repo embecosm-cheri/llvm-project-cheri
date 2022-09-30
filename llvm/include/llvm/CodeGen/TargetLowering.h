@@ -123,11 +123,15 @@ private:
   // memcpy only
   bool MemcpyStrSrc; // Indicates whether the memcpy source is an in-register
                      // constant so it does not need to be loaded.
-  Align SrcAlign;    // Inferred alignment of the source or default value if the
-                     // memory operation does not need to load the value.
+  Align SrcAlign; // Inferred alignment of the source or default value if the
+                  // memory operation does not need to load the value.
+public:
+  bool MustPreserveCheriCaps; // memcpy must preserve CHERI tags even if
+  // SrcAlign < CapSize (since it could be aligned
+  // at run time)
 public:
   static MemOp Copy(uint64_t Size, bool DstAlignCanChange, Align DstAlign,
-                    Align SrcAlign, bool IsVolatile,
+                    Align SrcAlign, bool IsVolatile, bool MustPreserveCheriCaps,
                     bool MemcpyStrSrc = false) {
     MemOp Op;
     Op.Size = Size;
@@ -137,6 +141,7 @@ public:
     Op.IsMemset = false;
     Op.ZeroMemset = false;
     Op.MemcpyStrSrc = MemcpyStrSrc;
+    Op.MustPreserveCheriCaps = MustPreserveCheriCaps;
     Op.SrcAlign = SrcAlign;
     return Op;
   }
@@ -151,6 +156,7 @@ public:
     Op.IsMemset = true;
     Op.ZeroMemset = IsZeroMemset;
     Op.MemcpyStrSrc = false;
+    Op.MustPreserveCheriCaps = false;
     return Op;
   }
 
@@ -348,18 +354,42 @@ public:
 
   virtual bool useSoftFloat() const { return false; }
 
+  virtual uint32_t getExceptionPointerAS() const { return 0; }
+
   /// Return the pointer type for the given address space, defaults to
   /// the pointer type from the data layout.
   /// FIXME: The default needs to be removed once all the code is updated.
-  virtual MVT getPointerTy(const DataLayout &DL, uint32_t AS = 0) const {
+  virtual MVT getPointerTy(const DataLayout &DL,
+  // To ease porting of backends allow defaulting to AS0
+#ifdef LLVM_TARGETLOWERINGINFO_DEFAULT_AS
+                   uint32_t AS = LLVM_TARGETLOWERINGINFO_DEFAULT_AS) const {
+#else
+                   uint32_t AS) const {
+#endif
+    if (DL.isFatPointer(AS))
+      return MVT::getFatPointerVT(DL.getPointerSizeInBits(AS));
     return MVT::getIntegerVT(DL.getPointerSizeInBits(AS));
   }
 
   /// Return the in-memory pointer type for the given address space, defaults to
   /// the pointer type from the data layout.  FIXME: The default needs to be
   /// removed once all the code is updated.
-  virtual MVT getPointerMemTy(const DataLayout &DL, uint32_t AS = 0) const {
+  virtual MVT getPointerMemTy(const DataLayout &DL,
+  // To ease porting of backends allow defaulting to AS0
+#ifdef LLVM_TARGETLOWERINGINFO_DEFAULT_AS
+                   uint32_t AS = LLVM_TARGETLOWERINGINFO_DEFAULT_AS) const {
+#else
+                   uint32_t AS) const {
+#endif
+    if (DL.isFatPointer(AS))
+      return MVT::getFatPointerVT(DL.getPointerSizeInBits(AS));
     return MVT::getIntegerVT(DL.getPointerSizeInBits(AS));
+  }
+
+  /// Return the integer type with the same size as the address range for
+  /// the given address space.
+  virtual MVT getPointerRangeTy(const DataLayout &DL, uint32_t AS = 0) const {
+    return MVT::getIntegerVT(DL.getPointerAddrSizeInBits(AS));
   }
 
   /// Return the type for frame index, which is determined by
@@ -377,7 +407,8 @@ public:
   /// Return the type for operands of fence.
   /// TODO: Let fence operands be of i32 type and remove this.
   virtual MVT getFenceOperandTy(const DataLayout &DL) const {
-    return getPointerTy(DL);
+    // FIXME: hardcoded AS0
+    return getPointerTy(DL, 0);
   }
 
   /// Return the type to use for a scalar shift opcode, given the shifted amount
@@ -406,7 +437,8 @@ public:
   /// ISD::INSERT_VECTOR_ELT, ISD::EXTRACT_VECTOR_ELT,
   /// ISD::INSERT_SUBVECTOR, and ISD::EXTRACT_SUBVECTOR
   virtual MVT getVectorIdxTy(const DataLayout &DL) const {
-    return getPointerTy(DL);
+    // FIXME: hardcoded AS0
+    return getPointerTy(DL, 0);
   }
 
   /// Returns the type to be used for the EVL/AVL operand of VP nodes:
@@ -1216,6 +1248,7 @@ public:
   bool rangeFitsInWord(const APInt &Low, const APInt &High,
                        const DataLayout &DL) const {
     // FIXME: Using the pointer type doesn't seem ideal.
+    // XXXAR: AS0 hardcoded
     uint64_t BW = DL.getIndexSizeInBits(0u);
     uint64_t Range = (High - Low).getLimitedValue(UINT64_MAX - 1) + 1;
     return Range <= BW;
@@ -1468,12 +1501,14 @@ public:
     if (auto *VTy = dyn_cast<VectorType>(Ty)) {
       Type *EltTy = VTy->getElementType();
       // Lower vectors of pointers to native pointer types.
+      EVT ElemVT;
       if (auto *PTy = dyn_cast<PointerType>(EltTy)) {
-        EVT PointerTy(getPointerTy(DL, PTy->getAddressSpace()));
-        EltTy = PointerTy.getTypeForEVT(Ty->getContext());
+        ElemVT = getPointerTy(DL, PTy->getAddressSpace());
+      } else {
+        ElemVT = EVT::getEVT(EltTy, false);
       }
-      return EVT::getVectorVT(Ty->getContext(), EVT::getEVT(EltTy, false),
-                              VTy->getElementCount());
+      assert(!ElemVT.isOverloaded() && "Should not get an overloaded EVT here");
+      return EVT::getVectorVT(Ty->getContext(), ElemVT, VTy->getElementCount());
     }
 
     return EVT::getEVT(Ty, AllowUnknown);
@@ -1629,8 +1664,9 @@ public:
   }
 
   /// Returns the size of the platform's va_list object.
-  virtual unsigned getVaListSizeInBits(const DataLayout &DL) const {
-    return getPointerTy(DL).getSizeInBits();
+  virtual unsigned getVaListSizeInBits(const DataLayout &DL,
+                                       unsigned AS) const {
+    return getPointerTy(DL, AS).getSizeInBits();
   }
 
   /// Get maximum # of store operations permitted for llvm.memset
@@ -1942,6 +1978,13 @@ public:
     return false;
   }
 
+  /// Whether the atomic operation \p AI with type \p ValueTy and alignment
+  /// \p Alignment via \p PointerTy is natively supported or requires an
+  /// __atomic_* libcall.
+  virtual bool supportsAtomicOperation(const DataLayout &DL,
+                                       const Instruction *AI, Type *ValueTy,
+                                       Type *PointerTy, Align Alignment) const;
+
   /// Perform a load-linked operation on Addr, returning a "Value *" with the
   /// corresponding pointee type. This may entail some non-trivial operations to
   /// truncate or reconstruct types that will be illegal in the backend. See
@@ -2081,6 +2124,16 @@ public:
   virtual AtomicExpansionKind
   shouldExpandAtomicCmpXchgInIR(AtomicCmpXchgInst *AI) const {
     return AtomicExpansionKind::None;
+  }
+
+  /// Return true if the backend can lower of pointer-type cmpxchg.
+  /// Otherwise it will be converted to an integer-type cmpxchg in the IR
+  /// TODO: remove this hook
+  virtual bool canLowerPointerTypeCmpXchg(const DataLayout &DL,
+                                          AtomicCmpXchgInst *AI) const {
+    // Capability-type cmxchg always needs to use i8 addrspace(200)* instead of
+    // converting arguments to integer types.
+    return DL.isFatPointer(AI->getCompareOperand()->getType());
   }
 
   /// Returns how the IR-level AtomicExpand pass should expand the given
@@ -3056,6 +3109,28 @@ public:
     return false;
   }
 
+  // Return true if the target has a capability set address instruction.
+  virtual bool hasCapabilitySetAddress() const { return false; }
+  MVT cheriCapabilityType() const { return CapType; }
+  bool cheriCapabilityTypeHasPreciseBounds() const {
+    return CapTypeHasPreciseBounds;
+  }
+  bool supportsUnalignedCapabilityMemOps() const {
+    return SupportsUnalignedCapabilityMemOps;
+  }
+  virtual TailPaddingAmount getTailPaddingForPreciseBounds(uint64_t Size) const {
+    return TailPaddingAmount::None;
+  }
+  virtual Align getAlignmentForPreciseBounds(uint64_t Size) const {
+    return Align();
+  }
+  bool supportsAtomicCapabilityOperations() const {
+    return SupportsAtomicCapabilityOperations;
+  }
+  Register getNullCapabilityRegister() const {
+    return NullCapabilityRegister;
+  }
+
   /// Does this target require the clearing of high-order bits in a register
   /// passed to the fp16 to fp conversion library function.
   virtual bool shouldKeepZExtForFP16Conv() const { return false; }
@@ -3394,6 +3469,25 @@ protected:
   /// \see enableExtLdPromotion.
   bool EnableExtLdPromotion;
 
+  /// The type to use for CHERI capabilities (if supported)
+  /// Should be one of iFATPTR64/128/256
+  MVT CapType = MVT();
+
+  /// Whether the CHERI capability type supports precise bounds for any
+  /// allocation. Defaults to false for safety over efficiency.
+  bool CapTypeHasPreciseBounds = false;
+
+  /// Whether CHERI Capability loads/stores can be used with unaligned addresses
+  /// This makes it possible to do a tag-preserving copy even if the alignment
+  /// is not statically known to be at least capability aligned.
+  bool SupportsUnalignedCapabilityMemOps = false;
+
+  /// Whether atomic operations with CHERI capability values are supported.
+  bool SupportsAtomicCapabilityOperations = false;
+
+  /// Set the target has a NULL capability register (e.g. Mips::CNULL)
+  Register NullCapabilityRegister = {};
+
   /// Return true if the value types that can be represented by the specified
   /// register class are all legal.
   bool isLegalRC(const TargetRegisterInfo &TRI,
@@ -3565,7 +3659,8 @@ public:
   virtual bool
   findOptimalMemOpLowering(std::vector<EVT> &MemOps, unsigned Limit,
                            const MemOp &Op, unsigned DstAS, unsigned SrcAS,
-                           const AttributeList &FuncAttributes) const;
+                           const AttributeList &FuncAttributes,
+                           bool *ReachedLimit = nullptr) const;
 
   /// Check to see if the specified operand of the specified instruction is a
   /// constant integer.  If so, check to see if there are any bits set in the
@@ -4797,6 +4892,10 @@ public:
   /// possibly more for vectors.
   std::pair<SDValue, SDValue> expandUnalignedLoad(LoadSDNode *LD,
                                                   SelectionDAG &DAG) const;
+
+  SDValue unalignedLoadStoreCSetbounds(const char *loadOrStore, SDValue Ptr,
+                                       const SDLoc &DL, unsigned CapSize,
+                                       SelectionDAG &DAG) const;
 
   /// Expands an unaligned store to 2 half-size stores for integer values, and
   /// possibly more for vectors.

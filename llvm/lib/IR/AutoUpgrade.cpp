@@ -543,6 +543,13 @@ static bool UpgradeIntrinsicFunction1(Function *F, Function *&NewFn) {
   switch (Name[0]) {
   default: break;
   case 'a': {
+    if (Name == "addressofreturnaddress") {
+      NewFn = Intrinsic::getDeclaration(F->getParent(),
+                                        Intrinsic::addressofreturnaddress,
+                                        F->getReturnType());
+      return true;
+    }
+
     if (Name.startswith("arm.rbit") || Name.startswith("aarch64.rbit")) {
       NewFn = Intrinsic::getDeclaration(F->getParent(), Intrinsic::bitreverse,
                                         F->arg_begin()->getType());
@@ -631,6 +638,11 @@ static bool UpgradeIntrinsicFunction1(Function *F, Function *&NewFn) {
                                           Intrinsic::aarch64_neon_faddp, Ty);
         return true;
       }
+    }
+    if (Name == "annotation") {
+      Type *Tys[] = {F->getReturnType(), F->getFunctionType()->params()[1] };
+      NewFn = Intrinsic::getDeclaration(F->getParent(), Intrinsic::annotation, Tys);
+      return true;
     }
 
     // Changed in 12.0: bfdot accept v4bf16 and v8bf16 instead of v8i8 and v16i8
@@ -737,6 +749,10 @@ static bool UpgradeIntrinsicFunction1(Function *F, Function *&NewFn) {
                                         F->arg_begin()->getType());
       return true;
     }
+    if (Name.startswith("cheri.cap.offset.increment") && F->arg_size() == 2) {
+      NewFn = nullptr;
+      return true;
+    }
     break;
   }
   case 'd': {
@@ -747,6 +763,13 @@ static bool UpgradeIntrinsicFunction1(Function *F, Function *&NewFn) {
     }
     break;
   }
+  case 'f':
+    if (Name == "frameaddress") {
+      NewFn = Intrinsic::getDeclaration(F->getParent(), Intrinsic::frameaddress,
+                                        F->getReturnType());
+      return true;
+    }
+    break;
   case 'e': {
     if (Name.startswith("experimental.vector.extract.")) {
       rename(F);
@@ -991,11 +1014,24 @@ static bool UpgradeIntrinsicFunction1(Function *F, Function *&NewFn) {
             Intrinsic::getDeclaration(F->getParent(), Intrinsic::prefetch, Tys);
         return true;
       }
-    } else if (Name.startswith("ptr.annotation.") && F->arg_size() == 4) {
-      rename(F);
+    } else if (Name.startswith("ptr.annotation.")) {
+      Type *Tys[] = {F->getReturnType(), F->getFunctionType()->params()[1] };
       NewFn = Intrinsic::getDeclaration(F->getParent(),
-                                        Intrinsic::ptr_annotation,
-                                        F->arg_begin()->getType());
+                                        Intrinsic::ptr_annotation, Tys);
+      if (F->arg_size() == 4 || NewFn != F) {
+        if (F->arg_size() == 4)
+          rename(F);
+        return true;
+      } else {
+        NewFn = nullptr;
+      }
+    }
+    break;
+
+  case 'r':
+    if (Name == "returnaddress") {
+      NewFn = Intrinsic::getDeclaration(
+          F->getParent(), Intrinsic::returnaddress, F->getReturnType());
       return true;
     }
     break;
@@ -1005,14 +1041,46 @@ static bool UpgradeIntrinsicFunction1(Function *F, Function *&NewFn) {
       NewFn = nullptr;
       return true;
     }
+    if (Name == "stacksave") {
+      NewFn = Intrinsic::getDeclaration(F->getParent(), Intrinsic::stacksave,
+                                        F->getReturnType());
+      return true;
+    }
+    if (Name == "stackrestore") {
+      auto *ArgTy = F->arg_begin()->getType();
+      NewFn = Intrinsic::getDeclaration(F->getParent(), Intrinsic::stackrestore,
+                                        ArgTy);
+      return true;
+    }
     break;
 
   case 'v': {
-    if (Name == "var.annotation" && F->arg_size() == 4) {
-      rename(F);
-      NewFn = Intrinsic::getDeclaration(F->getParent(),
-                                        Intrinsic::var_annotation);
+    auto *ArgTy = F->arg_empty() ? nullptr : F->arg_begin()->getType();
+    if (Name == "va_start") {
+      NewFn = Intrinsic::getDeclaration(F->getParent(), Intrinsic::vastart,
+                                        ArgTy);
       return true;
+    }
+    if (Name == "va_end") {
+      NewFn = Intrinsic::getDeclaration(F->getParent(), Intrinsic::vaend,
+                                        ArgTy);
+      return true;
+    }
+    if (Name == "va_copy") {
+      NewFn = Intrinsic::getDeclaration(F->getParent(), Intrinsic::vacopy,
+                                        { ArgTy, ArgTy });
+      return true;
+    }
+    if (Name == "var.annotation") {
+      NewFn = Intrinsic::getDeclaration(F->getParent(),
+                                        Intrinsic::var_annotation, ArgTy);
+      if (F->arg_size() == 4 || NewFn != F) {
+        if (F->arg_size() == 4)
+          rename(F);
+        return true;
+      } else {
+        NewFn = nullptr;
+      }
     }
     break;
   }
@@ -1101,7 +1169,8 @@ GlobalVariable *llvm::UpgradeGlobalVariable(GlobalVariable *GV) {
   Constant *NewInit = ConstantArray::get(ArrayType::get(EltTy, N), NewCtors);
 
   return new GlobalVariable(NewInit->getType(), false, GV->getLinkage(),
-                            NewInit, GV->getName());
+                            NewInit, GV->getName(), GV->getThreadLocalMode(),
+                            GV->getAddressSpace());
 }
 
 // Handles upgrading SSE2/AVX2/AVX512BW PSLLDQ intrinsics by converting them
@@ -3803,6 +3872,10 @@ void llvm::UpgradeIntrinsicCall(CallBase *CI, Function *NewFn) {
                                CI->getArgOperand(0), "h2f");
     } else if (IsARM) {
       Rep = UpgradeARMIntrinsicCall(Name, CI, F, Builder);
+    } else if (!IsX86 && Name.startswith("cheri.cap.offset.increment")) {
+      Rep = Builder.CreateGEP(Builder.getInt8Ty(), CI->getArgOperand(0),
+                              CI->getArgOperand(1));
+      Rep->takeName(CI);
     } else {
       llvm_unreachable("Unknown function for CallBase upgrade.");
     }
@@ -3946,8 +4019,8 @@ void llvm::UpgradeIntrinsicCall(CallBase *CI, Function *NewFn) {
 
   case Intrinsic::var_annotation:
     // Upgrade from versions that lacked the annotation attribute argument.
-    assert(CI->arg_size() == 4 &&
-           "Before LLVM 12.0 this intrinsic took four arguments");
+    // assert(CI->arg_size() == 4 &&
+    //        "Before LLVM 12.0 this intrinsic took four arguments");
     // Create a new call with an added null annotation attribute argument.
     NewCall = Builder.CreateCall(
         NewFn,
@@ -4682,6 +4755,9 @@ void llvm::UpgradeAttributes(AttrBuilder &B) {
   }
   if (!FramePointer.empty())
     B.addAttribute("frame-pointer", FramePointer);
+
+  if (B.contains("must-preserve-cheri-tags"))
+    B.addAttribute(Attribute::MustPreserveCheriTags);
 
   A = B.getAttribute("null-pointer-is-valid");
   if (A.isValid()) {

@@ -1043,7 +1043,7 @@ foreach vti = AllFloatVectors in {
   // Add complexity to increase the priority of this pattern being matched.
   def : Pat<(store (vti.Scalar (int_riscv_vfmv_f_s (vti.Vector vti.RegClass:$rs2))), GPR:$rs1),
             (store_instr vti.RegClass:$rs2, GPR:$rs1, 1, vti.Log2SEW)>;
-  def : Pat<(store (extractelt (vti.Vector vti.RegClass:$rs2), 0), GPR:$rs1),
+  def : Pat<(store (extractelt (vti.Vector vti.RegClass:$rs2), (XLenVT 0)), GPR:$rs1),
             (store_instr vti.RegClass:$rs2, GPR:$rs1, 1, vti.Log2SEW)>;
   }
 
@@ -1053,6 +1053,6 @@ foreach vti = AllFloatVectors in {
   // Only pattern-match extract-element operations where the index is 0. Any
   // other index will have been custom-lowered to slide the vector correctly
   // into place.
-  def : Pat<(vti.Scalar (extractelt (vti.Vector vti.RegClass:$rs2), 0)),
+  def : Pat<(vti.Scalar (extractelt (vti.Vector vti.RegClass:$rs2), (XLenVT 0))),
             (vmv_f_s_inst vti.RegClass:$rs2, vti.Log2SEW)>;
 }

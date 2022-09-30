@@ -64,10 +64,13 @@ bool MipsDAGToDAGISel::runOnMachineFunction(MachineFunction &MF) {
 
 /// getGlobalBaseReg - Output the instructions required to put the
 /// GOT address into a register.
-SDNode *MipsDAGToDAGISel::getGlobalBaseReg() {
-  Register GlobalBaseReg = MF->getInfo<MipsFunctionInfo>()->getGlobalBaseReg(*MF);
-  return CurDAG->getRegister(GlobalBaseReg, getTargetLowering()->getPointerTy(
-                                                CurDAG->getDataLayout()))
+SDNode *MipsDAGToDAGISel::getGlobalBaseReg(bool IsForTls) {
+  Register GlobalBaseReg = MF->getInfo<MipsFunctionInfo>()->getGlobalBaseReg(*MF, IsForTls);
+  // XXXAR: address space 0 is correct here since it will never be used
+  // for capabilities
+  return CurDAG
+      ->getRegister(GlobalBaseReg, getTargetLowering()->getPointerTy(
+                                       CurDAG->getDataLayout(), 0))
       .getNode();
 }
 
@@ -105,6 +108,11 @@ bool MipsDAGToDAGISel::selectIntAddr12MM(SDValue Addr, SDValue &Base,
 
 bool MipsDAGToDAGISel::selectIntAddr16MM(SDValue Addr, SDValue &Base,
                                        SDValue &Offset) const {
+  llvm_unreachable("Unimplemented function.");
+  return false;
+}
+
+bool MipsDAGToDAGISel::selectAddrFI(SDValue Addr, SDValue &Base) const {
   llvm_unreachable("Unimplemented function.");
   return false;
 }
@@ -289,14 +297,14 @@ void MipsDAGToDAGISel::Select(SDNode *Node) {
 
   // Get target GOT address.
   case ISD::GLOBAL_OFFSET_TABLE:
-    ReplaceNode(Node, getGlobalBaseReg());
+    ReplaceNode(Node, getGlobalBaseReg(/*IsForTls=*/false));
     return;
 
 #ifndef NDEBUG
   case ISD::LOAD:
   case ISD::STORE:
-    assert((Subtarget->systemSupportsUnalignedAccess() ||
-            cast<MemSDNode>(Node)->getMemoryVT().getSizeInBits() / 8 <=
+    assert((Subtarget->systemSupportsUnalignedAccess(cast<MemSDNode>(Node)->getAddressSpace()) ||
+            (cast<MemSDNode>(Node)->getMemoryVT().getSizeInBits() / 8) <=
             cast<MemSDNode>(Node)->getAlignment()) &&
            "Unexpected unaligned loads/stores.");
     break;

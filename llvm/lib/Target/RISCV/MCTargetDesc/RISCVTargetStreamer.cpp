@@ -32,6 +32,8 @@ void RISCVTargetStreamer::emitDirectiveOptionRVC() {}
 void RISCVTargetStreamer::emitDirectiveOptionNoRVC() {}
 void RISCVTargetStreamer::emitDirectiveOptionRelax() {}
 void RISCVTargetStreamer::emitDirectiveOptionNoRelax() {}
+void RISCVTargetStreamer::emitDirectiveOptionCapMode() {}
+void RISCVTargetStreamer::emitDirectiveOptionNoCapMode() {}
 void RISCVTargetStreamer::emitAttribute(unsigned Attribute, unsigned Value) {}
 void RISCVTargetStreamer::finishAttributeSection() {}
 void RISCVTargetStreamer::emitTextAttribute(unsigned Attribute,
@@ -95,6 +97,14 @@ void RISCVTargetAsmStreamer::emitDirectiveOptionRelax() {
 
 void RISCVTargetAsmStreamer::emitDirectiveOptionNoRelax() {
   OS << "\t.option\tnorelax\n";
+}
+
+void RISCVTargetAsmStreamer::emitDirectiveOptionCapMode() {
+  OS << "\t.option\tcapmode\n";
+}
+
+void RISCVTargetAsmStreamer::emitDirectiveOptionNoCapMode() {
+  OS << "\t.option\tnocapmode\n";
 }
 
 void RISCVTargetAsmStreamer::emitAttribute(unsigned Attribute, unsigned Value) {

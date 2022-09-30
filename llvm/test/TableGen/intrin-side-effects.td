@@ -42,4 +42,4 @@ def int_random_gen   : Intrinsic<[llvm_i32_ty], [], [IntrNoMem, IntrHasSideEffec
 
 // CHECK: 1, // llvm.random.gen
 // CHECK: case 1:
-// CHECK-NEXT: Atts[] = {Attribute::NoUnwind}
+// CHECK-NEXT: Atts[] = {Attribute::NoUnwind,Attribute::HasSideEffects}

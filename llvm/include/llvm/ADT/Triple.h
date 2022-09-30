@@ -148,6 +148,9 @@ public:
     KalimbaSubArch_v5,
 
     MipsSubArch_r6,
+    MipsSubArch_cheri64,
+    MipsSubArch_cheri128,
+    MipsSubArch_cheri256,
 
     PPCSubArch_spe,
 
@@ -239,6 +242,8 @@ public:
     MuslEABI,
     MuslEABIHF,
     MuslX32,
+
+    CheriPurecap,
 
     MSVC,
     Itanium,

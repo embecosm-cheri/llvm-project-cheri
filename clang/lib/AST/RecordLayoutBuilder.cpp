@@ -1912,11 +1912,15 @@ void ItaniumRecordLayoutBuilder::LayoutField(const FieldDecl *D,
   if (D->getType()->isIncompleteArrayType()) {
     setDeclInfo(true /* IsIncompleteArrayType */);
   } else if (const ReferenceType *RT = D->getType()->getAs<ReferenceType>()) {
-    unsigned AS = Context.getTargetAddressSpace(RT->getPointeeType());
+    const TargetInfo &TI = Context.getTargetInfo();
+    unsigned AS =
+        Context.getTargetAddressSpace(RT->getPointeeType().getAddressSpace());
+    bool IsCHERICap =
+      RT->isCHERICapabilityType(Context) || TI.areAllPointersCapabilities();
     EffectiveFieldSize = FieldSize = Context.toCharUnitsFromBits(
-        Context.getTargetInfo().getPointerWidth(AS));
+      IsCHERICap ? TI.getCHERICapabilityWidth() : TI.getPointerWidth(AS));
     FieldAlign = Context.toCharUnitsFromBits(
-        Context.getTargetInfo().getPointerAlign(AS));
+      IsCHERICap ? TI.getCHERICapabilityAlign() : TI.getPointerAlign(AS));
   } else {
     setDeclInfo(false /* IsIncompleteArrayType */);
 

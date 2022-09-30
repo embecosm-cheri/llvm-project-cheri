@@ -14,6 +14,7 @@
 #include "SyntheticSections.h"
 #include "Target.h"
 #include "Writer.h"
+#include "Arch/Cheri.h"
 #include "lld/Common/ErrorHandler.h"
 #include "lld/Common/Strings.h"
 #include "llvm/Support/Compiler.h"
@@ -53,6 +54,77 @@ std::string lld::toString(const elf::Symbol &sym) {
   return ret;
 }
 
+static std::string getLocationNonTemplate(InputSectionBase *isec,
+                                          uint64_t symOffset);
+
+std::string lld::verboseToString(const Symbol *b, uint64_t symOffset) {
+  std::string msg;
+
+  if (b->isLocal())
+    msg += "local ";
+  if (b->isWeak())
+    msg += "weak ";
+  if (b->isShared())
+    msg += "shared ";
+  // else if (B->isDefined())
+  //  Msg += "defined ";
+  if (b->type == STT_COMMON)
+    msg += "common ";
+  else if (b->type == STT_TLS)
+    msg += "TLS ";
+  if (b->isSection())
+    msg += "section ";
+  else if (b->isTls())
+    msg += "tls ";
+  else if (b->isFunc())
+    msg += "function ";
+  else if (b->isGnuIFunc())
+    msg += "gnu ifunc ";
+  else if (b->isObject())
+    msg += "object ";
+  else if (b->isFile())
+    msg += "file ";
+  else if (b->isUndefined())
+    msg += "<undefined> ";
+  else
+    msg += "<unknown kind> ";
+
+  if (b->isInGot())
+    msg += "(in GOT) ";
+  if (b->isInPlt())
+    msg += "(in PLT) ";
+
+  const elf::Defined* dr = dyn_cast<elf::Defined>(b);
+  elf::InputSectionBase* isec = nullptr;
+  if (dr && dr->section) {
+    symOffset = dr->isSection() ? symOffset : dr->section->getOffset(dr->value);
+    isec = dyn_cast<elf::InputSectionBase>(dr->section);
+  }
+  std::string name = toString(*b);
+  if (name.empty()) {
+    if (dr && dr->section) {
+      if (isec) {
+        name = ::getLocationNonTemplate(isec, symOffset);
+      } else {
+        name = (dr->section->name + "+0x" + utohexstr(symOffset)).str();
+      }
+    } else if (elf::OutputSection* os = b->getOutputSection()) {
+      name = (os->name + "+(unknown offset)").str();
+    }
+  }
+  if (name.empty()) {
+    name = "<unknown symbol>";
+  }
+  msg += name;
+  if (!b->isUndefined()) {
+    std::string src = isec ? isec->getSrcMsg(*b, symOffset) : toString(b->file);
+    if (isec)
+      src += " (" + isec->getObjMsg(symOffset) + ")";
+    msg += "\n>>> defined in " + src;
+  }
+  return msg;
+}
+
 Defined *ElfSym::bss;
 Defined *ElfSym::etext1;
 Defined *ElfSym::etext2;
@@ -64,6 +136,7 @@ Defined *ElfSym::globalOffsetTable;
 Defined *ElfSym::mipsGp;
 Defined *ElfSym::mipsGpDisp;
 Defined *ElfSym::mipsLocalGp;
+Defined *ElfSym::cheriCapabilityTable;
 Defined *ElfSym::relaIpltStart;
 Defined *ElfSym::relaIpltEnd;
 Defined *ElfSym::riscvGlobalPointer;
@@ -191,9 +264,34 @@ uint64_t Symbol::getPltVA() const {
   return outVA;
 }
 
+uint64_t Symbol::getCapTableVA(const InputSectionBase *isec,
+                               uint64_t offset) const {
+  return ElfSym::cheriCapabilityTable->getVA() +
+    getCapTableOffset(isec, offset);
+}
+
+uint64_t Symbol::getCapTableOffset(const InputSectionBase *isec,
+                                   uint64_t offset) const {
+  return config->capabilitySize *
+    in.cheriCapTable->getIndex(*this, isec, offset);
+}
+
 uint64_t Symbol::getSize() const {
-  if (const auto *dr = dyn_cast<Defined>(this))
+  if (const auto *dr = dyn_cast<Defined>(this)) {
+    if (config->isCheriAbi && dr->isSectionStartSymbol) {
+      assert(dr->value == 0 && "Bad section start symbol?");
+      if (!dr->section)
+        return 0; // Section is not included in the output
+      return dr->section->getOutputSection()->size;
+    }
     return dr->size;
+  }
+  // FIXME: assuming it is always shared broke this
+  if (isa<Undefined>(this))
+    return 0;
+  if (isUndefWeak())
+    return 0;
+  // errs() << "Should be a Shared symbol " << toString(*this) << ":" << this->kind() << "\n";
   return cast<SharedSymbol>(this)->size;
 }
 
@@ -273,6 +371,8 @@ uint8_t Symbol::computeBinding() const {
 }
 
 bool Symbol::includeInDynsym() const {
+  if (usedByDynReloc)
+    return true;
   if (computeBinding() == STB_LOCAL)
     return false;
   if (!isDefined() && !isCommon())
@@ -335,6 +435,22 @@ void elf::maybeWarnUnorderableSymbol(const Symbol *sym) {
     report(": unable to order synthetic symbol: ");
   else if (d && !d->section->isLive())
     report(": unable to order discarded symbol: ");
+}
+
+static std::string getLocationNonTemplate(InputSectionBase *isec,
+                                          uint64_t symOffset) {
+  switch (config->ekind) {
+  default:
+    llvm_unreachable("Invalid kind");
+  case ELF32LEKind:
+    return isec->getLocation<ELF32LE>(symOffset);
+  case ELF32BEKind:
+    return isec->getLocation<ELF32BE>(symOffset);
+  case ELF64LEKind:
+    return isec->getLocation<ELF64LE>(symOffset);
+  case ELF64BEKind:
+    return isec->getLocation<ELF64BE>(symOffset);
+  }
 }
 
 // Returns true if a symbol can be replaced at load-time by a symbol

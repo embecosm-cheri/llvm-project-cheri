@@ -8,6 +8,7 @@
 
 #include "SnippetFile.h"
 #include "Error.h"
+#include "llvm/MC/MCAsmBackend.h"
 #include "llvm/MC/MCContext.h"
 #include "llvm/MC/MCInstPrinter.h"
 #include "llvm/MC/MCObjectFileInfo.h"
@@ -88,8 +89,8 @@ public:
 
 private:
   // We only care about instructions, we don't implement this part of the API.
-  void emitCommonSymbol(MCSymbol *Symbol, uint64_t Size,
-                        unsigned ByteAlignment) override {}
+  void emitCommonSymbol(MCSymbol *Symbol, uint64_t Size, unsigned ByteAlignment,
+                        TailPaddingAmount TailPadding) override {}
   bool emitSymbolAttribute(MCSymbol *Symbol, MCSymbolAttr Attribute) override {
     return false;
   }
@@ -97,7 +98,8 @@ private:
                             unsigned ValueSize,
                             unsigned MaxBytesToEmit) override {}
   void emitZerofill(MCSection *Section, MCSymbol *Symbol, uint64_t Size,
-                    unsigned ByteAlignment, SMLoc Loc) override {}
+                    unsigned ByteAlignment, TailPaddingAmount TailPadding,
+                    SMLoc Loc) override {}
 
   unsigned findRegisterByName(const StringRef RegName) const {
     // FIXME: Can we do better than this ?
@@ -143,6 +145,9 @@ Expected<std::vector<BenchmarkCode>> readSnippets(const LLVMState &State,
   std::string Error;
   raw_string_ostream ErrorStream(Error);
   formatted_raw_ostream InstPrinterOStream(ErrorStream);
+  std::unique_ptr<MCAsmBackend> MAB(
+      TM.getTarget().createMCAsmBackend(*TM.getMCSubtargetInfo(), *TM.getMCRegisterInfo(),
+                                        TM.Options.MCOptions));
   const std::unique_ptr<MCInstPrinter> InstPrinter(
       TM.getTarget().createMCInstPrinter(
           TM.getTargetTriple(), TM.getMCAsmInfo()->getAssemblerDialect(),

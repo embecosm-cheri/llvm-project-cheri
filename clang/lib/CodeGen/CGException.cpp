@@ -263,9 +263,9 @@ static llvm::FunctionCallee getPersonalityFn(CodeGenModule &CGM,
 static llvm::Constant *getOpaquePersonalityFn(CodeGenModule &CGM,
                                         const EHPersonality &Personality) {
   llvm::FunctionCallee Fn = getPersonalityFn(CGM, Personality);
-  llvm::PointerType* Int8PtrTy = llvm::PointerType::get(
-      llvm::Type::getInt8Ty(CGM.getLLVMContext()),
-      CGM.getDataLayout().getProgramAddressSpace());
+  llvm::PointerType *Int8PtrTy =
+      llvm::PointerType::get(llvm::Type::getInt8Ty(CGM.getLLVMContext()),
+                             CGM.getDataLayout().getProgramAddressSpace());
 
   return llvm::ConstantExpr::getBitCast(cast<llvm::Constant>(Fn.getCallee()),
                                         Int8PtrTy);
@@ -634,9 +634,12 @@ void CodeGenFunction::EnterCXXTryStmt(const CXXTryStmt &S, bool IsFnTryBlock) {
           C->getCaughtType().getNonReferenceType(), CaughtTypeQuals);
 
       CatchTypeInfo TypeInfo{nullptr, 0};
-      if (CaughtType->isObjCObjectPointerType())
+      if (CaughtType->isObjCObjectPointerType()) {
         TypeInfo.RTTI = CGM.getObjCRuntime().GetEHType(CaughtType);
-      else
+        TypeInfo.RTTI = 
+            llvm::ConstantExpr::getPointerBitCastOrAddrSpaceCast(TypeInfo.RTTI,
+                    llvm::PointerType::getWithSamePointeeType(cast<llvm::PointerType>(TypeInfo.RTTI->getType()), 0));
+      } else
         TypeInfo = CGM.getCXXABI().getAddrOfCXXCatchHandlerType(
             CaughtType, C->getCaughtType());
       CatchScope->setHandler(I, TypeInfo, Handler);
@@ -1133,7 +1136,11 @@ static void emitCatchDispatchBlock(CodeGenFunction &CGF,
     assert(handler.Type.Flags == 0 &&
            "landingpads do not support catch handler flags");
     assert(typeValue && "fell into catch-all case!");
-    typeValue = CGF.Builder.CreateBitCast(typeValue, CGF.Int8PtrTy);
+    // The backend extracts a constant address from the cast, so it doesn't
+    // actually matter which AS it's in. Use AS0 here to avoid having to
+    // overloading the intrinsic.
+    typeValue = CGF.Builder.CreatePointerBitCastOrAddrSpaceCast(typeValue,
+            CGF.Int8Ty->getPointerTo(0));
 
     // Figure out the next block.
     bool nextIsEnd;
@@ -2104,7 +2111,8 @@ void CodeGenFunction::EmitSEHExceptionCodeSave(CodeGenFunction &ParentCGF,
     // pointer is stored in the second field. So, GEP 20 bytes backwards and
     // load the pointer.
     SEHInfo = Builder.CreateConstInBoundsGEP1_32(Int8Ty, EntryFP, -20);
-    SEHInfo = Builder.CreateBitCast(SEHInfo, Int8PtrTy->getPointerTo());
+    unsigned DefaultAS = CGM.getTargetCodeGenInfo().getDefaultAS();
+    SEHInfo = Builder.CreateBitCast(SEHInfo, Int8PtrTy->getPointerTo(DefaultAS));
     SEHInfo = Builder.CreateAlignedLoad(Int8PtrTy, SEHInfo, getPointerAlign());
     SEHCodeSlotStack.push_back(recoverAddrOfEscapedLocal(
         ParentCGF, ParentCGF.SEHCodeSlotStack.back(), ParentFP));
@@ -2117,9 +2125,11 @@ void CodeGenFunction::EmitSEHExceptionCodeSave(CodeGenFunction &ParentCGF,
   //   CONTEXT *ContextRecord;
   // };
   // int exceptioncode = exception_pointers->ExceptionRecord->ExceptionCode;
-  llvm::Type *RecordTy = CGM.Int32Ty->getPointerTo();
+  unsigned DefaultAS = CGM.getTargetCodeGenInfo().getDefaultAS();
+  llvm::Type *RecordTy = CGM.Int32Ty->getPointerTo(DefaultAS);
   llvm::Type *PtrsTy = llvm::StructType::get(RecordTy, CGM.VoidPtrTy);
-  llvm::Value *Ptrs = Builder.CreateBitCast(SEHInfo, PtrsTy->getPointerTo());
+  llvm::Value *Ptrs = Builder.CreateBitCast(SEHInfo,
+                                            PtrsTy->getPointerTo(DefaultAS));
   llvm::Value *Rec = Builder.CreateStructGEP(PtrsTy, Ptrs, 0);
   Rec = Builder.CreateAlignedLoad(RecordTy, Rec, getPointerAlign());
   llvm::Value *Code = Builder.CreateAlignedLoad(Int32Ty, Rec, getIntAlign());

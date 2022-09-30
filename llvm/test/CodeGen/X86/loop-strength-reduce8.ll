@@ -50,7 +50,7 @@
 define ptr @build_stmt(i32 %code, ...) nounwind {
 entry:
 	%p = alloca ptr		; <ptr> [#uses=3]
-	call void @llvm.va_start(ptr %p)
+	call void @llvm.va_start.p0(ptr %p)
 	%0 = call fastcc ptr @make_node(i32 %code) nounwind		; <ptr> [#uses=2]
 	%1 = getelementptr [256 x i32], ptr @tree_code_length, i32 0, i32 %code		; <ptr> [#uses=1]
 	%2 = load i32, ptr %1, align 4		; <i32> [#uses=2]
@@ -77,8 +77,8 @@ bb3:		; preds = %bb, %entry
 	ret ptr %0
 }
 
-declare void @llvm.va_start(ptr) nounwind
+declare void @llvm.va_start.p0(ptr) nounwind
 
-declare void @llvm.va_end(ptr) nounwind
+declare void @llvm.va_end.p0(ptr) nounwind
 
 declare fastcc ptr @make_node(i32) nounwind

@@ -211,7 +211,6 @@ def nxv2f32  : ValueType<64,  169>;  // n x  2 x  f32 vector value
 def nxv4f32  : ValueType<128, 170>;  // n x  4 x  f32 vector value
 def nxv8f32  : ValueType<256, 171>;  // n x  8 x  f32 vector value
 def nxv16f32 : ValueType<512, 172>;  // n x 16 x  f32 vector value
-
 def nxv1f64  : ValueType<64,  173>;  // n x  1 x  f64 vector value
 def nxv2f64  : ValueType<128, 174>;  // n x  2 x  f64 vector value
 def nxv4f64  : ValueType<256, 175>;  // n x  4 x  f64 vector value
@@ -225,6 +224,11 @@ def funcref   : ValueType<0,    181>;  // WebAssembly's funcref type
 def externref : ValueType<0,    182>;  // WebAssembly's externref type
 def x86amx    : ValueType<8192, 183>;  // X86 AMX value
 def i64x8     : ValueType<512,  184>;  // 8 Consecutive GPRs (AArch64)
+def iFATPTR64 : ValueType<64,   !add(i64x8.Value, 1)>;       // 64-bit fat pointer.
+def iFATPTR128: ValueType<128,  !add(iFATPTR64.Value, 1)>;   // 128-bit fat pointer.
+def iFATPTR256: ValueType<256,  !add(iFATPTR128.Value, 1)>;  // 256-bit fat pointer.
+def iFATPTR512: ValueType<512,  !add(iFATPTR256.Value, 1)>;  // 512-bit fat pointer.
+def iFATPTRAny: ValueType<0,    !add(iFATPTR512.Value, 1)>;  // Any fat pointer.
 
 def token      : ValueType<0, 248>;  // TokenTy
 def MetadataVT : ValueType<0, 249>;  // Metadata

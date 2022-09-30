@@ -2144,6 +2144,76 @@ static Sema::TemplateDeductionResult DeduceTemplateArgumentsByTypeMatch(
 
       return Sema::TDK_NonDeducedMismatch;
     }
+    //     (CHERI clang extension)
+    //
+    //     T __capability
+    case Type::DependentPointer: {
+      const DependentPointerType *PointerParam =
+          cast<DependentPointerType>(P);
+
+      if (const DependentPointerType *PointerArg =
+              dyn_cast<DependentPointerType>(A)) {
+        // Perform deduction on the pointer type.
+        if (Sema::TemplateDeductionResult Result =
+                DeduceTemplateArgumentsByTypeMatch(
+                    S, TemplateParams, PointerParam->getPointerType(),
+                    PointerArg->getPointerType(), Info, Deduced, TDF))
+          return Result;
+
+        // Check that the interpretations are the same.
+        if (PointerParam->getPointerInterpretation() !=
+            PointerArg->getPointerInterpretation())
+          return Sema::TDK_NonDeducedMismatch;
+
+        return Sema::TDK_Success;
+      }
+
+      if (const PointerType *PointerArg = dyn_cast<PointerType>(A)) {
+        QualType DefaultPointerArg =
+            S.Context.getPointerType(PointerArg->getPointeeType());
+
+        // Perform deduction on the pointer type.
+        if (Sema::TemplateDeductionResult Result =
+                DeduceTemplateArgumentsByTypeMatch(
+                    S, TemplateParams, PointerParam->getPointerType(),
+                    DefaultPointerArg, Info, Deduced, TDF))
+          return Result;
+
+        // Check that the interpretations are the same.
+        if (PointerParam->getPointerInterpretation() !=
+            PointerArg->getPointerInterpretation())
+          return Sema::TDK_NonDeducedMismatch;
+
+        return Sema::TDK_Success;
+      }
+
+      if (const ReferenceType *ReferenceArg = dyn_cast<ReferenceType>(A)) {
+        QualType DefaultReferenceArg;
+        QualType PointeeType = ReferenceArg->getPointeeTypeAsWritten();
+        if (isa<LValueReferenceType>(ReferenceArg)) {
+          DefaultReferenceArg = S.Context.getLValueReferenceType(
+              PointeeType, ReferenceArg->isSpelledAsLValue());
+        } else {
+          DefaultReferenceArg = S.Context.getRValueReferenceType(PointeeType);
+        }
+
+        // Perform deduction on the pointer (reference) type.
+        if (Sema::TemplateDeductionResult Result =
+                DeduceTemplateArgumentsByTypeMatch(
+                    S, TemplateParams, PointerParam->getPointerType(),
+                    DefaultReferenceArg, Info, Deduced, TDF))
+          return Result;
+
+        // Check that the interpretations are the same.
+        if (PointerParam->getPointerInterpretation() !=
+            ReferenceArg->getPointerInterpretation())
+          return Sema::TDK_NonDeducedMismatch;
+
+        return Sema::TDK_Success;
+      }
+
+      return Sema::TDK_NonDeducedMismatch;
+    }
     case Type::DependentBitInt: {
       const auto *IP = P->castAs<DependentBitIntType>();
 
@@ -5775,6 +5845,14 @@ MarkUsedTemplateParameters(ASTContext &Ctx, QualType T,
                                OnlyDeduced, Depth, Used);
     MarkUsedTemplateParameters(Ctx,
                                DependentASType->getAddrSpaceExpr(),
+                               OnlyDeduced, Depth, Used);
+    break;
+  }
+
+  case Type::DependentPointer: {
+    const DependentPointerType *DependentPType =
+        cast<DependentPointerType>(T);
+    MarkUsedTemplateParameters(Ctx, DependentPType->getPointerType(),
                                OnlyDeduced, Depth, Used);
     break;
   }

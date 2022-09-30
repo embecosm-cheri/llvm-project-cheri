@@ -5,6 +5,7 @@
 extern int bar(char *A, int n);
 
 // CHECK-LABEL: @foo
+// O0-NOT: @llvm.lifetime.start.p0i8
 int foo (int n) {
   if (n) {
 // O2: call void @llvm.lifetime.start.p0i8(i64 100,

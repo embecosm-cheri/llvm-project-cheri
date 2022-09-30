@@ -41,6 +41,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "Relocations.h"
+#include "Arch/Cheri.h"
 #include "Config.h"
 #include "InputFiles.h"
 #include "LinkerScript.h"
@@ -50,11 +51,13 @@
 #include "SyntheticSections.h"
 #include "Target.h"
 #include "Thunks.h"
+#include "Writer.h"
 #include "lld/Common/ErrorHandler.h"
 #include "lld/Common/Memory.h"
 #include "llvm/ADT/SmallSet.h"
 #include "llvm/Demangle/Demangle.h"
 #include "llvm/Support/Endian.h"
+#include "llvm/Support/Format.h"
 #include <algorithm>
 
 using namespace llvm;
@@ -86,13 +89,18 @@ static std::string getDefinedLocation(const Symbol &sym) {
 // >>> defined in /home/alice/src/foo.o
 // >>> referenced by bar.c:12 (/home/alice/src/bar.c:12)
 // >>>               /home/alice/src/bar.o:(.text+0x1)
-static std::string getLocation(InputSectionBase &s, const Symbol &sym,
+static std::string getLocation(const InputSectionBase &s, const Symbol &sym,
                                uint64_t off) {
   std::string msg = getDefinedLocation(sym) + "\n>>> referenced by ";
   std::string src = s.getSrcMsg(sym, off);
   if (!src.empty())
     msg += src + "\n>>>               ";
   return msg + s.getObjMsg(off);
+}
+
+std::string elf::getLocationMessage(const InputSectionBase &s,
+                                    const Symbol &sym, uint64_t off) {
+  return getLocation(s, sym, off);
 }
 
 void elf::reportRangeError(uint8_t *loc, const Relocation &rel, const Twine &v,
@@ -208,7 +216,8 @@ static bool needsGot(RelExpr expr) {
 static bool isRelExpr(RelExpr expr) {
   return oneof<R_PC, R_GOTREL, R_GOTPLTREL, R_MIPS_GOTREL, R_PPC64_CALL,
                R_PPC64_RELAX_TOC, R_AARCH64_PAGE_PC, R_RELAX_GOT_PC,
-               R_RISCV_PC_INDIRECT, R_PPC64_RELAX_GOT_PC>(expr);
+               R_RISCV_PC_INDIRECT, R_PPC64_RELAX_GOT_PC,
+               R_CHERI_CAPABILITY_TABLE_REL>(expr);
 }
 
 
@@ -887,11 +896,20 @@ template <class PltSection, class GotPltSection>
 static void addPltEntry(PltSection &plt, GotPltSection &gotPlt,
                         RelocationBaseSection &rel, RelType type, Symbol &sym) {
   plt.addEntry(sym);
-  gotPlt.addEntry(sym);
-  rel.addReloc({type, &gotPlt, sym.getGotPltOffset(),
-                sym.isPreemptible ? DynamicReloc::AgainstSymbol
-                                  : DynamicReloc::AddendOnlyWithTargetVA,
-                sym, 0, R_ABS});
+  if (config->isCheriAbi) {
+    // TODO: More normal .got.plt rather than piggy-backing on .captable. We
+    // pass R_CHERI_CAPABILITY_TABLE_INDEX rather than the more obvious
+    // R_CHERI_CAPABILITY_TABLE_INDEX_CALL to force dynamic relocations into
+    // .rela.dyn rather than .rela.plt so no rtld changes are needed, as the
+    // latter doesn't really achieve anything without lazy binding.
+    in.cheriCapTable->addEntry(sym, R_CHERI_CAPABILITY_TABLE_INDEX, plt, 0);
+  } else {
+    gotPlt.addEntry(sym);
+    rel.addReloc({type, &gotPlt, sym.getGotPltOffset(),
+                  sym.isPreemptible ? DynamicReloc::AgainstSymbol
+                                    : DynamicReloc::AddendOnlyWithTargetVA,
+                  sym, 0, R_ABS});
+  }
 }
 
 static void addGotEntry(Symbol &sym) {
@@ -1039,13 +1057,32 @@ void RelocationScanner::processAux(RelExpr expr, RelType type, uint64_t offset,
   // -shared matches the spirit of its -z undefs default. -pie has freedom on
   // choices, and we choose dynamic relocations to be consistent with the
   // handling of GOT-generating relocations.
+  //
+  // R_CHERI_CAPABILITY is always handled below.
   if (isStaticLinkTimeConstant(expr, type, sym, offset) ||
-      (!config->isPic && sym.isUndefWeak())) {
+      (!config->isPic && sym.isUndefWeak() && expr != R_CHERI_CAPABILITY)) {
     sec.relocations.push_back({expr, type, offset, addend, &sym});
     return;
   }
 
   bool canWrite = (sec.flags & SHF_WRITE) || !config->zText;
+
+  if (expr == R_CHERI_CAPABILITY) {
+    static auto getRelocTargetLocation = [&]() -> std::string {
+      auto relocTarget = SymbolAndOffset::fromSectionWithOffset(&sec, offset);
+      return "\n>>> referenced by " + relocTarget.verboseToString();
+    };
+    if (!canWrite) {
+      readOnlyCapRelocsError(sym, getRelocTargetLocation());
+      return;
+    }
+    addCapabilityRelocation<ELFT>(&sym, type, &sec, offset, expr, addend,
+                                  /* isCallExpr=*/false,
+                                  getRelocTargetLocation);
+    // TODO: check if it is a call and needs a plt stub
+    return;
+  }
+
   if (canWrite) {
     RelType rel = target.getDynRel(type);
     if (expr == R_GOT || (rel == target.symbolicRel && !sym.isPreemptible)) {
@@ -1418,6 +1455,17 @@ template <class ELFT, class RelTy> void RelocationScanner::scanOne(RelTy *&i) {
   if (sym.isGnuIFunc() && config->zIfuncNoplt) {
     sym.exportDynamic = true;
     mainPart->relaDyn->addSymbolReloc(type, sec, offset, sym, addend, type);
+    return;
+  }
+
+  if (oneof<R_CHERI_CAPABILITY_TABLE_INDEX,
+            R_CHERI_CAPABILITY_TABLE_INDEX_SMALL_IMMEDIATE,
+            R_CHERI_CAPABILITY_TABLE_INDEX_CALL,
+            R_CHERI_CAPABILITY_TABLE_INDEX_CALL_SMALL_IMMEDIATE,
+            R_CHERI_CAPABILITY_TABLE_ENTRY_PC>(expr)) {
+    in.cheriCapTable->addEntry(sym, expr, &sec, offset);
+    // Write out the index into the instruction
+    sec.relocations.push_back({expr, type, offset, addend, &sym});
     return;
   }
 

@@ -10,7 +10,7 @@ target triple = "x86_64-unknown-linux-gnu"
 define i32 @foo(float %a, ptr nocapture %fmt, ...) nounwind {
 entry:
 	%ap = alloca [1 x %struct.__va_list_tag], align 8		; <ptr> [#uses=4]
-	call void @llvm.va_start(ptr %ap)
+	call void @llvm.va_start.p0(ptr %ap)
 	%0 = getelementptr [1 x %struct.__va_list_tag], ptr %ap, i64 0, i64 0, i32 0		; <ptr> [#uses=2]
 	%1 = load i32, ptr %0, align 8		; <i32> [#uses=3]
 	%2 = icmp ult i32 %1, 48		; <i1> [#uses=1]
@@ -36,10 +36,10 @@ bb3:		; preds = %entry
 bb4:		; preds = %bb3, %bb
 	%addr.0.0 = phi ptr [ %ctg2, %bb ], [ %9, %bb3 ]		; <ptr> [#uses=1]
 	%11 = load i32, ptr %addr.0.0, align 4		; <i32> [#uses=1]
-	call void @llvm.va_end(ptr %ap)
+	call void @llvm.va_end.p0(ptr %ap)
 	ret i32 %11
 }
 
-declare void @llvm.va_start(ptr) nounwind
+declare void @llvm.va_start.p0(ptr) nounwind
 
-declare void @llvm.va_end(ptr) nounwind
+declare void @llvm.va_end.p0(ptr) nounwind

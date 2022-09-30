@@ -579,8 +579,11 @@ bool ThreadSanitizer::sanitizeFunction(Function &F,
   // Instrument function entry/exit points if there were instrumented accesses.
   if ((Res || HasCalls) && ClInstrumentFuncEntryExit) {
     InstrumentationIRBuilder IRB(F.getEntryBlock().getFirstNonPHI());
+    auto ProgramAsPtrTy = Type::getInt8PtrTy(F.getParent()->getContext(),
+                                             DL.getProgramAddressSpace());
     Value *ReturnAddress = IRB.CreateCall(
-        Intrinsic::getDeclaration(F.getParent(), Intrinsic::returnaddress),
+        Intrinsic::getDeclaration(F.getParent(), Intrinsic::returnaddress,
+                                  {ProgramAsPtrTy}),
         IRB.getInt32(0));
     IRB.CreateCall(TsanFuncEntry, ReturnAddress);
 

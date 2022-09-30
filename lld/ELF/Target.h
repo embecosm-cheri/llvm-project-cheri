@@ -27,6 +27,8 @@ class Symbol;
 class TargetInfo {
 public:
   virtual uint32_t calcEFlags() const { return 0; }
+  virtual int getCapabilitySize() const { return 0; }
+  virtual bool calcIsCheriAbi() const;
   virtual RelExpr getRelExpr(RelType type, const Symbol &s,
                              const uint8_t *loc) const = 0;
   virtual RelType getDynRel(RelType type) const { return 0; }
@@ -126,6 +128,10 @@ public:
   RelType tlsGotRel;
   RelType tlsModuleIndexRel;
   RelType tlsOffsetRel;
+  llvm::Optional<RelType> absPointerRel; // TODO: remove the optional
+  llvm::Optional<RelType> sizeRel;
+  llvm::Optional<RelType> cheriCapRel;
+  llvm::Optional<RelType> cheriCapCallRel;
   unsigned gotEntrySize = config->wordsize;
   unsigned pltEntrySize;
   unsigned pltHeaderSize;

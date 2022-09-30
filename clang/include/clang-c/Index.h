@@ -3482,6 +3482,10 @@ enum CXCallingConv {
   CXCallingConv_SwiftAsync = 17,
   CXCallingConv_AArch64SVEPCS = 18,
 
+  CXCallingConv_CHERICCall = 80,
+  CXCallingConv_CHERICCallee = 81,
+  CXCallingConv_CHERICCallback = 82,
+
   CXCallingConv_Invalid = 100,
   CXCallingConv_Unexposed = 200
 };

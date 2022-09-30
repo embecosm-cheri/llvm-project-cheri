@@ -24,6 +24,7 @@
 #include "llvm/IR/Argument.h"
 #include "llvm/IR/Attributes.h"
 #include "llvm/IR/BasicBlock.h"
+#include "llvm/IR/Cheri.h"
 #include "llvm/IR/Constant.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/DerivedTypes.h"
@@ -329,9 +330,23 @@ unsigned Function::getInstructionCount() const {
   return NumInstrs;
 }
 
+static inline unsigned DefaultAddrSpaceForFunctions(Module& M) {
+  return M.getDataLayout().getProgramAddressSpace();
+}
+
 Function *Function::Create(FunctionType *Ty, LinkageTypes Linkage,
                            const Twine &N, Module &M) {
-  return Create(Ty, Linkage, M.getDataLayout().getProgramAddressSpace(), N, &M);
+  return Create(Ty, Linkage, DefaultAddrSpaceForFunctions(M), N, &M);
+}
+
+Function *Function::CreateBefore(Function &InsertBefore, FunctionType *Ty,
+                                 LinkageTypes Linkage, const Twine &N) {
+  auto &M = *InsertBefore.getParent();
+  unsigned AddrSpace = DefaultAddrSpaceForFunctions(M);
+  Function *F = Create(Ty, Linkage, AddrSpace, N);
+
+  M.getFunctionList().insert(InsertBefore.getIterator(), F);
+  return F;
 }
 
 Function *Function::createWithDefaultAttr(FunctionType *Ty,
@@ -371,12 +386,14 @@ void Function::eraseFromParent() {
 //===----------------------------------------------------------------------===//
 // Function Implementation
 //===----------------------------------------------------------------------===//
-
 static unsigned computeAddrSpace(unsigned AddrSpace, Module *M) {
   // If AS == -1 and we are passed a valid module pointer we place the function
-  // in the program address space. Otherwise we default to AS0.
-  if (AddrSpace == static_cast<unsigned>(-1))
-    return M ? M->getDataLayout().getProgramAddressSpace() : 0;
+  // in the program address space and otherwise we default to AS0
+  // TODO: assert(M || AddrSpace != static_cast<unsigned>(-1));
+  if (AddrSpace == static_cast<unsigned>(-1)) {
+    assert(M && "Need either Module* or an explicit address space");
+    return M ? DefaultAddrSpaceForFunctions(*M) : 0;
+  }
   return AddrSpace;
 }
 
@@ -990,6 +1007,11 @@ enum IIT_Info {
   IIT_ANYPTR_TO_ELT = 56,
   IIT_I2 = 57,
   IIT_I4 = 58,
+  IIT_IFATPTR64 = 59,
+  IIT_IFATPTR128 = 60,
+  IIT_IFATPTR256 = 61,
+  IIT_IFATPTR512 = 62,
+  IIT_IFATPTRAny = 63,
 };
 
 static void DecodeIITType(unsigned &NextElt, ArrayRef<unsigned char> Infos,
@@ -1127,6 +1149,15 @@ static void DecodeIITType(unsigned &NextElt, ArrayRef<unsigned char> Infos,
     OutputTable.push_back(IITDescriptor::get(IITDescriptor::Pointer,
                                              Infos[NextElt++]));
     DecodeIITType(NextElt, Infos, Info, OutputTable);
+    return;
+  }
+  case IIT_IFATPTR64:
+  case IIT_IFATPTR128:
+  case IIT_IFATPTR256:
+  case IIT_IFATPTR512:
+  case IIT_IFATPTRAny: {
+    OutputTable.push_back(IITDescriptor::get(IITDescriptor::Pointer, 200));
+    DecodeIITType(++NextElt, Infos, Info, OutputTable);
     return;
   }
   case IIT_ARG: {
@@ -1796,6 +1827,13 @@ Optional<Function *> Intrinsic::remangleIntrinsicFunction(Function *F) {
   if (Name == WantedName)
     return None;
 
+  // Don't remangle va_start, etc if it already had an address space qualifier
+  if (ID == Intrinsic::vastart || ID == Intrinsic::vaend ||
+      ID == Intrinsic::vacopy) {
+    if (Name.contains('.'))
+      return None;
+  }
+
   Function *NewDecl = [&] {
     if (auto *ExistingGV = F->getParent()->getNamedValue(WantedName)) {
       if (auto *ExistingF = dyn_cast<Function>(ExistingGV))
@@ -2050,6 +2088,9 @@ bool Function::nullPointerIsDefined() const {
 bool llvm::NullPointerIsDefined(const Function *F, unsigned AS) {
   if (F && F->nullPointerIsDefined())
     return true;
+
+  if (isCheriPointer(AS, getDataLayoutOrNull(F)))
+    return false; // Null is not a valid address for AS200 (if we are using CHERI)
 
   if (AS != 0)
     return true;

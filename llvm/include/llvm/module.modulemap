@@ -257,7 +257,8 @@ module LLVM_intrinsic_gen {
   module IR_Instructions { header "IR/Instructions.h" export * }
   module IR_TypeFinder { header "IR/TypeFinder.h" export * }
   module IR_VectorBuilder { header "IR/VectorBuilder.h" export * }
-
+  module IR_Cheri { header "IR/Cheri.h" export * }
+  module IR_CheriIntrinsics { header "IR/CheriIntrinsics.h" export * }
 
   // Intrinsics.h
   module IR_CFG { header "IR/CFG.h" export * }

@@ -16,6 +16,7 @@
 #include "clang/Driver/Types.h"
 #include "llvm/ADT/Triple.h"
 #include "llvm/Option/Option.h"
+#include "llvm/Support/CodeGen.h"
 #include "llvm/Support/raw_ostream.h"
 
 namespace clang {
@@ -47,7 +48,9 @@ private:
 
   void RenderTargetOptions(const llvm::Triple &EffectiveTriple,
                            const llvm::opt::ArgList &Args, bool KernelOrKext,
-                           llvm::opt::ArgStringList &CmdArgs) const;
+                           llvm::opt::ArgStringList &CmdArgs,
+                           llvm::Reloc::Model RelocationModel,
+                           const JobAction &JA) const;
 
   void AddAArch64TargetArgs(const llvm::opt::ArgList &Args,
                             llvm::opt::ArgStringList &CmdArgs) const;
@@ -58,7 +61,8 @@ private:
   void AddARM64TargetArgs(const llvm::opt::ArgList &Args,
                           llvm::opt::ArgStringList &CmdArgs) const;
   void AddMIPSTargetArgs(const llvm::opt::ArgList &Args,
-                         llvm::opt::ArgStringList &CmdArgs) const;
+                         llvm::opt::ArgStringList &CmdArgs,
+                         bool IsNonPic, const JobAction &JA) const;
   void AddPPCTargetArgs(const llvm::opt::ArgList &Args,
                         llvm::opt::ArgStringList &CmdArgs) const;
   void AddR600TargetArgs(const llvm::opt::ArgList &Args,

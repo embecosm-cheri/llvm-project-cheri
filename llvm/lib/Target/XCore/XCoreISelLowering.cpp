@@ -471,9 +471,7 @@ SDValue XCoreTargetLowering::LowerLOAD(SDValue Op, SelectionDAG &DAG) const {
   TargetLowering::CallLoweringInfo CLI(DAG);
   CLI.setDebugLoc(DL).setChain(Chain).setLibCallee(
       CallingConv::C, IntPtrTy,
-      DAG.getExternalSymbol("__misaligned_load",
-                            getPointerTy(DAG.getDataLayout())),
-      std::move(Args));
+      DAG.getExternalFunctionSymbol("__misaligned_load"), std::move(Args));
 
   std::pair<SDValue, SDValue> CallResult = LowerCallTo(CLI);
   SDValue Ops[] = { CallResult.first, CallResult.second };
@@ -1394,10 +1392,11 @@ SDValue XCoreTargetLowering::LowerCCCArguments(
       int FI = MFI.CreateStackObject(Size, Alignment, false);
       SDValue FIN = DAG.getFrameIndex(FI, MVT::i32);
       InVals.push_back(FIN);
-      MemOps.push_back(DAG.getMemcpy(
-          Chain, dl, FIN, ArgDI->SDV, DAG.getConstant(Size, dl, MVT::i32),
-          Alignment, false, false, false, MachinePointerInfo(),
-          MachinePointerInfo()));
+      MemOps.push_back(DAG.getMemcpy(Chain, dl, FIN, ArgDI->SDV,
+                                     DAG.getConstant(Size, dl, MVT::i32),
+                                     Alignment, false, false, false, false,
+                                     MachinePointerInfo(),
+                                     MachinePointerInfo()));
     } else {
       InVals.push_back(ArgDI->SDV);
     }
@@ -1799,7 +1798,7 @@ SDValue XCoreTargetLowering::PerformDAGCombine(SDNode *N,
         bool isTail = isInTailCallPosition(DAG, ST, Chain);
         return DAG.getMemmove(Chain, dl, ST->getBasePtr(), LD->getBasePtr(),
                               DAG.getConstant(StoreBits / 8, dl, MVT::i32),
-                              Alignment, false, isTail,
+                              Alignment, false, isTail, false,
                               ST->getPointerInfo(), LD->getPointerInfo());
       }
     }

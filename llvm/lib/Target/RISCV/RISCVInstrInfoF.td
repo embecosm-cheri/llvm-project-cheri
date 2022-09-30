@@ -293,14 +293,14 @@ multiclass FPCmp_rr_m<bits<7> funct7, bits<3> funct3, string opcodestr,
 // Instructions
 //===----------------------------------------------------------------------===//
 
-let Predicates = [HasStdExtF] in {
+let Predicates = [HasStdExtF, NotCapMode] in {
 def FLW : FPLoad_r<0b010, "flw", FPR32, WriteFLD32>;
 
 // Operands for stores are in the order srcreg, base, offset rather than
 // reflecting the order these fields are specified in the instruction
 // encoding.
 def FSW : FPStore_r<0b010, "fsw", FPR32, WriteFST32>;
-} // Predicates = [HasStdExtF]
+} // Predicates = [HasStdExtF, NotCapMode]
 
 let SchedRW = [WriteFMA32, ReadFMA32, ReadFMA32, ReadFMA32] in {
 defm FMADD_S  : FPFMA_rrr_frm_m<OPC_MADD,  0b00, "fmadd.s",  FINX>;
@@ -399,10 +399,12 @@ defm           : FPUnaryOpDynFrmAlias_m<FCVT_S_LU, "fcvt.s.lu", FXIN64X>;
 // Assembler Pseudo Instructions (User-Level ISA, Version 2.2, Chapter 20)
 //===----------------------------------------------------------------------===//
 
-let Predicates = [HasStdExtF] in {
+let Predicates = [HasStdExtF, NotCapMode] in {
 def : InstAlias<"flw $rd, (${rs1})",  (FLW FPR32:$rd,  GPR:$rs1, 0), 0>;
 def : InstAlias<"fsw $rs2, (${rs1})", (FSW FPR32:$rs2, GPR:$rs1, 0), 0>;
+} // Predicates = [HasStdExtF, NotCapMode]
 
+let Predicates = [HasStdExtF] in {
 def : InstAlias<"fmv.s $rd, $rs",  (FSGNJ_S  FPR32:$rd, FPR32:$rs, FPR32:$rs)>;
 def : InstAlias<"fabs.s $rd, $rs", (FSGNJX_S FPR32:$rd, FPR32:$rs, FPR32:$rs)>;
 def : InstAlias<"fneg.s $rd, $rs", (FSGNJN_S FPR32:$rd, FPR32:$rs, FPR32:$rs)>;
@@ -443,14 +445,16 @@ def : InstAlias<"fsflagsi $imm",      (CSRRWI      X0, SysRegFFLAGS.Encoding, ui
 // spellings should be supported by standard tools.
 def : MnemonicAlias<"fmv.s.x", "fmv.w.x">;
 def : MnemonicAlias<"fmv.x.s", "fmv.x.w">;
+} // Predicates = [HasStdExtF]
 
+let Predicates = [HasStdExtF, NotCapMode] in {
 def PseudoFLW  : PseudoFloatLoad<"flw", FPR32>;
 def PseudoFSW  : PseudoStore<"fsw", FPR32>;
 let usesCustomInserter = 1 in {
 def PseudoQuietFLE_S : PseudoQuietFCMP<FPR32>;
 def PseudoQuietFLT_S : PseudoQuietFCMP<FPR32>;
 }
-} // Predicates = [HasStdExtF]
+} // Predicates = [HasStdExtF, NotCapMode]
 
 let Predicates = [HasStdExtZfinx] in {
 def : InstAlias<"fabs.s $rd, $rs", (FSGNJX_S_INX FPR32INX:$rd, FPR32INX:$rs, FPR32INX:$rs)>;
@@ -566,6 +570,10 @@ def : PatSetCC<FPR32, any_fsetccs, SETOLE, FLE_S>;
 
 def Select_FPR32_Using_CC_GPR : SelectCC_rrirr<FPR32, GPR>;
 
+} // Predicates = [HasStdExtF]
+
+let Predicates = [HasStdExtF, NotCapMode] in {
+
 /// Loads
 
 defm : LdPat<load, FLW, f32>;
@@ -574,7 +582,7 @@ defm : LdPat<load, FLW, f32>;
 
 defm : StPat<store, FSW, FPR32, f32>;
 
-} // Predicates = [HasStdExtF]
+} // Predicates = [HasStdExtF, NotCapMode]
 
 let Predicates = [HasStdExtF, IsRV32] in {
 // Moves (no conversion)

@@ -452,6 +452,36 @@ def FeatureRV32E
 def IsRV32E : Predicate<"Subtarget->isRV32E()">,
                         AssemblerPredicate<(all_of FeatureRV32E)>;
 
+def FeatureCheri
+    : SubtargetFeature<"xcheri", "HasCheri", "true",
+                       "Implements CHERI extension">;
+def HasCheri : Predicate<"Subtarget->hasCheri()">,
+                         AssemblerPredicate<(all_of FeatureCheri),
+                         "CHERI Extension">;
+def FeatureCheriRVC
+    : SubtargetFeature<"xcheri-rvc", "EnableCheriRVCInstrs", "true",
+                       "Enable CHERI RVC Instructions.">;
+def HasCheriRVC : Predicate<"Subtarget->enableCheriRVCInstrs()">,
+                  AssemblerPredicate<(all_of FeatureCheriRVC),
+                                     "CHERI RVC Instructions">;
+
+def FeatureCapMode
+    : SubtargetFeature<"cap-mode", "IsCapMode", "true",
+                       "Capability mode">;
+def IsCapMode  : Predicate<"Subtarget->isCapMode()">,
+                           AssemblerPredicate<(all_of FeatureCapMode),
+                           "Capability Mode">;
+def NotCapMode : Predicate<"!Subtarget->isCapMode()">,
+                           AssemblerPredicate<(all_of (not FeatureCapMode)),
+                           "Not Capability Mode">;
+
+def IsPureCapABI
+    : Predicate<"RISCVABI::isCheriPureCapABI(Subtarget->getTargetABI())">;
+def NotPureCapABI
+    : Predicate<"!RISCVABI::isCheriPureCapABI(Subtarget->getTargetABI())">;
+
+class SupportsFatPointers;
+
 def FeatureRelax
     : SubtargetFeature<"relax", "EnableLinkerRelax", "true",
                        "Enable Linker relaxation.">;

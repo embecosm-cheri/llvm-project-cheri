@@ -74,13 +74,12 @@ protected:
   }
 
 private:
-  llvm::GlobalVariable *createGlobal(llvm::Constant *initializer,
-                                     const llvm::Twine &name,
-                                     CharUnits alignment,
-                                     bool constant = false,
-                                     llvm::GlobalValue::LinkageTypes linkage
-                                       = llvm::GlobalValue::InternalLinkage,
-                                     unsigned addressSpace = 0);
+  llvm::GlobalVariable *
+  createGlobal(llvm::Constant *initializer, const llvm::Twine &name,
+               CharUnits alignment, bool constant = false,
+               llvm::GlobalValue::LinkageTypes linkage =
+                   llvm::GlobalValue::InternalLinkage,
+               llvm::Optional<unsigned> addressSpace = llvm::None);
 
   ConstantInitFuture createFuture(llvm::Constant *initializer);
 
@@ -207,6 +206,10 @@ public:
   /// Add a bitcast of a value to a specific type.
   void addBitCast(llvm::Constant *value, llvm::Type *type) {
     add(llvm::ConstantExpr::getBitCast(value, type));
+  }
+
+  void addPointerdBitCastOrAddrSpaceCast(llvm::Constant *value, llvm::Type *type) {
+    add(llvm::ConstantExpr::getPointerBitCastOrAddrSpaceCast(value, type));
   }
 
   /// Add a bunch of new values to this initializer.

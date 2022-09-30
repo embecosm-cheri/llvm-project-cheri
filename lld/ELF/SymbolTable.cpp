@@ -1,4 +1,3 @@
-//===- SymbolTable.cpp ----------------------------------------------------===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -29,6 +28,44 @@ using namespace lld;
 using namespace lld::elf;
 
 std::unique_ptr<SymbolTable> elf::symtab;
+
+Defined *SymbolTable::ensureSymbolWillBeInDynsym(Symbol* original) {
+  assert(!original->includeInDynsym() && "Already included in dynsym?");
+  assert(original->isFunc() && "This should only be used for functions");
+  // Hack: Add a new global symbol with a unique name so that we can use
+  // a dynamic relocation against it.
+  // TODO: should it be possible to add STB_LOCAL symbols to .dynsymtab?
+  // create a unique name:
+
+  auto it = localSymbolsForDynsym.find(original);
+  if (it != localSymbolsForDynsym.end()) {
+    if (config->verboseCapRelocs)
+      message("Reusing existing 'fake' symbol " + toString(*it->second) +
+              " to allow relocation against " + verboseToString(original));
+    return it->second;
+  }
+
+  std::string uniqueName = ("__cheri_fnptr_" + original->getName()).str();
+  for (int i = 2; symtab->find(uniqueName); i++) {
+    uniqueName = ("__cheri_fnptr" + Twine(i) + "_" + original->getName()).str();
+  }
+  auto localDef = cast<Defined>(original);
+  Defined* newSym = cast<Defined>(symtab->addSymbol(Defined{localDef->file,
+      saver.save(uniqueName), llvm::ELF::STB_GLOBAL, llvm::ELF::STV_HIDDEN,
+      localDef->type, localDef->value, localDef->size, localDef->section}));
+
+  assert(newSym->isFunc() && "This should only be used for functions");
+  // TODO: would be nice to just set this on Sym, but we can't have
+  // STB_LOCAL symbols in .dynsym
+  newSym->usedByDynReloc = true;
+  newSym->isPreemptible = false;
+  if (config->verboseCapRelocs)
+    message("Adding new symbol " + toString(*newSym) +
+            " to allow relocation against " + verboseToString(original));
+  localSymbolsForDynsym[original] = newSym;
+  return newSym;
+}
+
 
 void SymbolTable::wrap(Symbol *sym, Symbol *real, Symbol *wrap) {
   // Redirect __real_foo to the original foo and foo to the original __wrap_foo.

@@ -28,6 +28,7 @@
 #include "llvm/MC/MCRegisterInfo.h"
 #include "llvm/MC/MCSectionMachO.h"
 #include "llvm/MC/MCStreamer.h"
+#include "llvm/MC/MCSymbolELF.h"
 #include "llvm/MC/MCSymbolXCOFF.h"
 #include "llvm/MC/TargetRegistry.h"
 #include "llvm/Support/Casting.h"
@@ -198,8 +199,8 @@ public:
   void emitXCOFFRefDirective(StringRef Name) override;
 
   void emitELFSize(MCSymbol *Symbol, const MCExpr *Value) override;
-  void emitCommonSymbol(MCSymbol *Symbol, uint64_t Size,
-                        unsigned ByteAlignment) override;
+  void emitCommonSymbol(MCSymbol *Symbol, uint64_t Size, unsigned ByteAlignment,
+                        TailPaddingAmount TailPadding) override;
 
   /// Emit a local common (.lcomm) symbol.
   ///
@@ -207,14 +208,16 @@ public:
   /// @param Size - The size of the common symbol.
   /// @param ByteAlignment - The alignment of the common symbol in bytes.
   void emitLocalCommonSymbol(MCSymbol *Symbol, uint64_t Size,
-                             unsigned ByteAlignment) override;
+                             unsigned ByteAlignment,
+                             TailPaddingAmount TailPadding) override;
 
-  void emitZerofill(MCSection *Section, MCSymbol *Symbol = nullptr,
-                    uint64_t Size = 0, unsigned ByteAlignment = 0,
+  void emitZerofill(MCSection *Section, MCSymbol *Symbol, uint64_t Size,
+                    unsigned ByteAlignment, TailPaddingAmount TailPadding,
                     SMLoc Loc = SMLoc()) override;
 
   void emitTBSSSymbol(MCSection *Section, MCSymbol *Symbol, uint64_t Size,
-                      unsigned ByteAlignment = 0) override;
+                      unsigned ByteAlignment,
+                      TailPaddingAmount TailPadding) override;
 
   void emitBinaryData(StringRef Data) override;
 
@@ -376,6 +379,11 @@ public:
   void emitBundleAlignMode(unsigned AlignPow2) override;
   void emitBundleLock(bool AlignToEnd) override;
   void emitBundleUnlock() override;
+
+  void EmitCheriCapabilityImpl(const MCSymbol *Symbol, const MCExpr *Addend,
+                               unsigned CapSize, SMLoc Loc = SMLoc()) override;
+  void emitCheriIntcap(const MCExpr *Expr, unsigned CapSize,
+                       SMLoc Loc = SMLoc()) override;
 
   Optional<std::pair<bool, std::string>>
   emitRelocDirective(const MCExpr &Offset, StringRef Name, const MCExpr *Expr,
@@ -948,13 +956,23 @@ void MCAsmStreamer::emitELFSize(MCSymbol *Symbol, const MCExpr *Value) {
   OS << ", ";
   Value->print(OS, MAI);
   EmitEOL();
+  // Store the size value so that it can be re-used by aliases.
+  if (auto *ELFSym = dyn_cast<MCSymbolELF>(Symbol)) {
+    ELFSym->setSize(Value);
+  }
 }
 
 void MCAsmStreamer::emitCommonSymbol(MCSymbol *Symbol, uint64_t Size,
-                                     unsigned ByteAlignment) {
+                                     unsigned ByteAlignment,
+                                     TailPaddingAmount TailPadding) {
+  if (TailPadding != TailPaddingAmount::None) {
+    AddComment("adding " + Twine(static_cast<uint64_t>(TailPadding)) +
+               " bytes of tail padding for precise bounds.");
+  }
+
   OS << "\t.comm\t";
   Symbol->print(OS, MAI);
-  OS << ',' << Size;
+  OS << ',' << (Size + static_cast<uint64_t>(TailPadding));
 
   if (ByteAlignment != 0) {
     if (MAI->getCOMMDirectiveAlignmentIsInBytes())
@@ -963,6 +981,13 @@ void MCAsmStreamer::emitCommonSymbol(MCSymbol *Symbol, uint64_t Size,
       OS << ',' << Log2_32(ByteAlignment);
   }
   EmitEOL();
+  if (TailPadding != TailPaddingAmount::None) {
+    // If we added padding, we need to emit an explicit symbol size directive
+    AddComment("explicit size directive required due to " +
+               Twine(static_cast<uint64_t>(TailPadding)) +
+               " bytes of tail padding for precise bounds.");
+    emitELFSize(Symbol, MCConstantExpr::create(Size, getContext()));
+  }
 
   // Print symbol's rename (original name contains invalid character(s)) if
   // there is one.
@@ -973,10 +998,15 @@ void MCAsmStreamer::emitCommonSymbol(MCSymbol *Symbol, uint64_t Size,
 }
 
 void MCAsmStreamer::emitLocalCommonSymbol(MCSymbol *Symbol, uint64_t Size,
-                                          unsigned ByteAlign) {
+                                          unsigned ByteAlign,
+                                          TailPaddingAmount TailPadding) {
+  if (TailPadding != TailPaddingAmount::None) {
+    AddComment("adding " + Twine(static_cast<uint64_t>(TailPadding)) +
+               " bytes of tail padding for precise bounds.");
+  }
   OS << "\t.lcomm\t";
   Symbol->print(OS, MAI);
-  OS << ',' << Size;
+  OS << ',' << (Size + static_cast<uint64_t>(TailPadding));
 
   if (ByteAlign > 1) {
     switch (MAI->getLCOMMDirectiveAlignmentType()) {
@@ -992,14 +1022,25 @@ void MCAsmStreamer::emitLocalCommonSymbol(MCSymbol *Symbol, uint64_t Size,
     }
   }
   EmitEOL();
+  if (TailPadding != TailPaddingAmount::None) {
+    // If we added padding, we need to emit an explicit symbol size directive
+    AddComment("explicit size directive required due to " +
+               Twine(static_cast<uint64_t>(TailPadding)) +
+               " bytes of tail padding for precise bounds.");
+    emitELFSize(Symbol, MCConstantExpr::create(Size, getContext()));
+  }
 }
 
 void MCAsmStreamer::emitZerofill(MCSection *Section, MCSymbol *Symbol,
                                  uint64_t Size, unsigned ByteAlignment,
-                                 SMLoc Loc) {
+                                 TailPaddingAmount TailPadding, SMLoc Loc) {
   if (Symbol)
     assignFragment(Symbol, &Section->getDummyFragment());
 
+  if (TailPadding != TailPaddingAmount::None) {
+    AddComment("adding " + Twine(static_cast<uint64_t>(TailPadding)) +
+               " bytes of tail padding for precise bounds.");
+  }
   // Note: a .zerofill directive does not switch sections.
   OS << ".zerofill ";
 
@@ -1013,18 +1054,26 @@ void MCAsmStreamer::emitZerofill(MCSection *Section, MCSymbol *Symbol,
   if (Symbol) {
     OS << ',';
     Symbol->print(OS, MAI);
-    OS << ',' << Size;
+    OS << ',' << (Size + static_cast<uint64_t>(TailPadding));
     if (ByteAlignment != 0)
       OS << ',' << Log2_32(ByteAlignment);
   }
   EmitEOL();
+  if (TailPadding != TailPaddingAmount::None) {
+    // If we added padding, we need to emit an explicit symbol size directive
+    AddComment("explicit size directive required due to " +
+               Twine(static_cast<uint64_t>(TailPadding)) +
+               " bytes of tail padding for precise bounds.");
+    emitELFSize(Symbol, MCConstantExpr::create(Size, getContext()));
+  }
 }
 
 // .tbss sym, size, align
 // This depends that the symbol has already been mangled from the original,
 // e.g. _a.
 void MCAsmStreamer::emitTBSSSymbol(MCSection *Section, MCSymbol *Symbol,
-                                   uint64_t Size, unsigned ByteAlignment) {
+                                   uint64_t Size, unsigned ByteAlignment,
+                                   TailPaddingAmount TailPadding) {
   assignFragment(Symbol, &Section->getDummyFragment());
 
   assert(Symbol && "Symbol shouldn't be NULL!");
@@ -1033,16 +1082,26 @@ void MCAsmStreamer::emitTBSSSymbol(MCSection *Section, MCSymbol *Symbol,
   assert(Section->getVariant() == MCSection::SV_MachO &&
          ".zerofill is a Mach-O specific directive");
   // This is a mach-o specific directive and section.
-
+  if (TailPadding != TailPaddingAmount::None) {
+    AddComment("adding " + Twine(static_cast<uint64_t>(TailPadding)) +
+               " bytes of tail padding for precise bounds.");
+  }
   OS << ".tbss ";
   Symbol->print(OS, MAI);
-  OS << ", " << Size;
+  OS << ", " << (Size + static_cast<uint64_t>(TailPadding));
 
   // Output align if we have it.  We default to 1 so don't bother printing
   // that.
   if (ByteAlignment > 1) OS << ", " << Log2_32(ByteAlignment);
 
   EmitEOL();
+  if (TailPadding != TailPaddingAmount::None) {
+    // If we added padding, we need to emit an explicit symbol size directive
+    AddComment("explicit size directive required due to " +
+               Twine(static_cast<uint64_t>(TailPadding)) +
+               " bytes of tail padding for precise bounds.");
+    emitELFSize(Symbol, MCConstantExpr::create(Size, getContext()));
+  }
 }
 
 static inline bool isPrintableString(StringRef Data) {
@@ -2330,6 +2389,39 @@ void MCAsmStreamer::emitBundleLock(bool AlignToEnd) {
 void MCAsmStreamer::emitBundleUnlock() {
   OS << "\t.bundle_unlock";
   EmitEOL();
+}
+
+void MCAsmStreamer::EmitCheriCapabilityImpl(const MCSymbol *Symbol,
+                                            const MCExpr *Addend,
+                                            unsigned CapSize, SMLoc Loc) {
+  OS << "\t.chericap\t";
+  Symbol->print(OS, MAI);
+  // Avoid parens,unary minus, and zero for constants:
+  assert(Addend);
+  if (const MCConstantExpr *CE = dyn_cast<MCConstantExpr>(Addend)) {
+    int64_t Offset = CE->getValue();
+    if (Offset > 0)
+      OS << "+" << Offset;
+    else if (Offset < 0)
+      OS << Offset;
+  } else {
+    OS << " + ";
+    Addend->print(OS, MAI, /*InParens=*/true);
+  }
+  EmitEOL();
+}
+
+void MCAsmStreamer::emitCheriIntcap(const MCExpr *Expr, unsigned CapSize,
+                                    SMLoc Loc) {
+  int64_t AbsValue;
+  if (Expr->evaluateAsAbsolute(AbsValue, *this)) {
+    // XXXAR: always emit as hex?
+    // TODO: always use the generic printing once all tests have been updated
+    OS << "\t.chericap\t" << AbsValue;
+    EmitEOL();
+  } else {
+    emitCheriIntcapGeneric(Expr, CapSize, Loc);
+  }
 }
 
 Optional<std::pair<bool, std::string>>

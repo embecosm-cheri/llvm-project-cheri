@@ -2510,6 +2510,8 @@ Instruction *InstCombinerImpl::visitGetElementPtrInst(GetElementPtrInst &GEP) {
       if (auto *CATy = dyn_cast<ArrayType>(GEPEltType)) {
         // GEP (bitcast i8* X to [0 x i8]*), i32 0, ... ?
         if (CATy->getElementType() == StrippedPtrEltTy) {
+          if (StrippedPtrTy->getAddressSpace() != GEP.getAddressSpace())
+            return nullptr;
           // -> GEP i8* X, ...
           SmallVector<Value *, 8> Idx(drop_begin(GEP.indices()));
           GetElementPtrInst *Res = GetElementPtrInst::Create(
@@ -2538,6 +2540,9 @@ Instruction *InstCombinerImpl::visitGetElementPtrInst(GetElementPtrInst &GEP) {
               GEP.setSourceElementType(XATy);
               return replaceOperand(GEP, 0, StrippedPtr);
             }
+            return nullptr;
+            // This transform appears to break things:
+#if 0
             // Cannot replace the base pointer directly because StrippedPtr's
             // address space is different. Instead, create a new GEP followed by
             // an addrspacecast.
@@ -2552,6 +2557,7 @@ Instruction *InstCombinerImpl::visitGetElementPtrInst(GetElementPtrInst &GEP) {
                 Builder.CreateGEP(StrippedPtrEltTy, StrippedPtr, Idx,
                                   GEP.getName(), GEP.isInBounds());
             return new AddrSpaceCastInst(NewGEP, GEPType);
+#endif
           }
         }
       }
@@ -2656,6 +2662,8 @@ Instruction *InstCombinerImpl::visitGetElementPtrInst(GetElementPtrInst &GEP) {
   // addrspacecast. To take advantage of the below bitcast + struct GEP, look
   // through the addrspacecast.
   Value *ASCStrippedPtrOp = PtrOp;
+  // FIXME: We can't do this on CHERI.
+#if 0
   if (auto *ASC = dyn_cast<AddrSpaceCastInst>(PtrOp)) {
     //   X = bitcast A addrspace(1)* to B addrspace(1)*
     //   Y = addrspacecast A addrspace(1)* to B addrspace(2)*
@@ -2664,6 +2672,7 @@ Instruction *InstCombinerImpl::visitGetElementPtrInst(GetElementPtrInst &GEP) {
     if (auto *BC = dyn_cast<BitCastInst>(ASC->getOperand(0)))
       ASCStrippedPtrOp = BC;
   }
+#endif
 
   if (auto *BCI = dyn_cast<BitCastInst>(ASCStrippedPtrOp))
     if (Instruction *I = visitGEPOfBitcast(BCI, GEP))

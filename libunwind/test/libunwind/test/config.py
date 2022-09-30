@@ -53,6 +53,46 @@ class Configuration(LibcxxConfiguration):
             self.cxx.compile_flags += ['-fcf-protection=full']
         super(Configuration, self).configure_compile_flags()
 
+    def configure_cxx_stdlib_under_test(self):
+        # We are always running libunwind against c++ library. Currently,
+        # all the tests only use the C++ ABI library so if possible we avoid
+        # linking against the full C++ standard library to avoid potentially
+        # pulling in another copy of libunwind.
+        self.cxx_stdlib_under_test = 'none'
+
+    def configure_link_flags(self):
+        # Ensure that the currently built libunwind is be the first library
+        # in the search order. This is especially important for static linking.
+        if self.link_shared:
+            # dladdr needs libdl on Linux
+            self.cxx.link_flags += ['-L', os.path.join(self.libunwind_obj_root, "lib"),
+                                    '-lunwind', '-ldl']
+        else:
+            libname = self.make_static_lib_name('unwind')
+            abs_path = os.path.join(self.libunwind_obj_root, "lib", libname)
+            assert os.path.exists(abs_path) and "static libunwind library does not exist", abs_path
+            self.cxx.link_flags += [abs_path]
+
+        super(Configuration, self).configure_link_flags()
+        # Ensure that libunwind is always added to the linker flags
+        # This should be the case for most TargetInfo classes anyway but some
+        # of them don't add it.
+        self.cxx.link_flags += ['-nodefaultlibs', '-lc']
+        # If we are building a static binary, we also need to add the compiler
+        # buitins library to the build since we are building with -nodefaultlibs.
+        if self.force_static_executable:
+            assert '-static' in self.cxx.link_flags  # should be set by super()
+            rtlib = self.abi_library_root = self.get_lit_conf('runtime_library')
+            if not rtlib:
+                rtlib = self.cxx.getRtlibPath()
+            if not os.path.exists(rtlib):
+                self.lit_config.fatal("Cannot find compiler runtime library" +
+                                      " at expected path " + rtlib + ". Set" +
+                                      " -Druntime_library=.... to fix this.")
+            self.cxx.link_flags += [rtlib]
+
+        print("LINKER FLAGS:", self.cxx.link_flags)
+
     def configure_compile_flags_header_includes(self):
         libunwind_headers = self.get_lit_conf(
             'libunwind_headers',

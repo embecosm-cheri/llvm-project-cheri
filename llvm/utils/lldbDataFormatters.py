@@ -3,6 +3,8 @@ LLDB Formatters for LLVM data types.
 
 Load into LLDB with 'command script import /path/to/lldbDataFormatters.py'
 """
+import lldb
+
 
 import lldb
 import json
@@ -30,6 +32,17 @@ def __lldb_init_module(debugger, internal_dict):
     debugger.HandleCommand('type synthetic add -w llvm '
                            '-l lldbDataFormatters.OptionalSynthProvider '
                            '-x "^llvm::Optional<.+>$"')
+    # doesn't seem to handle subclasses (add more as needed):
+    for c in ('Value', 'Instruction', 'Constant', 'User', 'CallInst', 'CallBase',
+              'IntrinsicInst'):
+        debugger.HandleCommand('type summary add -w llvm '
+                               '-e -F lldbDataFormatters.ValueSummaryProvider '
+                               'llvm::' + c)
+    for c in ('Type', 'IntegerType', 'FunctionType', 'StructType', 'ArrayType',
+              'VectorType', 'PointerType'):
+        debugger.HandleCommand('type summary add -w llvm '
+                               '-e -F lldbDataFormatters.TypeSummaryProvider '
+                               'llvm::' + c)
     debugger.HandleCommand('type summary add -w llvm '
                            '-F lldbDataFormatters.OptionalSummaryProvider '
                            '-x "^llvm::Optional<.+>$"')

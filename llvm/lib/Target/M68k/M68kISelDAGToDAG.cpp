@@ -234,7 +234,8 @@ private:
     if (AM.BaseType == M68kISelAddressMode::Base::FrameIndexBase) {
       Disp = getI32Imm(AM.Disp, DL);
       Base = CurDAG->getTargetFrameIndex(
-          AM.BaseFrameIndex, TLI->getPointerTy(CurDAG->getDataLayout()));
+          AM.BaseFrameIndex, TLI->getPointerTy(CurDAG->getDataLayout(),
+                                               /*AS=*/0));
       return true;
     }
 
@@ -369,7 +370,8 @@ static bool doesDispFit(M68kISelAddressMode &AM, int64_t Val) {
 SDNode *M68kDAGToDAGISel::getGlobalBaseReg() {
   unsigned GlobalBaseReg = getInstrInfo()->getGlobalBaseReg(MF);
   auto &DL = MF->getDataLayout();
-  return CurDAG->getRegister(GlobalBaseReg, TLI->getPointerTy(DL)).getNode();
+  return CurDAG->getRegister(GlobalBaseReg, TLI->getPointerTy(DL, /*AS=*/0))
+      .getNode();
 }
 
 bool M68kDAGToDAGISel::foldOffsetIntoAddress(uint64_t Offset,

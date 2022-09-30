@@ -43,9 +43,11 @@ static_assert(RISCV::F31_D == RISCV::F0_D + 31,
 static_assert(RISCV::V1 == RISCV::V0 + 1, "Register list not consecutive");
 static_assert(RISCV::V31 == RISCV::V0 + 31, "Register list not consecutive");
 
-RISCVRegisterInfo::RISCVRegisterInfo(unsigned HwMode)
-    : RISCVGenRegisterInfo(RISCV::X1, /*DwarfFlavour*/0, /*EHFlavor*/0,
-                           /*PC*/0, HwMode) {}
+RISCVRegisterInfo::RISCVRegisterInfo(const RISCVSubtarget &STI)
+    : RISCVGenRegisterInfo(RISCVABI::isCheriPureCapABI(STI.getTargetABI())
+                               ? RISCV::C1 : RISCV::X1,
+                           /*DwarfFlavour*/0, /*EHFlavor*/0,
+                           /*PC*/0, STI.getHwMode()) {}
 
 const MCPhysReg *
 RISCVRegisterInfo::getCalleeSavedRegs(const MachineFunction *MF) const {
@@ -54,10 +56,13 @@ RISCVRegisterInfo::getCalleeSavedRegs(const MachineFunction *MF) const {
     return CSR_NoRegs_SaveList;
   if (MF->getFunction().hasFnAttribute("interrupt")) {
     if (Subtarget.hasStdExtD())
-      return CSR_XLEN_F64_Interrupt_SaveList;
+      return Subtarget.hasCheri() ? CSR_XLEN_CLEN_F64_Interrupt_SaveList
+                                  : CSR_XLEN_F64_Interrupt_SaveList;
     if (Subtarget.hasStdExtF())
-      return CSR_XLEN_F32_Interrupt_SaveList;
-    return CSR_Interrupt_SaveList;
+      return Subtarget.hasCheri() ? CSR_XLEN_CLEN_F32_Interrupt_SaveList
+                                  : CSR_XLEN_F32_Interrupt_SaveList;
+    return Subtarget.hasCheri() ? CSR_XLEN_CLEN_Interrupt_SaveList
+                                : CSR_Interrupt_SaveList;
   }
 
   switch (Subtarget.getTargetABI()) {
@@ -66,22 +71,32 @@ RISCVRegisterInfo::getCalleeSavedRegs(const MachineFunction *MF) const {
   case RISCVABI::ABI_ILP32:
   case RISCVABI::ABI_LP64:
     return CSR_ILP32_LP64_SaveList;
+  case RISCVABI::ABI_IL32PC64:
+  case RISCVABI::ABI_L64PC128:
+    return CSR_IL32PC64_L64PC128_SaveList;
   case RISCVABI::ABI_ILP32F:
   case RISCVABI::ABI_LP64F:
     return CSR_ILP32F_LP64F_SaveList;
+  case RISCVABI::ABI_IL32PC64F:
+  case RISCVABI::ABI_L64PC128F:
+    return CSR_IL32PC64F_L64PC128F_SaveList;
   case RISCVABI::ABI_ILP32D:
   case RISCVABI::ABI_LP64D:
     return CSR_ILP32D_LP64D_SaveList;
+  case RISCVABI::ABI_IL32PC64D:
+  case RISCVABI::ABI_L64PC128D:
+    return CSR_IL32PC64D_L64PC128D_SaveList;
   }
 }
 
 BitVector RISCVRegisterInfo::getReservedRegs(const MachineFunction &MF) const {
   const RISCVFrameLowering *TFI = getFrameLowering(MF);
+  const RISCVSubtarget &STI = MF.getSubtarget<RISCVSubtarget>();
   BitVector Reserved(getNumRegs());
 
   // Mark any registers requested to be reserved as such
   for (size_t Reg = 0; Reg < getNumRegs(); Reg++) {
-    if (MF.getSubtarget<RISCVSubtarget>().isRegisterReservedByUser(Reg))
+    if (STI.isRegisterReservedByUser(Reg))
       markSuperRegs(Reserved, Reg);
   }
 
@@ -95,7 +110,18 @@ BitVector RISCVRegisterInfo::getReservedRegs(const MachineFunction &MF) const {
   // Reserve the base register if we need to realign the stack and allocate
   // variable-sized objects at runtime.
   if (TFI->hasBP(MF))
-    markSuperRegs(Reserved, RISCVABI::getBPReg()); // bp
+    markSuperRegs(Reserved, RISCV::X9); // bp
+
+  markSuperRegs(Reserved, RISCV::C0); // cnull
+  markSuperRegs(Reserved, RISCV::C2); // csp
+  markSuperRegs(Reserved, RISCV::C3); // cgp
+  markSuperRegs(Reserved, RISCV::C4); // ctp
+  if (TFI->hasFP(MF))
+    markSuperRegs(Reserved, RISCV::C8); // cfp
+  if (TFI->hasBP(MF))
+    markSuperRegs(Reserved, RISCV::C9); // cbp
+
+  markSuperRegs(Reserved, RISCV::DDC);
 
   // V registers for code generation. We handle them manually.
   markSuperRegs(Reserved, RISCV::VL);
@@ -118,7 +144,7 @@ bool RISCVRegisterInfo::isAsmClobberable(const MachineFunction &MF,
 }
 
 bool RISCVRegisterInfo::isConstantPhysReg(MCRegister PhysReg) const {
-  return PhysReg == RISCV::X0 || PhysReg == RISCV::VLENB;
+  return PhysReg == RISCV::X0 || PhysReg == RISCV::VLENB || PhysReg == RISCV::C0;
 }
 
 const uint32_t *RISCVRegisterInfo::getNoPreservedMask() const {
@@ -167,7 +193,8 @@ void RISCVRegisterInfo::eliminateFrameIndex(MachineBasicBlock::iterator II,
   MachineInstr &MI = *II;
   MachineFunction &MF = *MI.getParent()->getParent();
   MachineRegisterInfo &MRI = MF.getRegInfo();
-  const RISCVInstrInfo *TII = MF.getSubtarget<RISCVSubtarget>().getInstrInfo();
+  const RISCVSubtarget &STI = MF.getSubtarget<RISCVSubtarget>();
+  const RISCVInstrInfo *TII = STI.getInstrInfo();
   DebugLoc DL = MI.getDebugLoc();
 
   int FrameIndex = MI.getOperand(FIOperandNum).getIndex();
@@ -207,20 +234,34 @@ void RISCVRegisterInfo::eliminateFrameIndex(MachineBasicBlock::iterator II,
   if (!isInt<12>(Offset.getFixed())) {
     // The offset won't fit in an immediate, so use a scratch register instead
     // Modify Offset and FrameReg appropriately
+    unsigned Opc;
+    unsigned ImmOpc;
     Register ScratchReg = MRI.createVirtualRegister(&RISCV::GPRRegClass);
+    if (RISCVABI::isCheriPureCapABI(STI.getTargetABI())) {
+      Opc = RISCV::CIncOffset;
+      ImmOpc = RISCV::CIncOffsetImm;
+    } else {
+      Opc = RISCV::ADD;
+      ImmOpc = RISCV::ADDI;
+    }
+
     TII->movImm(MBB, II, DL, ScratchReg, Offset.getFixed());
-    if (MI.getOpcode() == RISCV::ADDI && !Offset.getScalable()) {
-      BuildMI(MBB, II, DL, TII->get(RISCV::ADD), MI.getOperand(0).getReg())
-        .addReg(FrameReg)
-        .addReg(ScratchReg, RegState::Kill);
+    if (MI.getOpcode() == ImmOpc  && !Offset.getScalable()) {
+      BuildMI(MBB, II, DL, TII->get(Opc), MI.getOperand(0).getReg())
+          .addReg(FrameReg)
+          .addReg(ScratchReg, RegState::Kill);
       MI.eraseFromParent();
       return;
     }
-    BuildMI(MBB, II, DL, TII->get(RISCV::ADD), ScratchReg)
+    Register DestReg = ScratchReg;
+    if (RISCVABI::isCheriPureCapABI(STI.getTargetABI())) {
+      DestReg = MRI.createVirtualRegister(&RISCV::GPCRRegClass);
+    }
+    BuildMI(MBB, II, DL, TII->get(Opc), DestReg)
         .addReg(FrameReg)
         .addReg(ScratchReg, RegState::Kill);
     Offset = StackOffset::get(0, Offset.getScalable());
-    FrameReg = ScratchReg;
+    FrameReg = DestReg;
     FrameRegIsKill = true;
   }
 
@@ -241,6 +282,8 @@ void RISCVRegisterInfo::eliminateFrameIndex(MachineBasicBlock::iterator II,
       }
     }
   } else {
+    assert(!RISCVABI::isCheriPureCapABI(STI.getTargetABI()) &&
+           "This code needs to be updated for purecap");
     // Offset = (fixed offset, scalable offset)
     // Step 1, the scalable offset, has already been computed.
     assert(ScalableFactorRegister &&
@@ -290,8 +333,8 @@ void RISCVRegisterInfo::eliminateFrameIndex(MachineBasicBlock::iterator II,
 }
 
 Register RISCVRegisterInfo::getFrameRegister(const MachineFunction &MF) const {
-  const TargetFrameLowering *TFI = getFrameLowering(MF);
-  return TFI->hasFP(MF) ? RISCV::X8 : RISCV::X2;
+  const RISCVFrameLowering *TFI = getFrameLowering(MF);
+  return TFI->hasFP(MF) ? TFI->getFPReg() : TFI->getSPReg();
 }
 
 const uint32_t *
@@ -307,12 +350,21 @@ RISCVRegisterInfo::getCallPreservedMask(const MachineFunction & MF,
   case RISCVABI::ABI_ILP32:
   case RISCVABI::ABI_LP64:
     return CSR_ILP32_LP64_RegMask;
+  case RISCVABI::ABI_IL32PC64:
+  case RISCVABI::ABI_L64PC128:
+    return CSR_IL32PC64_L64PC128_RegMask;
   case RISCVABI::ABI_ILP32F:
   case RISCVABI::ABI_LP64F:
     return CSR_ILP32F_LP64F_RegMask;
+  case RISCVABI::ABI_IL32PC64F:
+  case RISCVABI::ABI_L64PC128F:
+    return CSR_IL32PC64F_L64PC128F_RegMask;
   case RISCVABI::ABI_ILP32D:
   case RISCVABI::ABI_LP64D:
     return CSR_ILP32D_LP64D_RegMask;
+  case RISCVABI::ABI_IL32PC64D:
+  case RISCVABI::ABI_L64PC128D:
+    return CSR_IL32PC64D_L64PC128D_RegMask;
   }
 }
 

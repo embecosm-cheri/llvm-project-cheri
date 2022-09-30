@@ -262,7 +262,9 @@ void MCWinCOFFStreamer::emitCOFFImgRel32(const MCSymbol *Symbol,
 }
 
 void MCWinCOFFStreamer::emitCommonSymbol(MCSymbol *S, uint64_t Size,
-                                         unsigned ByteAlignment) {
+                                         unsigned ByteAlignment,
+                                         TailPaddingAmount TailPadding) {
+  assert(TailPadding == TailPaddingAmount::None && "Not supported yet");
   auto *Symbol = cast<MCSymbolCOFF>(S);
 
   const Triple &T = getContext().getTargetTriple();
@@ -294,7 +296,8 @@ void MCWinCOFFStreamer::emitCommonSymbol(MCSymbol *S, uint64_t Size,
 }
 
 void MCWinCOFFStreamer::emitLocalCommonSymbol(MCSymbol *S, uint64_t Size,
-                                              unsigned ByteAlignment) {
+                                              unsigned ByteAlignment,
+                                              TailPaddingAmount TailPadding) {
   auto *Symbol = cast<MCSymbolCOFF>(S);
 
   MCSection *Section = getContext().getObjectFileInfo()->getBSSSection();
@@ -319,12 +322,13 @@ void MCWinCOFFStreamer::emitWeakReference(MCSymbol *AliasS,
 
 void MCWinCOFFStreamer::emitZerofill(MCSection *Section, MCSymbol *Symbol,
                                      uint64_t Size, unsigned ByteAlignment,
-                                     SMLoc Loc) {
+                                     TailPaddingAmount TailPadding, SMLoc Loc) {
   llvm_unreachable("not implemented");
 }
 
 void MCWinCOFFStreamer::emitTBSSSymbol(MCSection *Section, MCSymbol *Symbol,
-                                       uint64_t Size, unsigned ByteAlignment) {
+                                       uint64_t Size, unsigned ByteAlignment,
+                                       TailPaddingAmount TailPadding) {
   llvm_unreachable("not implemented");
 }
 

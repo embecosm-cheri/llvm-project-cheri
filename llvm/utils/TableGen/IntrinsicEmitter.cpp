@@ -256,6 +256,11 @@ enum IIT_Info {
   IIT_ANYPTR_TO_ELT = 56,
   IIT_I2 = 57,
   IIT_I4 = 58,
+  IIT_IFATPTR64 = 59,
+  IIT_IFATPTR128 = 60,
+  IIT_IFATPTR256 = 61,
+  IIT_IFATPTR512 = 62,
+  IIT_IFATPTRAny = 63,
 };
 
 static void EncodeFixedValueType(MVT::SimpleValueType VT,
@@ -278,6 +283,11 @@ static void EncodeFixedValueType(MVT::SimpleValueType VT,
 
   switch (VT) {
   default: PrintFatalError("unhandled MVT in intrinsic!");
+  case MVT::iFATPTR64: return Sig.push_back(IIT_IFATPTR64);
+  case MVT::iFATPTR128: return Sig.push_back(IIT_IFATPTR128);
+  case MVT::iFATPTR256: return Sig.push_back(IIT_IFATPTR256);
+  case MVT::iFATPTR512: return Sig.push_back(IIT_IFATPTR512);
+  case MVT::iFATPTRAny: return Sig.push_back(IIT_IFATPTRAny);
   case MVT::f16: return Sig.push_back(IIT_F16);
   case MVT::bf16: return Sig.push_back(IIT_BF16);
   case MVT::f32: return Sig.push_back(IIT_F32);
@@ -391,6 +401,23 @@ static void EncodeFixedType(Record *R, std::vector<unsigned char> &ArgCodes,
     } else {
       Sig.push_back(IIT_PTR);
     }
+    return EncodeFixedType(R->getValueAsDef("ElTy"), ArgCodes, NextArgCode, Sig,
+                           Mapping);
+  }
+  case MVT::iFATPTR64:
+  case MVT::iFATPTR128:
+  case MVT::iFATPTR256:
+  case MVT::iFATPTR512:
+  case MVT::iFATPTRAny: {
+    switch (VT) {
+    default: llvm_unreachable("VT already checked!");
+    case MVT::iFATPTR64: Sig.push_back(IIT_IFATPTR64); break;
+    case MVT::iFATPTR128: Sig.push_back(IIT_IFATPTR128); break;
+    case MVT::iFATPTR256: Sig.push_back(IIT_IFATPTR256); break;
+    case MVT::iFATPTR512: Sig.push_back(IIT_IFATPTR512); break;
+    case MVT::iFATPTRAny: Sig.push_back(IIT_IFATPTRAny); break;
+    }
+    Sig.push_back(200);
     return EncodeFixedType(R->getValueAsDef("ElTy"), ArgCodes, NextArgCode, Sig,
                            Mapping);
   }
@@ -771,7 +798,7 @@ void IntrinsicEmitter::EmitAttributes(const CodeGenIntrinsicTable &Ints,
         Intrinsic.isNoReturn || Intrinsic.isNoCallback || Intrinsic.isNoSync ||
         Intrinsic.isNoFree || Intrinsic.isWillReturn || Intrinsic.isCold ||
         Intrinsic.isNoDuplicate || Intrinsic.isNoMerge ||
-        Intrinsic.isConvergent || Intrinsic.isSpeculatable) {
+        Intrinsic.isConvergent || Intrinsic.hasSideEffects || Intrinsic.isSpeculatable) {
       OS << "      const Attribute::AttrKind Atts[] = {";
       ListSeparator LS(",");
       if (!Intrinsic.canThrow)
@@ -796,6 +823,8 @@ void IntrinsicEmitter::EmitAttributes(const CodeGenIntrinsicTable &Ints,
         OS << LS << "Attribute::Convergent";
       if (Intrinsic.isSpeculatable)
         OS << LS << "Attribute::Speculatable";
+      if (Intrinsic.hasSideEffects)
+        OS << LS << "Attribute::HasSideEffects";
 
       switch (Intrinsic.ModRef) {
       case CodeGenIntrinsic::NoMem:
@@ -899,6 +928,16 @@ void IntrinsicEmitter::EmitIntrinsicToBuiltinMap(
                         "Intrinsic '" + Ints[i].TheDef->getName() +
                             "': duplicate " + CompilerName + " builtin name!");
       Table.GetOrAddStringOffset(BuiltinName);
+    }
+    if (!Ints[i].GCCBuiltinAliasName.empty()) {
+      // Get the map for this target prefix.
+      std::map<std::string, std::string> &BIM =BuiltinMap[Ints[i].TargetPrefix];
+
+      if (!BIM.insert(std::make_pair(Ints[i].GCCBuiltinAliasName,
+                                     Ints[i].EnumName)).second)
+        PrintFatalError("Intrinsic '" + Ints[i].TheDef->getName() +
+              "': duplicate GCC builtin name!");
+      Table.GetOrAddStringOffset(Ints[i].GCCBuiltinAliasName);
     }
   }
 

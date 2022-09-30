@@ -577,6 +577,7 @@ endif( LLVM_USE_PERF )
 set(LLVM_USE_SANITIZER "" CACHE STRING
   "Define the sanitizer used to build binaries and tests.")
 option(LLVM_OPTIMIZE_SANITIZED_BUILDS "Pass -O1 on debug sanitizer builds" ON)
+option(LLVM_OPTIMIZE_DEBUG_BUILDS "Pass -O1 on debug builds" OFF)
 set(LLVM_UBSAN_FLAGS
     "-fsanitize=undefined -fno-sanitize=vptr,function -fno-sanitize-recover=all"
     CACHE STRING
@@ -1179,6 +1180,19 @@ if( LLVM_INCLUDE_TESTS )
   get_property(LLVM_ALL_LIT_DEPENDS GLOBAL PROPERTY LLVM_ALL_LIT_DEPENDS)
   get_property(LLVM_ALL_ADDITIONAL_TEST_DEPENDS
       GLOBAL PROPERTY LLVM_ALL_ADDITIONAL_TEST_DEPENDS)
+  add_lit_target_with_cheri_selectors(check-all
+    "Running all regression tests"
+    ${LLVM_LIT_TESTSUITES}
+    PARAMS ${LLVM_LIT_PARAMS}
+    DEPENDS ${LLVM_LIT_DEPENDS} ${LLVM_ADDITIONAL_TEST_TARGETS}
+    ARGS ${LLVM_LIT_EXTRA_ARGS}
+    )
+
+  # Add shorter target aliases for the check-all-cheri128-only
+  add_custom_target(check-cheri128 DEPENDS check-all-cheri128-only)
+  set_target_properties(check-cheri128 PROPERTIES FOLDER "Tests")
+  add_custom_target(check-cheri256 DEPENDS check-all-cheri256-only)
+  set_target_properties(check-cheri256 PROPERTIES FOLDER "Tests")
   add_custom_target(test-depends
       DEPENDS ${LLVM_ALL_LIT_DEPENDS} ${LLVM_ALL_ADDITIONAL_TEST_DEPENDS})
   set_target_properties(test-depends PROPERTIES FOLDER "Tests")

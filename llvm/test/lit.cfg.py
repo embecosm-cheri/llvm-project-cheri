@@ -155,6 +155,13 @@ tools = [
     ToolSubst('%split-file', FindTool('split-file')),
 ]
 
+llvm_config.add_cheri_tool_substitutions(['llc', 'opt', 'llvm-mc'])
+
+# FIXME: we shouldn't have any tests that depend on clang here
+llvm_config.use_clang(required=False)
+if config.clang:
+    config.available_features.add('clang')
+
 # FIXME: Why do we have both `lli` and `%lli` that do slightly different things?
 tools.extend([
     'dsymutil', 'lli', 'lli-child-target', 'llvm-ar', 'llvm-as',
@@ -241,6 +248,10 @@ if ptxas_executable:
     enable_ptxas(ptxas_executable)
 
 llvm_config.add_tool_substitutions(tools, config.llvm_tools_dir)
+
+for tool in ('llvm-exegesis', 'llvm-mca', 'llvm-rc'):
+    if llvm_config.add_tool_substitutions([ToolSubst(tool, unresolved='break')], config.llvm_tools_dir):
+        config.available_features.add('llvm-tool-' + tool)
 
 # Targets
 

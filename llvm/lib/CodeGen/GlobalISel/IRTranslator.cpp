@@ -1972,7 +1972,9 @@ bool IRTranslator::translateKnownIntrinsic(const CallInst &CI, Intrinsic::ID ID,
   case Intrinsic::vastart: {
     auto &TLI = *MF->getSubtarget().getTargetLowering();
     Value *Ptr = CI.getArgOperand(0);
-    unsigned ListSize = TLI.getVaListSizeInBits(*DL) / 8;
+    unsigned ListSize =
+        TLI.getVaListSizeInBits(*DL, Ptr->getType()->getPointerAddressSpace()) /
+        8;
 
     // FIXME: Get alignment
     MIRBuilder.buildInstr(TargetOpcode::G_VASTART, {}, {getOrCreateVReg(*Ptr)})
@@ -3206,7 +3208,7 @@ bool IRTranslator::emitSPDescriptorParent(StackProtectorDescriptor &SPD,
   const TargetLowering &TLI = *MF->getSubtarget().getTargetLowering();
   Type *PtrIRTy = Type::getInt8PtrTy(MF->getFunction().getContext());
   const LLT PtrTy = getLLTForType(*PtrIRTy, *DL);
-  LLT PtrMemTy = getLLTForMVT(TLI.getPointerMemTy(*DL));
+  LLT PtrMemTy = getLLTForMVT(TLI.getPointerMemTy(*DL, DL->getAllocaAddrSpace()));
 
   MachineFrameInfo &MFI = ParentBB->getParent()->getFrameInfo();
   int FI = MFI.getStackProtectorIndex();

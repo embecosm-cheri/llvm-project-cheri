@@ -24,15 +24,15 @@ declare void @bar(<16 x float> %a, i32 %b)
 define i32 @vargs_not_affected(<4 x float> %v, ptr %f, ...) {
 entry:
   %ap = alloca ptr, align 4
-  call void @llvm.va_start(ptr %ap)
+  call void @llvm.va_start.p0(ptr %ap)
   %argp.cur = load ptr, ptr %ap, align 4
   %argp.next = getelementptr inbounds i8, ptr %argp.cur, i32 4
   store ptr %argp.next, ptr %ap, align 4
   %0 = load i32, ptr %argp.cur, align 4
-  call void @llvm.va_end(ptr %ap)
+  call void @llvm.va_end.p0(ptr %ap)
   ret i32 %0
 }
 
-declare void @llvm.va_start(ptr)
+declare void @llvm.va_start.p0(ptr)
 
-declare void @llvm.va_end(ptr)
+declare void @llvm.va_end.p0(ptr)

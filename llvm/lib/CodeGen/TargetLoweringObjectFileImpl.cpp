@@ -398,15 +398,20 @@ void TargetLoweringObjectFileELF::emitPersonalityValue(
   unsigned Flags = ELF::SHF_ALLOC | ELF::SHF_WRITE | ELF::SHF_GROUP;
   MCSection *Sec = getContext().getELFNamedSection(".data", Label->getName(),
                                                    ELF::SHT_PROGBITS, Flags, 0);
-  unsigned Size = DL.getPointerSize();
+  unsigned AS = DL.getProgramAddressSpace();
+  unsigned Size = DL.getPointerSize(AS);
   Streamer.switchSection(Sec);
-  Streamer.emitValueToAlignment(DL.getPointerABIAlignment(0).value());
+  Streamer.emitValueToAlignment(DL.getPointerABIAlignment(AS).value());
   Streamer.emitSymbolAttribute(Label, MCSA_ELF_TypeObject);
   const MCExpr *E = MCConstantExpr::create(Size, getContext());
   Streamer.emitELFSize(Label, E);
   Streamer.emitLabel(Label);
 
-  Streamer.emitSymbolValue(Sym, Size);
+  if (DL.isFatPointer(AS)) {
+    Streamer.EmitCheriCapability(Sym, nullptr, Size);
+  } else {
+    Streamer.emitSymbolValue(Sym, Size);
+  }
 }
 
 const MCExpr *TargetLoweringObjectFileELF::getTTypeGlobalReference(

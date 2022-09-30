@@ -521,7 +521,8 @@ protected:
 
     unsigned : NumExprBits;
 
-    unsigned Kind : 7;
+#define CAST_KIND_BITS 7
+    unsigned Kind : CAST_KIND_BITS;
     unsigned PartOfExplicitCast : 1; // Only set for ImplicitCastExpr.
 
     /// True if the call expression has some floating-point features.

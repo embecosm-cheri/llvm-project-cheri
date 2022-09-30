@@ -134,7 +134,7 @@ void *test_ReturnAddress(void) {
   return _ReturnAddress();
 }
 // CHECK-LABEL: define{{.*}}i8* @test_ReturnAddress()
-// CHECK: = tail call i8* @llvm.returnaddress(i32 0)
+// CHECK: = tail call i8* @llvm.returnaddress.p0i8(i32 0)
 // CHECK: ret i8*
 
 #if defined(__i386__) || defined(__x86_64__) || defined (__aarch64__)
@@ -215,10 +215,7 @@ void *test_InterlockedExchangePointer(void * volatile *Target, void *Value) {
 }
 
 // CHECK: define{{.*}}i8* @test_InterlockedExchangePointer(i8** {{[a-z_ ]*}}%Target, i8* {{[a-z_ ]*}}%Value){{.*}}{
-// CHECK:   %[[TARGET:[0-9]+]] = bitcast i8** %Target to [[iPTR:i[0-9]+]]*
-// CHECK:   %[[VALUE:[0-9]+]] = ptrtoint i8* %Value to [[iPTR]]
-// CHECK:   %[[EXCHANGE:[0-9]+]] = atomicrmw xchg [[iPTR]]* %[[TARGET]], [[iPTR]] %[[VALUE]] seq_cst, align {{4|8}}
-// CHECK:   %[[RESULT:[0-9]+]] = inttoptr [[iPTR]] %[[EXCHANGE]] to i8*
+// CHECK:   %[[RESULT:[0-9]+]] = atomicrmw xchg i8** %Target, i8* %Value seq_cst, align {{4|8}}
 // CHECK:   ret i8* %[[RESULT]]
 // CHECK: }
 
@@ -228,7 +225,7 @@ void *test_InterlockedCompareExchangePointer(void * volatile *Destination,
 }
 
 // CHECK: define{{.*}}i8* @test_InterlockedCompareExchangePointer(i8** {{[a-z_ ]*}}%Destination, i8* {{[a-z_ ]*}}%Exchange, i8* {{[a-z_ ]*}}%Comparand){{.*}}{
-// CHECK:   %[[DEST:[0-9]+]] = bitcast i8** %Destination to [[iPTR]]*
+// CHECK:   %[[DEST:[0-9]+]] = bitcast i8** %Destination to [[iPTR:i32|i64]]*
 // CHECK:   %[[EXCHANGE:[0-9]+]] = ptrtoint i8* %Exchange to [[iPTR]]
 // CHECK:   %[[COMPARAND:[0-9]+]] = ptrtoint i8* %Comparand to [[iPTR]]
 // CHECK:   %[[XCHG:[0-9]+]] = cmpxchg volatile [[iPTR]]* %[[DEST:[0-9]+]], [[iPTR]] %[[COMPARAND:[0-9]+]], [[iPTR]] %[[EXCHANGE:[0-9]+]] seq_cst seq_cst, align {{4|8}}

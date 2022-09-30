@@ -37,7 +37,7 @@ define void @f2(i32 %p, ...) "frame-pointer"="all" {
 ; CHECK-NEXT:    retq
 ; CHECK-NEXT:    .seh_endproc
   %ap = alloca i8, align 8
-  call void @llvm.va_start(ptr %ap)
+  call void @llvm.va_start.p0(ptr %ap)
   ret void
 }
 
@@ -260,4 +260,4 @@ define ptr @f12() {
 declare ptr @llvm.returnaddress(i32) nounwind readnone
 declare ptr @llvm.addressofreturnaddress() nounwind readnone
 declare i64 @llvm.x86.flags.read.u64()
-declare void @llvm.va_start(ptr) nounwind
+declare void @llvm.va_start.p0(ptr) nounwind

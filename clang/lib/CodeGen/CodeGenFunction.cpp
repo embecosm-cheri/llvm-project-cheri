@@ -35,6 +35,7 @@
 #include "clang/Frontend/FrontendDiagnostic.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/Frontend/OpenMP/OMPIRBuilder.h"
+#include "llvm/IR/Cheri.h"
 #include "llvm/IR/DataLayout.h"
 #include "llvm/IR/Dominators.h"
 #include "llvm/IR/FPEnv.h"
@@ -43,6 +44,8 @@
 #include "llvm/IR/MDBuilder.h"
 #include "llvm/IR/Operator.h"
 #include "llvm/Support/CRC.h"
+#include "llvm/Transforms/Utils/CheriSetBounds.h"
+#include "llvm/Transforms/Utils/Local.h"
 #include "llvm/Transforms/Scalar/LowerExpectIntrinsic.h"
 #include "llvm/Transforms/Utils/PromoteMemToReg.h"
 
@@ -120,6 +123,23 @@ void CodeGenFunction::SetFastMathFlags(FPOptions FPFeatures) {
   FMF.setApproxFunc(FPFeatures.getAllowApproxFunc());
   FMF.setAllowContract(FPFeatures.allowFPContractAcrossStatement());
   Builder.setFastMathFlags(FMF);
+}
+
+llvm::Value *CodeGenFunction::setPointerBounds(
+    llvm::Value *V, llvm::Value *Size, SourceLocation Loc,
+    const llvm::Twine &Name, StringRef Pass, bool IsSubObject,
+    const llvm::Twine &Details, llvm::MaybeAlign KnownAlignment) {
+  if (llvm::cheri::ShouldCollectCSetBoundsStats) {
+    auto Kind = IsSubObject ? llvm::cheri::SetBoundsPointerSource::SubObject
+                            : llvm::cheri::inferPointerSource(V);
+    llvm::Align Alignment =
+        KnownAlignment ? *KnownAlignment
+                       : llvm::Align(getKnownAlignment(V, CGM.getDataLayout()));
+    llvm::cheri::addSetBoundsStats(
+        Alignment, Size, Pass, Kind, Details,
+        Loc.printToString(CGM.getContext().getSourceManager()));
+  }
+  return getTargetHooks().setPointerBounds(*this, V, Size, Name);
 }
 
 CodeGenFunction::CGFPOptionsRAII::CGFPOptionsRAII(CodeGenFunction &CGF,
@@ -877,6 +897,14 @@ void CodeGenFunction::StartFunction(GlobalDecl GD, QualType RetTy,
       getContext().getTargetInfo().getTriple().isX86())
     Fn->addFnAttr("patchable-function", "prologue-short-redirect");
 
+  if (const FunctionDecl *FD = dyn_cast_or_null<FunctionDecl>(D)) {
+    auto *FT =
+      dyn_cast<FunctionType>(FD->getType().getDesugaredType(getContext()));
+    if (FT && (FT->getCallConv() == CC_CHERICCallee))
+      if (auto *ClsAttr = FD->getAttr<CHERIMethodClassAttr>())
+        CGM.EmitSandboxDefinedMethod(ClsAttr->getDefaultClass()->getName(),
+                                     FD->getName(), Fn);
+  }
   // Add no-jump-tables value.
   if (CGM.getCodeGenOpts().NoUseJumpTables)
     Fn->addFnAttr("no-jump-tables", "true");
@@ -937,6 +965,19 @@ void CodeGenFunction::StartFunction(GlobalDecl GD, QualType RetTy,
       CGM.addCompilerUsedGlobal(FTRTTIProxy);
     }
   }
+
+  if (D && D->hasAttr<SensitiveAttr>()) {
+    // Sensitive needs to be a function attribute, not metadata
+#if 0
+    llvm::LLVMContext &Context = getLLVMContext();
+    llvm::Value *attrMDArgs[] = { Fn };
+    llvm::MDNode *FNNode= llvm::MDNode::get(Context, attrMDArgs);
+    llvm::NamedMDNode *OpenCLKernelMetadata =
+      CGM.getModule().getOrInsertNamedMetadata("cheri.sensitive.functions");
+    OpenCLKernelMetadata->addOperand(FNNode);
+#endif
+  }
+
 
   // If we're checking nullability, we need to know whether we can check the
   // return value. Initialize the flag to 'true' and refine it in EmitParmDecl.
@@ -2003,7 +2044,7 @@ CodeGenFunction::EmitNullInitialization(Address DestPtr, QualType Ty) {
                                NullConstant, Twine());
     CharUnits NullAlign = DestPtr.getAlignment();
     NullVariable->setAlignment(NullAlign.getAsAlign());
-    Address SrcPtr(Builder.CreateBitCast(NullVariable, Builder.getInt8PtrTy()),
+    Address SrcPtr(Builder.CreatePointerBitCastOrAddrSpaceCast(NullVariable, CGM.Int8PtrTy),
                    Builder.getInt8Ty(), NullAlign);
 
     if (vla) return emitNonZeroVLAInit(*this, Ty, DestPtr, SrcPtr, SizeVal);
@@ -2028,7 +2069,11 @@ llvm::BlockAddress *CodeGenFunction::GetAddrOfLabel(const LabelDecl *L) {
 
   // Make sure the indirect branch includes all of the address-taken blocks.
   IndirectBranch->addDestination(BB);
-  return llvm::BlockAddress::get(CurFn, BB);
+  auto Result = llvm::BlockAddress::get(CurFn, BB);
+  assert(Result->getType()->getPointerAddressSpace() ==
+             CGM.getDataLayout().getProgramAddressSpace() &&
+         "Blockaddress not in program AS?");
+  return Result;
 }
 
 llvm::BasicBlock *CodeGenFunction::GetIndirectGotoBlock() {
@@ -2455,9 +2500,12 @@ void CodeGenFunction::EmitVarAnnotations(const VarDecl *D, llvm::Value *V) {
   assert(D->hasAttr<AnnotateAttr>() && "no annotate attribute");
   // FIXME We create a new bitcast for every annotation because that's what
   // llvm-gcc was doing.
+  auto AnnotateIntrin =
+      CGM.getIntrinsic(llvm::Intrinsic::var_annotation, Int8PtrTy);
   for (const auto *I : D->specific_attrs<AnnotateAttr>())
-    EmitAnnotationCall(CGM.getIntrinsic(llvm::Intrinsic::var_annotation),
-                       Builder.CreateBitCast(V, CGM.Int8PtrTy, V->getName()),
+    EmitAnnotationCall(AnnotateIntrin,
+                       Builder.CreatePointerBitCastOrAddrSpaceCast(
+                           V, CGM.Int8PtrTy, V->getName()),
                        I->getAnnotation(), D->getLocation(), I);
 }
 
@@ -2470,17 +2518,17 @@ Address CodeGenFunction::EmitFieldAnnotations(const FieldDecl *D,
   unsigned AS = PTy ? PTy->getAddressSpace() : 0;
   llvm::PointerType *IntrinTy =
       llvm::PointerType::getWithSamePointeeType(CGM.Int8PtrTy, AS);
-  llvm::Function *F =
-      CGM.getIntrinsic(llvm::Intrinsic::ptr_annotation, IntrinTy);
+  llvm::Function *F = CGM.getIntrinsic(llvm::Intrinsic::ptr_annotation,
+                                       {IntrinTy, CGM.Int8PtrTy});
 
   for (const auto *I : D->specific_attrs<AnnotateAttr>()) {
     // FIXME Always emit the cast inst so we can differentiate between
     // annotation on the first field of a struct and annotation on the struct
     // itself.
     if (VTy != IntrinTy)
-      V = Builder.CreateBitCast(V, IntrinTy);
+      V = Builder.CreatePointerBitCastOrAddrSpaceCast(V, IntrinTy);
     V = EmitAnnotationCall(F, V, I->getAnnotation(), D->getLocation(), I);
-    V = Builder.CreateBitCast(V, VTy);
+    V = Builder.CreatePointerBitCastOrAddrSpaceCast(V, VTy);
   }
 
   return Address(V, Addr.getElementType(), Addr.getAlignment());

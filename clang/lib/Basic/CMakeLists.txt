@@ -1,6 +1,17 @@
 set(LLVM_LINK_COMPONENTS
   Support
+  # FIXME: only needed for MCTargetOptions::cheriCapabilityTableABI
+  MC
   )
+
+# In a standard Clang+LLVM build, we need to generate intrinsics before
+# building basic. In a standalone build, LLVM is already built and we don't
+# need this dependency. Furthermore, LLVM doesn't export it so we can't have
+# this dependency.
+set(basic_deps intrinsics_gen)
+if (CLANG_BUILT_STANDALONE)
+  set(basic_deps)
+endif()
 
 find_first_existing_vc_file("${LLVM_MAIN_SRC_DIR}" llvm_vc)
 find_first_existing_vc_file("${CLANG_SOURCE_DIR}" clang_vc)
@@ -107,6 +118,7 @@ add_clang_library(clangBasic
   ${version_inc}
 
   DEPENDS
+  ${basic_deps}
   omp_gen
   )
 

@@ -19,7 +19,7 @@
 #   include <cxxabi.h>
 #elif defined(LIBCXXRT)
 #   include <cxxabi.h>
-#   include "support/runtime/new_handler_fallback.ipp"
+// #   include "support/runtime/new_handler_fallback.ipp"
 #elif defined(__GLIBCXX__)
     // nothing to do
 #else

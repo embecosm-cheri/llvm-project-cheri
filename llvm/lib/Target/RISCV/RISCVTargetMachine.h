@@ -44,6 +44,10 @@ public:
 
   TargetTransformInfo getTargetTransformInfo(const Function &F) const override;
 
+  bool IsRV64() const {
+    return getTargetTriple().isArch64Bit();
+  }
+
   bool isNoopAddrSpaceCast(unsigned SrcAS, unsigned DstAS) const override;
 
   yaml::MachineFunctionInfo *createDefaultFuncInfoYAML() const override;

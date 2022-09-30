@@ -1099,6 +1099,35 @@ static void reportMayClobberedLoad(LoadInst *Load, MemDepResult DepInfo,
   ORE->emit(R);
 }
 
+static bool canExtractBitsFromCapability(Type *Src, Type *Dst, int Offset,
+                                         const DataLayout &DL) {
+  if (!DL.isFatPointer(Src))
+    return true;
+
+  LLVM_DEBUG(dbgs() << "canExtractBitsFromCapability(Offset=" << Offset << ")\n"
+                    << " Src " << *Src << '\n'
+                    << " Dst " << *Dst << '\n'
+                    << "\n\n\n");
+
+  // FIXME: THIS IS WRONG! But we can indeed extract some bits
+#if 0
+  // At worst capability to capability
+  if (Src == Dst && Offset == 0)
+    return true;
+  // Compute the offset in bits.
+  Offset = Offset * 8;
+  // If we're not extracting bits from a capability then we're ok.
+  if (!isa<PointerType>(Src))
+    return true;
+
+  if (DL.getPointerAddrSizeInBits(Src) < Offset + DL.getTypeSizeInBits(Dst)) {
+    return false;
+  }
+  return true;
+#endif
+  return false;
+}
+
 /// Check if a load from pointer-select \p Address in \p DepBB can be converted
 /// to a value select. The following conditions need to be satisfied:
 /// 1. The pointer select (\p Address) must be defined in \p DepBB.
@@ -1161,11 +1190,15 @@ bool GVNPass::AnalyzeLoadAvailability(LoadInst *Load, MemDepResult DepInfo,
     if (StoreInst *DepSI = dyn_cast<StoreInst>(DepInst)) {
       // Can't forward from non-atomic to atomic without violating memory model.
       if (Address && Load->isAtomic() <= DepSI->isAtomic()) {
-        int Offset =
-            analyzeLoadFromClobberingStore(Load->getType(), Address, DepSI, DL);
+        int Offset = analyzeLoadFromClobberingStore(Load->getType(), Address,
+                                                    DepSI, DL, TLI);
         if (Offset != -1) {
-          Res = AvailableValue::get(DepSI->getValueOperand(), Offset);
-          return true;
+          if (canExtractBitsFromCapability(DepSI->getValueOperand()->getType(),
+                                           Load->getType(), Offset, DL)) {
+            Res = AvailableValue::get(DepSI->getValueOperand(), Offset);
+            return true;
+          }
+          return false;
         }
       }
     }
@@ -1191,9 +1224,11 @@ bool GVNPass::AnalyzeLoadAvailability(LoadInst *Load, MemDepResult DepInfo,
           Offset = (ClobberOff == None || *ClobberOff < 0) ? -1 : *ClobberOff;
         }
         if (Offset == -1)
-          Offset =
-              analyzeLoadFromClobberingLoad(LoadType, Address, DepLoad, DL);
-        if (Offset != -1) {
+          Offset = analyzeLoadFromClobberingLoad(LoadType, Address, DepLoad, DL,
+                                                 TLI);
+        if (Offset != -1 &&
+            canExtractBitsFromCapability(DepLoad->getType(), Load->getType(),
+                                         Offset, DL)) {
           Res = AvailableValue::getLoad(DepLoad, Offset);
           return true;
         }
@@ -1205,7 +1240,7 @@ bool GVNPass::AnalyzeLoadAvailability(LoadInst *Load, MemDepResult DepInfo,
     if (MemIntrinsic *DepMI = dyn_cast<MemIntrinsic>(DepInst)) {
       if (Address && !Load->isAtomic()) {
         int Offset = analyzeLoadFromClobberingMemInst(Load->getType(), Address,
-                                                      DepMI, DL);
+                                                      DepMI, DL, TLI);
         if (Offset != -1) {
           Res = AvailableValue::getMI(DepMI, Offset);
           return true;
@@ -1246,6 +1281,9 @@ bool GVNPass::AnalyzeLoadAvailability(LoadInst *Load, MemDepResult DepInfo,
                                          DL))
       return false;
 
+    if (!canExtractBitsFromCapability(S->getType(), Load->getType(), /*Offset=*/0, DL))
+      return false;
+
     // Can't forward from non-atomic to atomic without violating memory model.
     if (S->isAtomic() < Load->isAtomic())
       return false;
@@ -1259,6 +1297,9 @@ bool GVNPass::AnalyzeLoadAvailability(LoadInst *Load, MemDepResult DepInfo,
     // If the stored value is larger or equal to the loaded value, we can reuse
     // it.
     if (!canCoerceMustAliasedValueToLoad(LD, Load->getType(), DL))
+      return false;
+
+    if (!canExtractBitsFromCapability(LD->getType(), Load->getType(), /*Offset=*/0, DL))
       return false;
 
     // Can't forward from non-atomic to atomic without violating memory model.
@@ -1389,6 +1430,10 @@ void GVNPass::eliminatePartiallyRedundantLoad(
 
   // Perform PHI construction.
   Value *V = ConstructSSAForLoadSet(Load, ValuesPerBlock, *this);
+  // This check was added in ac4f47d6788e44c53e0de3b25ab74e9ef84ccb26, can it
+  // actually be triggered?
+  if (V == Load)
+    return;
   Load->replaceAllUsesWith(V);
   if (isa<PHINode>(V))
     V->takeName(Load);
@@ -1786,6 +1831,8 @@ bool GVNPass::processNonLocalLoad(LoadInst *Load) {
 
     // Perform PHI construction.
     Value *V = ConstructSSAForLoadSet(Load, ValuesPerBlock, *this);
+    if (V == Load)
+      return false;
     Load->replaceAllUsesWith(V);
 
     if (isa<PHINode>(V))

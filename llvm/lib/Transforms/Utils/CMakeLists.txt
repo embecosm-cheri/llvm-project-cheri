@@ -11,6 +11,8 @@ add_llvm_component_library(LLVMTransformUtils
   CallGraphUpdater.cpp
   CanonicalizeAliases.cpp
   CanonicalizeFreezeInLoops.cpp
+  CheriSetBounds.cpp
+  CheriLogSetBoundsPass.cpp
   CloneFunction.cpp
   CloneModule.cpp
   CodeExtractor.cpp
@@ -93,3 +95,5 @@ add_llvm_component_library(LLVMTransformUtils
   Core
   Support
   )
+
+add_definitions(-DLLVM_NO_DEFAULT_ADDRESS_SPACE)

@@ -20,9 +20,11 @@
 #include "llvm/ADT/StringRef.h"
 #include "llvm/MC/MCDirectives.h"
 #include "llvm/MC/MCDwarf.h"
+#include "llvm/MC/MCExpr.h"
 #include "llvm/MC/MCLinkerOptimizationHint.h"
 #include "llvm/MC/MCPseudoProbe.h"
 #include "llvm/MC/MCWinEH.h"
+#include "llvm/MC/MCTargetOptions.h"
 #include "llvm/Support/ARMTargetParser.h"
 #include "llvm/Support/Error.h"
 #include "llvm/Support/MD5.h"
@@ -234,6 +236,10 @@ class MCStreamer {
   /// Pointer to the parser's SMLoc if available. This is used to provide
   /// locations for diagnostics.
   const SMLoc *StartTokLocPtr = nullptr;
+
+  /// Array of locations that contain fat pointers and the expressions used to
+  /// initialise them.
+  SmallVector<std::tuple<MCSymbol*, const MCExpr*, StringRef>, 32> FatRelocs;
 
   /// The next unique ID to use when creating a WinCFI-related section (.pdata
   /// or .xdata). This ID ensures that we have a one-to-one mapping from
@@ -661,7 +667,8 @@ public:
   /// \param ByteAlignment - The alignment of the symbol if
   /// non-zero. This must be a power of 2.
   virtual void emitCommonSymbol(MCSymbol *Symbol, uint64_t Size,
-                                unsigned ByteAlignment) = 0;
+                                unsigned ByteAlignment,
+                                TailPaddingAmount TailPadding) = 0;
 
   /// Emit a local common (.lcomm) symbol.
   ///
@@ -669,7 +676,8 @@ public:
   /// \param Size - The size of the common symbol.
   /// \param ByteAlignment - The alignment of the common symbol in bytes.
   virtual void emitLocalCommonSymbol(MCSymbol *Symbol, uint64_t Size,
-                                     unsigned ByteAlignment);
+                                     unsigned ByteAlignment,
+                                     TailPaddingAmount TailPadding);
 
   /// Emit the zerofill section and an optional symbol.
   ///
@@ -678,8 +686,9 @@ public:
   /// \param Size - The size of the zerofill symbol.
   /// \param ByteAlignment - The alignment of the zerofill symbol if
   /// non-zero. This must be a power of 2 on some targets.
-  virtual void emitZerofill(MCSection *Section, MCSymbol *Symbol = nullptr,
-                            uint64_t Size = 0, unsigned ByteAlignment = 0,
+  virtual void emitZerofill(MCSection *Section, MCSymbol *Symbol, uint64_t Size,
+                            unsigned ByteAlignment,
+                            TailPaddingAmount TailPadding,
                             SMLoc Loc = SMLoc()) = 0;
 
   /// Emit a thread local bss (.tbss) symbol.
@@ -690,7 +699,8 @@ public:
   /// \param ByteAlignment - The alignment of the thread local common symbol
   /// if non-zero.  This must be a power of 2 on some targets.
   virtual void emitTBSSSymbol(MCSection *Section, MCSymbol *Symbol,
-                              uint64_t Size, unsigned ByteAlignment = 0);
+                              uint64_t Size, unsigned ByteAlignment,
+                              TailPaddingAmount TailPadding);
 
   /// @}
   /// \name Generating Data
@@ -803,6 +813,27 @@ public:
   /// This is used to implement assembler directives such as .gprel32 on
   /// targets that support them.
   virtual void emitGPRel32Value(const MCExpr *Value);
+
+  // TODO: it would be nice if we could get CapSize from somewhere else but
+  // MCAsmInfo only knowns about the triple which is not enough
+
+  // Emit the expression \p Value into the output as a CHERI capability
+  void EmitCheriCapability(const MCSymbol *Value, int64_t Addend,
+                           unsigned CapSize, SMLoc Loc = SMLoc()) {
+    EmitCheriCapability(Value, MCConstantExpr::create(Addend, Context), CapSize,
+                        Loc);
+  }
+  void EmitCheriCapability(const MCSymbol *Value, const MCExpr *Addend,
+                           unsigned CapSize, SMLoc Loc = SMLoc());
+
+  // Emit \p Value as an untagged capability-size value
+  virtual void emitCheriIntcap(int64_t Value, unsigned CapSize,
+                               SMLoc Loc = SMLoc()) {
+    emitCheriIntcap(MCConstantExpr::create(Value, Context), CapSize, Loc);
+  }
+  // Emit \p Expr as an untagged capability-size value
+  virtual void emitCheriIntcap(const MCExpr *Expr, unsigned CapSize,
+                               SMLoc Loc = SMLoc());
 
   /// Emit NumBytes bytes worth of the value specified by FillValue.
   /// This implements directives such as '.space'.
@@ -1135,7 +1166,15 @@ public:
   /// Return the end symbol generated inside, the caller needs to emit it.
   virtual MCSymbol *emitDwarfUnitLength(const Twine &Prefix,
                                         const Twine &Comment);
+protected:
+  virtual void EmitCheriCapabilityImpl(const MCSymbol *Value,
+                                       const MCExpr *Addend, unsigned CapSize,
+                                       SMLoc Loc = SMLoc());
 
+  /// Target-independent untagged CHERI capability
+  virtual void emitCheriIntcapGeneric(const MCExpr *Expr, unsigned CapSize,
+                                      SMLoc Loc);
+public:
   /// Emit the debug line start label.
   virtual void emitDwarfLineStartLabel(MCSymbol *StartSym);
 

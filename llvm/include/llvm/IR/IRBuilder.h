@@ -429,7 +429,7 @@ public:
   /// If no module is given via \p M, it is take from the insertion point basic
   /// block.
   GlobalVariable *CreateGlobalString(StringRef Str, const Twine &Name = "",
-                                     unsigned AddressSpace = 0,
+                                     Optional<unsigned> AddressSpace = None,
                                      Module *M = nullptr);
 
   /// Get a constant value representing either true or false.
@@ -546,12 +546,13 @@ public:
   }
 
   /// Fetch the type representing a pointer to an 8-bit integer value.
-  PointerType *getInt8PtrTy(unsigned AddrSpace = 0) {
+  PointerType *getInt8PtrTy(LLVM_DEFAULT_AS_PARAM(AddrSpace)) {
     return Type::getInt8PtrTy(Context, AddrSpace);
   }
 
   /// Fetch the type representing a pointer to an integer value.
-  IntegerType *getIntPtrTy(const DataLayout &DL, unsigned AddrSpace = 0) {
+  IntegerType *getIntPtrTy(const DataLayout &DL,
+                           LLVM_DEFAULT_AS_PARAM(AddrSpace)) {
     return DL.getIntPtrType(Context, AddrSpace);
   }
 
@@ -937,6 +938,7 @@ private:
                                   const Twine &Name = "");
 
   Value *getCastedInt8PtrValue(Value *Ptr);
+  Value *getCastedInt8PtrValue(Value *Ptr, unsigned AS);
 
   //===--------------------------------------------------------------------===//
   // Instruction creation methods: Terminators
@@ -1840,7 +1842,7 @@ public:
   /// If no module is given via \p M, it is take from the insertion point basic
   /// block.
   Constant *CreateGlobalStringPtr(StringRef Str, const Twine &Name = "",
-                                  unsigned AddressSpace = 0,
+                                  Optional<unsigned> AddressSpace = None,
                                   Module *M = nullptr) {
     GlobalVariable *GV = CreateGlobalString(Str, Name, AddressSpace, M);
     Constant *Zero = ConstantInt::get(Type::getInt32Ty(Context), 0);

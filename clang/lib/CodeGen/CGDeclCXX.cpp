@@ -27,10 +27,11 @@ using namespace CodeGen;
 
 static void EmitDeclInit(CodeGenFunction &CGF, const VarDecl &D,
                          ConstantAddress DeclPtr) {
-  assert(
-      (D.hasGlobalStorage() ||
-       (D.hasLocalStorage() && CGF.getContext().getLangOpts().OpenCLCPlusPlus)) &&
-      "VarDecl must have global or local (in the case of OpenCL) storage!");
+  // TODO: Enable assert for non-CHERI like OpenCL
+  //assert(
+  //    (D.hasGlobalStorage() ||
+  //     (D.hasLocalStorage() && CGF.getContext().getLangOpts().OpenCLCPlusPlus)) &&
+  //    "VarDecl must have global or local (in the case of OpenCL) storage!");
   assert(!D.getType()->isReferenceType() &&
          "Should not call EmitDeclInit on a reference!");
 
@@ -118,11 +119,11 @@ static void EmitDeclDestroy(CodeGenFunction &CGF, const VarDecl &D,
     CXXDestructorDecl *Dtor = Record->getDestructor();
 
     Func = CGM.getAddrAndTypeOfCXXStructor(GlobalDecl(Dtor, Dtor_Complete));
+    auto DestAS =
+        CGM.getTargetCodeGenInfo().getAddrSpaceOfCxaAtexitPtrParam();
+    auto DestTy = CGF.getTypes().ConvertType(Type)->getPointerTo(
+        CGM.getContext().getTargetAddressSpace(DestAS));
     if (CGF.getContext().getLangOpts().OpenCL) {
-      auto DestAS =
-          CGM.getTargetCodeGenInfo().getAddrSpaceOfCxaAtexitPtrParam();
-      auto DestTy = CGF.getTypes().ConvertType(Type)->getPointerTo(
-          CGM.getContext().getTargetAddressSpace(DestAS));
       auto SrcAS = D.getType().getQualifiers().getAddressSpace();
       if (DestAS == SrcAS)
         Argument = llvm::ConstantExpr::getBitCast(Addr.getPointer(), DestTy);
@@ -131,8 +132,7 @@ static void EmitDeclDestroy(CodeGenFunction &CGF, const VarDecl &D,
         // of the global destructor function should be adjusted accordingly.
         Argument = llvm::ConstantPointerNull::get(DestTy);
     } else {
-      Argument = llvm::ConstantExpr::getBitCast(
-          Addr.getPointer(), CGF.getTypes().ConvertType(Type)->getPointerTo());
+      Argument = llvm::ConstantExpr::getBitCast(Addr.getPointer(), DestTy);
     }
   // Otherwise, the standard logic requires a helper function.
   } else {
@@ -155,6 +155,9 @@ static void EmitDeclInvariant(CodeGenFunction &CGF, const VarDecl &D,
 }
 
 void CodeGenFunction::EmitInvariantStart(llvm::Constant *Addr, CharUnits Size) {
+  // If the address space isn't 0, do we can't mark it as invariant
+  if (Addr->getType()->getPointerAddressSpace() != 0)
+    return;
   // Do not emit the intrinsic if we're not optimizing.
   if (!CGM.getCodeGenOpts().OptimizationLevel)
     return;
@@ -194,7 +197,13 @@ void CodeGenFunction::EmitCXXGlobalVarDeclInit(const VarDecl &D,
   // For example, in the above CUDA code, the static local variable s has a
   // "shared" address space qualifier, but the constructor of StructWithCtor
   // expects "this" in the "generic" address space.
-  unsigned ExpectedAddrSpace = getContext().getTargetAddressSpace(T);
+  ASTContext &Context = getContext();
+  // This is not quite right, we don't want an __intcap_t alloca to be AS200
+  // unsigned ExpectedAddrSpace = CGM.getAddressSpaceForType(T);
+  unsigned ExpectedAddrSpace =
+      Context.getTargetInfo().areAllPointersCapabilities()
+          ? CGM.getTargetCodeGenInfo().getCHERICapabilityAS()
+          : CGM.getTargetAddressSpace(T.getAddressSpace());
   unsigned ActualAddrSpace = GV->getAddressSpace();
   llvm::Constant *DeclPtr = GV;
   if (ActualAddrSpace != ExpectedAddrSpace) {
@@ -204,7 +213,7 @@ void CodeGenFunction::EmitCXXGlobalVarDeclInit(const VarDecl &D,
   }
 
   ConstantAddress DeclAddr(
-      DeclPtr, GV->getValueType(), getContext().getDeclAlign(&D));
+      DeclPtr, GV->getValueType(), Context.getDeclAlign(&D));
 
   if (!T->isReferenceType()) {
     if (getLangOpts().OpenMP && !getLangOpts().OpenMPSimd &&

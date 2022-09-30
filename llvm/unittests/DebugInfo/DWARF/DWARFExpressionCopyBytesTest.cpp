@@ -61,7 +61,7 @@ public:
     if (!TheTarget)
       return;
 
-    MRI.reset(TheTarget->createMCRegInfo(TripleName));
+    MRI.reset(TheTarget->createMCRegInfo(TripleName, MCTargetOptions()));
     MAI.reset(TheTarget->createMCAsmInfo(*MRI, TripleName, MCTargetOptions()));
     STI.reset(TheTarget->createMCSubtargetInfo(TripleName, "", ""));
   }

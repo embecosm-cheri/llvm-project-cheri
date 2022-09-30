@@ -152,7 +152,7 @@ struct MD5Hash {
   bool operator==(const MD5Hash &other) const;
 };
 
-MD5Hash md5_hash(const void *data, uptr size);
+MD5Hash md5_hash(const void *data, usize size);
 
 struct Processor;
 struct ThreadState;

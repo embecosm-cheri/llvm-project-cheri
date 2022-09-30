@@ -36,6 +36,18 @@ enum class EmitDwarfUnwindType {
   Default,         // Default behavior is based on the target
 };
 
+enum class CheriCapabilityTableABI {
+  PLT = 1,   /// Use PLT stubs to set reserved register $cgp (functions assume
+             /// $cgp is set correctly)
+  Pcrel = 2, /// Derive register $cgp from $pcc (does not need to be set on
+             /// function entry)
+  FunctionDescriptor = 3, /// Use function descriptors to get $cgp (functions
+                          /// assume $cgp is set correctly) (TODO: different
+                          /// approaches possible here)
+};
+
+enum class TailPaddingAmount : uint64_t { None = 0u };
+
 class StringRef;
 
 class MCTargetOptions {
@@ -94,6 +106,8 @@ public:
   /// textual name of the ABI that we want the backend to use, e.g. o32, or
   /// aapcs-linux.
   StringRef getABIName() const;
+
+  static CheriCapabilityTableABI cheriCapabilityTableABI();
 
   /// getAssemblyLanguage - If this returns a non-empty string this represents
   /// the textual name of the assembly language that we will use for this

@@ -154,10 +154,9 @@ CodeGenRegister::CodeGenRegister(Record *R, unsigned Enum)
     : TheDef(R), EnumValue(Enum),
       CostPerUse(R->getValueAsListOfInts("CostPerUse")),
       CoveredBySubRegs(R->getValueAsBit("CoveredBySubRegs")),
-      HasDisjunctSubRegs(false), SubRegsComplete(false),
-      SuperRegsComplete(false), TopoSig(~0u) {
-  Artificial = R->getValueAsBit("isArtificial");
-}
+      HasDisjunctSubRegs(false), Artificial(R->getValueAsBit("isArtificial")),
+      Constant(R->getValueAsBit("isConstant")), SubRegsComplete(false),
+      SuperRegsComplete(false), TopoSig(~0u) {}
 
 void CodeGenRegister::buildObjectGraph(CodeGenRegBank &RegBank) {
   std::vector<Record*> SRIs = TheDef->getValueAsListOfDefs("SubRegIndices");

@@ -937,7 +937,7 @@ static ConstantAddress tryEmitGlobalCompoundLiteral(CodeGenModule &CGM,
                                      llvm::GlobalValue::InternalLinkage,
                                      C, ".compoundliteral", nullptr,
                                      llvm::GlobalVariable::NotThreadLocal,
-                    CGM.getContext().getTargetAddressSpace(addressSpace));
+                    CGM.getTargetAddressSpace(addressSpace));
   emitter.finalize(GV);
   GV->setAlignment(Align.getAsAlign());
   CGM.setAddrOfConstantCompoundLiteral(E, GV);
@@ -1101,6 +1101,8 @@ public:
       return llvm::ConstantStruct::get(STy, Elts);
     }
 
+    case CK_CHERICapabilityToPointer:
+    case CK_PointerToCHERICapability:
     case CK_AddressSpaceConversion: {
       auto C = Emitter.tryEmitPrivate(subExpr, subExpr->getType());
       if (!C) return nullptr;
@@ -1110,6 +1112,10 @@ public:
       return CGM.getTargetCodeGenInfo().performAddrSpaceCast(CGM, C, srcAS,
                                                              destAS, destTy);
     }
+
+    case CK_CHERICapabilityToOffset:
+    case CK_CHERICapabilityToAddress:
+      llvm_unreachable("__cheri_offset and __cheri_addr are handled elsewhere");
 
     case CK_LValueToRValue: {
       // We don't really support doing lvalue-to-rvalue conversions here; any
@@ -1382,6 +1388,23 @@ llvm::Constant *
 ConstantEmitter::tryEmitAbstract(const Expr *E, QualType destType) {
   auto state = pushAbstract();
   auto C = tryEmitPrivate(E, destType);
+  // XXXAR: add some sanitity checks here to catch wrong arguments
+  // See for example commit b1b58b0e0c34463518b5fac08114388ee57e565e
+  // However, in the exceptions-seh.cpp test bool is promoted to
+  // CGM.getContext().IntTy so skip that check
+#if !defined(NDEBUG) || defined(LLVM_ENABLE_DUMP)
+  auto ExprTy = E->getType().getCanonicalType();
+  if (LLVM_UNLIKELY(ExprTy != destType.getCanonicalType() &&
+                    ExprTy != CGM.getContext().BoolTy)) {
+    llvm::errs() << __func__ << ": E->getType(): ";
+    E->getType().dump();
+    llvm::errs() << __func__ << ": destType: ";
+    destType.dump();
+    llvm::errs() << __func__ << ": E: ";
+    E->dump();
+    assert(ExprTy == destType.getCanonicalType());
+  }
+#endif
   return validateAndPopAbstract(C, state);
 }
 
@@ -1396,7 +1419,7 @@ llvm::Constant *ConstantEmitter::tryEmitConstantExpr(const ConstantExpr *CE) {
   if (!CE->hasAPValueResult())
     return nullptr;
   const Expr *Inner = CE->getSubExpr()->IgnoreImplicit();
-  QualType RetType;
+  QualType RetType = Inner->getType();
   if (auto *Call = dyn_cast<CallExpr>(Inner))
     RetType = Call->getCallReturnType(CGM.getContext());
   else if (auto *Ctor = dyn_cast<CXXConstructExpr>(Inner))
@@ -1467,7 +1490,7 @@ llvm::GlobalValue *ConstantEmitter::getCurrentAddrPrivate() {
                                          /*name*/ "",
                                          /*before*/ nullptr,
                                          llvm::GlobalVariable::NotThreadLocal,
-                                         CGM.getContext().getTargetAddressSpace(DestAddressSpace));
+                                         CGM.getTargetAddressSpace(DestAddressSpace));
 
   PlaceholderAddresses.push_back(std::make_pair(nullptr, global));
 
@@ -1877,6 +1900,18 @@ llvm::Constant *ConstantLValueEmitter::tryEmit() {
     value = applyOffset(value);
   }
 
+  if (Value.mustBeNullDerivedCap() &&
+      (DestType->isCapabilityPointerType() || DestType->isIntCapType())) {
+    assert(isa<llvm::PointerType>(destTy));
+    assert(isa<llvm::PointerType>(value->getType()));
+    // Emit a GEP on NULL instead to ensure the result is always untagged.
+    // Before we had this check, cases such as
+    // `(char *__capability)(__cheri_addr __intcap_t)&extern_data` were
+    // incorrectly emitted as a tagged value rather than an integer constant.
+    return CGM.getNullDerivedConstantCapability(
+        destTy, llvm::ConstantExpr::getPtrToInt(value, CGM.PtrDiffTy));
+  }
+
   // Convert to the appropriate type; this could be an lvalue for
   // an integer.  FIXME: performAddrSpaceCast
   if (isa<llvm::PointerType>(destTy))
@@ -1903,6 +1938,15 @@ ConstantLValueEmitter::tryEmitAbsolute(llvm::Type *destTy) {
   llvm::Constant *C;
   C = llvm::ConstantExpr::getIntegerCast(getOffset(), intptrTy,
                                          /*isSigned*/ false);
+
+  if (Value.mustBeNullDerivedCap() &&
+      DestType->isCHERICapabilityType(CGM.getContext())) {
+    // For capability constant expressions (derived from an absolute integer
+    // value) we emit a GEP on NULL to ensure the result is always untagged.
+    return CGM.getNullDerivedConstantCapability(destPtrTy, C);
+  }
+  assert(!CGM.getTarget().areAllPointersCapabilities() &&
+         "Should only emit inttoptr global intcap_t in hybrid mode");
   C = llvm::ConstantExpr::getIntToPtr(C, destPtrTy);
   return C;
 }
@@ -1948,8 +1992,9 @@ ConstantLValueEmitter::tryEmitBase(const APValue::LValueBase &base) {
 
   // Handle typeid(T).
   if (TypeInfoLValue TI = base.dyn_cast<TypeInfoLValue>()) {
+    unsigned GlobalAS = CGM.getDataLayout().getGlobalsAddressSpace();
     llvm::Type *StdTypeInfoPtrTy =
-        CGM.getTypes().ConvertType(base.getTypeInfoType())->getPointerTo();
+        CGM.getTypes().ConvertType(base.getTypeInfoType())->getPointerTo(GlobalAS);
     llvm::Constant *TypeInfo =
         CGM.GetAddrOfRTTIDescriptor(QualType(TI.getType(), 0));
     if (TypeInfo->getType() != StdTypeInfoPtrTy)
@@ -2012,7 +2057,7 @@ ConstantLValue
 ConstantLValueEmitter::VisitAddrLabelExpr(const AddrLabelExpr *E) {
   assert(Emitter.CGF && "Invalid address of label expression outside function");
   llvm::Constant *Ptr = Emitter.CGF->GetAddrOfLabel(E->getLabel());
-  Ptr = llvm::ConstantExpr::getBitCast(Ptr,
+  Ptr = llvm::ConstantExpr::getPointerBitCastOrAddrSpaceCast(Ptr,
                                    CGM.getTypes().ConvertType(E->getType()));
   return Ptr;
 }
@@ -2077,8 +2122,40 @@ llvm::Constant *ConstantEmitter::tryEmitPrivate(const APValue &Value,
     return llvm::UndefValue::get(CGM.getTypes().ConvertType(DestType));
   case APValue::LValue:
     return ConstantLValueEmitter(*this, Value, DestType).tryEmit();
-  case APValue::Int:
-    return llvm::ConstantInt::get(CGM.getLLVMContext(), Value.getInt());
+  case APValue::Int: {
+    // For __uintcap_t and enums whose underlying type is __[u]intcap_t,  we
+    // get an APValue::Int but we actually need to emit a i8 addrspace(200)*
+    // and not i64 here.
+    // Use ConvertType() here and not ConvertTypeForMem since that turns
+    // _Bool into i8/i32 instead of i1
+    llvm::Type *TargetTy = CGM.getTypes().ConvertType(DestType);
+    auto AsInt = llvm::ConstantInt::get(CGM.getLLVMContext(), Value.getInt());
+
+    if (DestType->isIntCapType()) {
+      if (Value.mustBeNullDerivedCap()) {
+        // Emit a GEP on NULL instead of inttoptr to ensure the result is always
+        // untagged.
+        return CGM.getNullDerivedConstantCapability(TargetTy, AsInt);
+      } else {
+        assert(!CGM.getTarget().areAllPointersCapabilities() &&
+               "Should only emit inttoptr global intcap_t in hybrid mode");
+        return llvm::ConstantExpr::getIntToPtr(AsInt, TargetTy);
+      }
+    }
+    assert(!DestType->isCHERICapabilityType(CGM.getContext()));
+#if !defined(NDEBUG) || defined(LLVM_ENABLE_DUMP)
+    if (LLVM_UNLIKELY(AsInt->getType() != TargetTy)) {
+      llvm::errs() << __func__ << ": AsInt->getType(): ";
+      AsInt->getType()->dump();
+      llvm::errs() << __func__ << ": TargetTy: ";
+      TargetTy->dump();
+      llvm::errs() << __func__ << ": DestType: ";
+      DestType.dump();
+      assert(AsInt->getType() == TargetTy);
+    }
+#endif
+    return AsInt;
+  }
   case APValue::FixedPoint:
     return llvm::ConstantInt::get(CGM.getLLVMContext(),
                                   Value.getFixedPoint().getValue());

@@ -6082,6 +6082,11 @@ bool UnnamedLocalNoLinkageFinder::VisitDependentAddressSpaceType(
   return Visit(T->getPointeeType());
 }
 
+bool UnnamedLocalNoLinkageFinder::VisitDependentPointerType(
+    const DependentPointerType *T) {
+  return Visit(T->getPointeeType());
+}
+
 bool UnnamedLocalNoLinkageFinder::VisitVectorType(const VectorType* T) {
   return Visit(T->getElementType());
 }
@@ -7690,7 +7695,10 @@ Sema::BuildExpressionFromIntegralTemplateArgument(const TemplateArgument &Arg,
   } else if (T->isNullPtrType()) {
     E = new (Context) CXXNullPtrLiteralExpr(Context.NullPtrTy, Loc);
   } else {
-    E = IntegerLiteral::Create(Context, Arg.getAsIntegral(), T, Loc);
+    auto IntValue = Arg.getAsIntegral();
+    if (T->isIntCapType())
+      IntValue = IntValue.extOrTrunc(Context.getIntRange(T));
+    E = IntegerLiteral::Create(Context, IntValue, T, Loc);
   }
 
   if (OrigT->isEnumeralType()) {

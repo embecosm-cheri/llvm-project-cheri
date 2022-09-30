@@ -36,6 +36,9 @@ def archive_headers : Flag<["--"], "archive-headers">,
 def : Flag<["-"], "a">, Alias<archive_headers>,
   HelpText<"Alias for --archive-headers">;
 
+def cap_relocs : Flag<["--"], "cap-relocs">,
+  HelpText<"Display the (legacy) capability relocation entries in the file">;
+
 def demangle : Flag<["--"], "demangle">, HelpText<"Demangle symbol names">;
 def : Flag<["-"], "C">, Alias<demangle>, HelpText<"Alias for --demangle">;
 

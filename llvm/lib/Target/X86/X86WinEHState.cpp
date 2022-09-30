@@ -283,7 +283,8 @@ void WinEHStatePass::emitExceptionRegistrationRecord(Function *F) {
     RegNode = Builder.CreateAlloca(RegNodeTy);
     // SavedESP = llvm.stacksave()
     Value *SP = Builder.CreateCall(
-        Intrinsic::getDeclaration(TheModule, Intrinsic::stacksave), {});
+        Intrinsic::getDeclaration(TheModule, Intrinsic::stacksave,
+          { Type::getInt8PtrTy(F->getContext()) }), {});
     Builder.CreateStore(SP, Builder.CreateStructGEP(RegNodeTy, RegNode, 0));
     // TryLevel = -1
     StateFieldIndex = 2;
@@ -313,7 +314,8 @@ void WinEHStatePass::emitExceptionRegistrationRecord(Function *F) {
 
     // SavedESP = llvm.stacksave()
     Value *SP = Builder.CreateCall(
-        Intrinsic::getDeclaration(TheModule, Intrinsic::stacksave), {});
+        Intrinsic::getDeclaration(TheModule, Intrinsic::stacksave,
+          { Type::getInt8PtrTy(F->getContext()) }), {});
     Builder.CreateStore(SP, Builder.CreateStructGEP(RegNodeTy, RegNode, 0));
     // TryLevel = -2 / -1
     StateFieldIndex = 4;

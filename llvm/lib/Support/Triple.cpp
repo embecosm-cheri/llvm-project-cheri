@@ -16,6 +16,7 @@
 #include "llvm/Support/Host.h"
 #include "llvm/Support/SwapByteOrder.h"
 #include "llvm/Support/VersionTuple.h"
+#include "llvm/Support/WithColor.h"
 #include <cassert>
 #include <cstring>
 using namespace llvm;
@@ -249,6 +250,7 @@ StringRef Triple::getEnvironmentTypeName(EnvironmentType Kind) {
   switch (Kind) {
   case UnknownEnvironment: return "unknown";
   case Android: return "android";
+  case CheriPurecap: return "purecap";
   case CODE16: return "code16";
   case CoreCLR: return "coreclr";
   case Cygnus: return "cygnus";
@@ -317,6 +319,7 @@ Triple::ArchType Triple::getArchTypeForLLVMName(StringRef Name) {
     .Case("armeb", armeb)
     .Case("avr", avr)
     .StartsWith("bpf", BPFArch)
+    .Case("cheri", mips64)
     .Case("m68k", m68k)
     .Case("mips", mips)
     .Case("mipsel", mipsel)
@@ -440,6 +443,10 @@ static Triple::ArchType parseARMArch(StringRef ArchName) {
 }
 
 static Triple::ArchType parseArch(StringRef ArchName) {
+  if (ArchName.equals("cheri")) {
+    ArchName = "mips64";
+    WithColor::warning() << "cheri architecture name is deprecated; please use mips64 with -cheri=128 or mips64c128 instead\n";
+  }
   auto AT = StringSwitch<Triple::ArchType>(ArchName)
     .Cases("i386", "i486", "i586", "i686", Triple::x86)
     // FIXME: Do we need to support these?
@@ -471,6 +478,8 @@ static Triple::ArchType parseArch(StringRef ArchName) {
            Triple::mipsel)
     .Cases("mips64", "mips64eb", "mipsn32", "mipsisa64r6",
            "mips64r6", "mipsn32r6", Triple::mips64)
+    .StartsWith("mips64c", Triple::mips64) // purecap/hybrid CHERI
+    .Case("cheri", Triple::mips64)          // TODO: remove
     .Cases("mips64el", "mipsn32el", "mipsisa64r6el", "mips64r6el",
            "mipsn32r6el", Triple::mips64el)
     .Case("r600", Triple::r600)
@@ -592,6 +601,8 @@ static Triple::OSType parseOS(StringRef OSName) {
 
 static Triple::EnvironmentType parseEnvironment(StringRef EnvironmentName) {
   return StringSwitch<Triple::EnvironmentType>(EnvironmentName)
+      .StartsWith("cheripurecap", Triple::CheriPurecap)
+      .StartsWith("purecap", Triple::CheriPurecap)
       .StartsWith("eabihf", Triple::EABIHF)
       .StartsWith("eabi", Triple::EABI)
       .StartsWith("gnuabin32", Triple::GNUABIN32)
@@ -645,10 +656,26 @@ static Triple::ObjectFormatType parseFormat(StringRef EnvironmentName) {
       .Default(Triple::UnknownObjectFormat);
 }
 
-static Triple::SubArchType parseSubArch(StringRef SubArchName) {
-  if (SubArchName.startswith("mips") &&
-      (SubArchName.endswith("r6el") || SubArchName.endswith("r6")))
-    return Triple::MipsSubArch_r6;
+static Triple::SubArchType parseSubArch(StringRef SubArchName,
+                                        Triple::ArchType Arch) {
+  if (SubArchName.startswith("mips")) {
+    if (SubArchName.endswith("r6el") || SubArchName.endswith("r6")) {
+      return Triple::MipsSubArch_r6;
+    }
+    // Support encoding the CHERI abi and size in the triple name
+    return StringSwitch<Triple::SubArchType>(SubArchName)
+        .EndsWith("c128", Triple::MipsSubArch_cheri128)
+        .EndsWith("c128hybrid", Triple::MipsSubArch_cheri128)
+        .EndsWith("c256", Triple::MipsSubArch_cheri256)
+        .EndsWith("c256hybrid", Triple::MipsSubArch_cheri256)
+        .EndsWith("c64", Triple::MipsSubArch_cheri64)
+        .EndsWith("c64hybrid", Triple::MipsSubArch_cheri64)
+        .Default(Triple::NoSubArch);
+  }
+  // Backwards compat:
+  if (Arch == Triple::mips64 && SubArchName == "cheri") {
+    return Triple::MipsSubArch_cheri128;
+  }
 
   if (SubArchName == "powerpcspe")
     return Triple::PPCSubArch_spe;
@@ -875,7 +902,7 @@ Triple::Triple(const Twine &Str)
   StringRef(Data).split(Components, '-', /*MaxSplit*/ 3);
   if (Components.size() > 0) {
     Arch = parseArch(Components[0]);
-    SubArch = parseSubArch(Components[0]);
+    SubArch = parseSubArch(Components[0], Arch);
     if (Components.size() > 1) {
       Vendor = parseVendor(Components[1]);
       if (Components.size() > 2) {
@@ -889,6 +916,7 @@ Triple::Triple(const Twine &Str)
       Environment =
           StringSwitch<Triple::EnvironmentType>(Components[0])
               .StartsWith("mipsn32", Triple::GNUABIN32)
+              .StartsWith("mips64c", Triple::UnknownEnvironment) // see below
               .StartsWith("mips64", Triple::GNUABI64)
               .StartsWith("mipsisa64", Triple::GNUABI64)
               .StartsWith("mipsisa32", Triple::GNU)
@@ -898,6 +926,21 @@ Triple::Triple(const Twine &Str)
   }
   if (ObjectFormat == UnknownObjectFormat)
     ObjectFormat = getDefaultFormat(*this);
+
+  // Compat to allow "mips64c128-clang" to be purecap clang
+  // TODO: remove this
+  if (Environment == UnknownEnvironment && Components.size() == 1 &&
+      Components[0].startswith("mips64c")) {
+    // allow mips64c for purecap and mips64c128hybrid for CHERI128 (hybrid)
+    // And remove the hybrid suffix from the string representation:
+    if (Components[0].endswith("hybrid")) {
+      Components[0].consume_back("hybrid");
+      setArchName(Components[0]);
+      setEnvironment(Triple::GNUABI64);
+    } else {
+      setEnvironment(Triple::CheriPurecap);
+    }
+  }
 }
 
 /// Construct a triple from string representations of the architecture,
@@ -909,7 +952,7 @@ Triple::Triple(const Twine &Str)
 Triple::Triple(const Twine &ArchStr, const Twine &VendorStr, const Twine &OSStr)
     : Data((ArchStr + Twine('-') + VendorStr + Twine('-') + OSStr).str()),
       Arch(parseArch(ArchStr.str())),
-      SubArch(parseSubArch(ArchStr.str())),
+      SubArch(parseSubArch(ArchStr.str(), Arch)),
       Vendor(parseVendor(VendorStr.str())),
       OS(parseOS(OSStr.str())),
       Environment(), ObjectFormat(Triple::UnknownObjectFormat) {
@@ -926,7 +969,7 @@ Triple::Triple(const Twine &ArchStr, const Twine &VendorStr, const Twine &OSStr,
     : Data((ArchStr + Twine('-') + VendorStr + Twine('-') + OSStr + Twine('-') +
             EnvironmentStr).str()),
       Arch(parseArch(ArchStr.str())),
-      SubArch(parseSubArch(ArchStr.str())),
+      SubArch(parseSubArch(ArchStr.str(), Arch)),
       Vendor(parseVendor(VendorStr.str())),
       OS(parseOS(OSStr.str())),
       Environment(parseEnvironment(EnvironmentStr.str())),
@@ -1088,6 +1131,11 @@ std::string Triple::normalize(StringRef Str) {
       NormalizedEnvironment = Twine("android", AndroidVersion).str();
       Components[3] = NormalizedEnvironment;
     }
+  }
+
+  if (Components[0] == "cheri") {
+    assert(Arch == Triple::mips64);
+    Components[0] = "mips64c128";
   }
 
   // SUSE uses "gnueabi" to mean "gnueabihf"

@@ -35,6 +35,7 @@
 #include "llvm/IR/Metadata.h"
 #include "llvm/Support/Allocator.h"
 #include "llvm/Support/ArrayRecycler.h"
+#include "llvm/Support/CheriSetBounds.h"
 #include "llvm/Support/CodeGen.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/MachineValueType.h"
@@ -644,6 +645,8 @@ public:
                       bool isTarget = false, bool isOpaque = false);
   SDValue getIntPtrConstant(uint64_t Val, const SDLoc &DL,
                             bool isTarget = false);
+  SDValue getNullCapability(const SDLoc &DL);
+
   SDValue getShiftAmountConstant(uint64_t Val, EVT VT, const SDLoc &DL,
                                  bool LegalTypes = true);
   SDValue getVectorIdxConstant(uint64_t Val, const SDLoc &DL,
@@ -732,6 +735,9 @@ public:
   SDValue getExternalSymbol(const char *Sym, EVT VT);
   SDValue getTargetExternalSymbol(const char *Sym, EVT VT,
                                   unsigned TargetFlags = 0);
+  SDValue getExternalFunctionSymbol(const char *Sym);
+  SDValue getTargetExternalFunctionSymbol(const char *Sym,
+                                          unsigned TargetFlags = 0);
   SDValue getMCSymbol(MCSymbol *Sym, EVT VT);
 
   SDValue getValueType(EVT);
@@ -913,6 +919,31 @@ public:
   SDValue getVPLogicalNOT(const SDLoc &DL, SDValue Val, SDValue Mask,
                           SDValue EVL, EVT VT);
 
+  /// Generate a CHERI CSetBounds intrinsic.
+  /// Also create a log record if CSetBounds stats are being gathered
+  SDValue getCSetBounds(SDValue Val, const SDLoc &DL, SDValue Length,
+                        Align Alignment, StringRef Pass,
+                        cheri::SetBoundsPointerSource Kind,
+                        const Twine &Reason = "", std::string SrcLoc = {});
+  SDValue getCSetBounds(SDValue Val, const SDLoc &DL, uint64_t Length,
+                        Align Alignment, StringRef Pass,
+                        cheri::SetBoundsPointerSource Kind,
+                        const Twine &Reason = "", std::string SrcLoc = {}) {
+    return getCSetBounds(Val, DL, getIntPtrConstant(Length, SDLoc(Val)),
+                         Alignment, Pass, Kind, Reason, SrcLoc);
+  }
+
+  // Unlike getObjectPtrOffset this does not set NoUnsignedWrap by default
+  SDValue getPointerAdd(const SDLoc &DL, SDValue Ptr, int64_t Offset,
+                        const SDNodeFlags Flags = SDNodeFlags()) {
+    return getMemBasePlusOffset(Ptr, TypeSize::Fixed(Offset), DL, Flags);
+  }
+
+  // Unlike getObjectPtrOffset this does not set NoUnsignedWrap by default
+  SDValue getPointerAdd(const SDLoc &DL, SDValue Ptr, SDValue Offset,
+                        const SDNodeFlags Flags = SDNodeFlags()) {
+    return getMemBasePlusOffset(Ptr, Offset, DL, Flags);
+  }
   /// Returns sum of the base pointer and offset.
   /// Unlike getObjectPtrOffset this does not set NoUnsignedWrap by default.
   SDValue getMemBasePlusOffset(SDValue Base, TypeSize Offset, const SDLoc &DL,
@@ -1041,17 +1072,21 @@ public:
   SDValue getMemcpy(SDValue Chain, const SDLoc &dl, SDValue Dst, SDValue Src,
                     SDValue Size, Align Alignment, bool isVol,
                     bool AlwaysInline, bool isTailCall,
+                    bool MustPreserveCheriCapabilities,
                     MachinePointerInfo DstPtrInfo,
                     MachinePointerInfo SrcPtrInfo,
                     const AAMDNodes &AAInfo = AAMDNodes(),
-                    AAResults *AA = nullptr);
+                    AAResults *AA = nullptr,
+		   StringRef CopyType = StringRef());
 
   SDValue getMemmove(SDValue Chain, const SDLoc &dl, SDValue Dst, SDValue Src,
                      SDValue Size, Align Alignment, bool isVol, bool isTailCall,
+                     bool MustPreserveCheriCapabilities,
                      MachinePointerInfo DstPtrInfo,
                      MachinePointerInfo SrcPtrInfo,
                      const AAMDNodes &AAInfo = AAMDNodes(),
-                     AAResults *AA = nullptr);
+                     AAResults *AA = nullptr,
+                     StringRef MoveType = StringRef());
 
   SDValue getMemset(SDValue Chain, const SDLoc &dl, SDValue Dst, SDValue Src,
                     SDValue Size, Align Alignment, bool isVol,

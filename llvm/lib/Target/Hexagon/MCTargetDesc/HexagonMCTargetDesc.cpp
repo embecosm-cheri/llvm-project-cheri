@@ -295,7 +295,8 @@ llvm::MCInstrInfo *llvm::createHexagonMCInstrInfo() {
   return X;
 }
 
-static MCRegisterInfo *createHexagonMCRegisterInfo(const Triple &TT) {
+static MCRegisterInfo *
+createHexagonMCRegisterInfo(const Triple &TT, const MCTargetOptions &Options) {
   MCRegisterInfo *X = new MCRegisterInfo();
   InitHexagonMCRegisterInfo(X, Hexagon::R31);
   return X;
@@ -326,9 +327,10 @@ static MCInstPrinter *createHexagonMCInstPrinter(const Triple &T,
     return nullptr;
 }
 
-static MCTargetStreamer *
-createMCAsmTargetStreamer(MCStreamer &S, formatted_raw_ostream &OS,
-                          MCInstPrinter *IP, bool IsVerboseAsm) {
+static MCTargetStreamer *createMCAsmTargetStreamer(MCStreamer &S,
+                                                   formatted_raw_ostream &OS,
+                                                   MCInstPrinter *IP,
+                                                   bool IsVerboseAsm) {
   return new HexagonTargetAsmStreamer(S, OS, IsVerboseAsm, *IP);
 }
 

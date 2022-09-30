@@ -542,9 +542,13 @@ define i32* @test41(i32* %t1) {
   ret i32* %t65
 }
 
+; Make sure that InstCombine does not try to reorder GEPs before
+; addrspacecasts, which can break the semantics.
 define i32 addrspace(1)* @test41_addrspacecast_smaller(i32* %t1) {
 ; ALL-LABEL: @test41_addrspacecast_smaller(
-; ALL-NEXT:    [[T65:%.*]] = addrspacecast i32* [[T1:%.*]] to i32 addrspace(1)*
+; ALL-NEXT:    [[TMP1:%.*]] = bitcast i32* [[T1:%.*]] to { i32 }*
+; ALL-NEXT:    [[T64:%.*]] = addrspacecast { i32 }* [[TMP1]] to { i32 } addrspace(1)*
+; ALL-NEXT:    [[T65:%.*]] = getelementptr { i32 }, { i32 } addrspace(1)* [[T64]], i32 0, i32 0
 ; ALL-NEXT:    ret i32 addrspace(1)* [[T65]]
 ;
   %t64 = addrspacecast i32* %t1 to { i32 } addrspace(1)*
@@ -554,7 +558,9 @@ define i32 addrspace(1)* @test41_addrspacecast_smaller(i32* %t1) {
 
 define i32* @test41_addrspacecast_larger(i32 addrspace(1)* %t1) {
 ; ALL-LABEL: @test41_addrspacecast_larger(
-; ALL-NEXT:    [[T65:%.*]] = addrspacecast i32 addrspace(1)* [[T1:%.*]] to i32*
+; ALL-NEXT:    [[TMP1:%.*]] = bitcast i32 addrspace(1)* [[T1:%.*]] to { i32 } addrspace(1)*
+; ALL-NEXT:    [[T64:%.*]] = addrspacecast { i32 } addrspace(1)* [[TMP1]] to { i32 }*
+; ALL-NEXT:    [[T65:%.*]] = getelementptr { i32 }, { i32 }* [[T64]], i64 0, i32 0
 ; ALL-NEXT:    ret i32* [[T65]]
 ;
   %t64 = addrspacecast i32 addrspace(1)* %t1 to { i32 }*

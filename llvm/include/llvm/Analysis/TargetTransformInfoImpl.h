@@ -518,14 +518,14 @@ public:
     case Instruction::IntToPtr: {
       unsigned SrcSize = Src->getScalarSizeInBits();
       if (DL.isLegalInteger(SrcSize) &&
-          SrcSize <= DL.getPointerTypeSizeInBits(Dst))
+          SrcSize <= DL.getPointerAddrSizeInBits(Dst))
         return 0;
       break;
     }
     case Instruction::PtrToInt: {
       unsigned DstSize = Dst->getScalarSizeInBits();
       if (DL.isLegalInteger(DstSize) &&
-          DstSize >= DL.getPointerTypeSizeInBits(Src))
+          DstSize >= DL.getPointerAddrSizeInBits(Src))
         return 0;
       break;
     }

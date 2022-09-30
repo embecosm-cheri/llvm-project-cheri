@@ -12,6 +12,7 @@
 // UNSUPPORTED: no-rtti
 
 // <experimental/memory_resource>
+// UNSUPPORTED: libcpp-no-rtti
 
 //------------------------------------------------------------------------------
 // TESTING virtual ~memory_resource()

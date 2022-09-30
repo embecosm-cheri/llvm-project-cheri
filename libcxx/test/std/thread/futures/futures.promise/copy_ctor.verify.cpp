@@ -26,7 +26,7 @@ int main(int, char**)
     }
     {
         std::promise<int &> p0;
-        std::promise<int &> p(p0); // expected-error {{call to deleted constructor of 'std::promise<int &>'}}
+        std::promise<int &> p(p0); // expected-error-re {{call to deleted constructor of 'std::promise<int &{{( __capability)?}}>'}}
     }
     {
         std::promise<void> p0;

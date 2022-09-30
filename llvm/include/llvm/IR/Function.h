@@ -163,6 +163,9 @@ public:
                                          const Twine &N = "",
                                          Module *M = nullptr);
 
+  static Function *CreateBefore(Function &InsertBefore, FunctionType *Ty,
+                                LinkageTypes Linkage, const Twine &N = "");
+
   // Provide fast operand accessors.
   DECLARE_TRANSPARENT_OPERAND_ACCESSORS(Value);
 
@@ -482,6 +485,14 @@ public:
   /// @param ArgNo AttributeList ArgNo, referring to an argument.
   uint64_t getParamDereferenceableOrNullBytes(unsigned ArgNo) const {
     return AttributeSets.getParamDereferenceableOrNullBytes(ArgNo);
+  }
+
+  /// Determine if the function has additional side-effects.
+  bool hasSideEffects() const {
+    return hasFnAttribute(Attribute::HasSideEffects);
+  }
+  void setHasSideEffects() {
+    addFnAttr(Attribute::HasSideEffects);
   }
 
   /// Determine if the function is presplit coroutine.

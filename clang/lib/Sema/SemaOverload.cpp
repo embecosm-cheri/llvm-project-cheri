@@ -323,6 +323,10 @@ NarrowingKind StandardConversionSequence::getNarrowingKind(
   if (auto *ET = ToType->getAs<EnumType>())
     ToType = ET->getDecl()->getIntegerType();
 
+  // Converting from capability to pointer/integral is always narrowing
+  if (FromType->isCHERICapabilityType(Ctx) && !ToType->isCHERICapabilityType(Ctx))
+    return NK_Type_Narrowing;
+
   switch (Second) {
   // 'bool' is an integral type; dispatch to the right place to handle it.
   case ICK_Boolean_Conversion:
@@ -1361,7 +1365,7 @@ TryUserDefinedConversion(Sema &S, Expr *From, QualType ToType,
         // Turn this into a "standard" conversion sequence, so that it
         // gets ranked with standard conversion sequences.
         DeclAccessPair Found = ICS.UserDefined.FoundConversionFunction;
-        ICS.setStandard();
+        ICS.setStandard(ImplicitConversionSequence::MemsetToZero);
         ICS.Standard.setAsIdentityConversion();
         ICS.Standard.setFromType(From->getType());
         ICS.Standard.setAllToTypes(ToType);
@@ -1430,7 +1434,7 @@ TryImplicitConversion(Sema &S, Expr *From, QualType ToType,
   ImplicitConversionSequence ICS;
   if (IsStandardConversion(S, From, ToType, InOverloadResolution,
                            ICS.Standard, CStyle, AllowObjCWritebackConversion)){
-    ICS.setStandard();
+    ICS.setStandard(ImplicitConversionSequence::KeepState);
     return ICS;
   }
 
@@ -1450,7 +1454,7 @@ TryImplicitConversion(Sema &S, Expr *From, QualType ToType,
   if (ToType->getAs<RecordType>() && FromType->getAs<RecordType>() &&
       (S.Context.hasSameUnqualifiedType(FromType, ToType) ||
        S.IsDerivedFrom(From->getBeginLoc(), FromType, ToType))) {
-    ICS.setStandard();
+    ICS.setStandard(ImplicitConversionSequence::MemsetToZero);
     ICS.Standard.setAsIdentityConversion();
     ICS.Standard.setFromType(FromType);
     ICS.Standard.setAllToTypes(ToType);
@@ -2291,6 +2295,8 @@ BuildSimilarlyQualifiedPointerType(const Type *FromPtr,
   if (ToType->isObjCIdType() || ToType->isObjCQualifiedIdType())
     return ToType.getUnqualifiedType();
 
+  const bool FromIsCap = FromPtr->isCHERICapabilityType(Context);
+  PointerInterpretationKind PIK = FromIsCap ? PIK_Capability : PIK_Integer;
   QualType CanonFromPointee
     = Context.getCanonicalType(FromPtr->getPointeeType());
   QualType CanonToPointee = Context.getCanonicalType(ToPointee);
@@ -2302,14 +2308,15 @@ BuildSimilarlyQualifiedPointerType(const Type *FromPtr,
   // Exact qualifier match -> return the pointer type we're converting to.
   if (CanonToPointee.getLocalQualifiers() == Quals) {
     // ToType is exactly what we need. Return it.
-    if (!ToType.isNull())
+    // XXXAR: but only if the memory capability qualifier matches
+    if (ToType->isCHERICapabilityType(Context) == FromIsCap && !ToType.isNull())
       return ToType.getUnqualifiedType();
 
     // Build a pointer to ToPointee. It has the right qualifiers
     // already.
     if (isa<ObjCObjectPointerType>(ToType))
       return Context.getObjCObjectPointerType(ToPointee);
-    return Context.getPointerType(ToPointee);
+    return Context.getPointerType(ToPointee, PIK);
   }
 
   // Just build a canonical type that has the right qualifiers.
@@ -2318,7 +2325,7 @@ BuildSimilarlyQualifiedPointerType(const Type *FromPtr,
 
   if (isa<ObjCObjectPointerType>(ToType))
     return Context.getObjCObjectPointerType(QualifiedCanonToPointee);
-  return Context.getPointerType(QualifiedCanonToPointee);
+  return Context.getPointerType(QualifiedCanonToPointee, PIK);
 }
 
 static bool isNullPointerConstantForConversion(Expr *Expr,
@@ -2429,6 +2436,9 @@ bool Sema::IsPointerConversion(Expr *From, QualType FromType, QualType ToType,
                                                        ToPointeeType,
                                                        ToType, Context,
                                                    /*StripObjCLifetime=*/true);
+    assert(FromType->isCHERICapabilityType(Context) ==
+           ConvertedType->isCHERICapabilityType(Context) &&
+           "Converted type should retain capability/pointer");
     return true;
   }
 
@@ -4765,7 +4775,7 @@ TryReferenceInit(Sema &S, Expr *Init, QualType DeclType,
       S.CompareReferenceRelationship(DeclLoc, T1, T2, &RefConv);
 
   auto SetAsReferenceBinding = [&](bool BindsDirectly) {
-    ICS.setStandard();
+    ICS.setStandard(ImplicitConversionSequence::MemsetToZero);
     ICS.Standard.First = ICK_Identity;
     // FIXME: A reference binding can be a function conversion too. We should
     // consider that when ordering reference-to-function bindings.
@@ -5054,10 +5064,7 @@ TryListConversion(Sema &S, InitListExpr *From, QualType ToType,
           InitializedEntity::InitializeParameter(S.Context, ToType,
                                                  /*Consumed=*/false);
       if (S.CanPerformCopyInitialization(Entity, From)) {
-        Result.setStandard();
-        Result.Standard.setAsIdentityConversion();
-        Result.Standard.setFromType(ToType);
-        Result.Standard.setAllToTypes(ToType);
+        Result.setAsIdentityConversion(ToType);
         return Result;
       }
     }
@@ -5125,10 +5132,7 @@ TryListConversion(Sema &S, InitListExpr *From, QualType ToType,
       }
     }
 
-    Result.setStandard();
-    Result.Standard.setAsIdentityConversion();
-    Result.Standard.setFromType(InitTy);
-    Result.Standard.setAllToTypes(InitTy);
+    Result.setAsIdentityConversion(InitTy);
     for (unsigned i = 0; i < e; ++i) {
       Expr *Init = From->getInit(i);
       ImplicitConversionSequence ICS = TryCopyInitialization(
@@ -5287,10 +5291,7 @@ TryListConversion(Sema &S, InitListExpr *From, QualType ToType,
     //    - if the initializer list has no elements, the implicit conversion
     //      sequence is the identity conversion.
     else if (NumInits == 0) {
-      Result.setStandard();
-      Result.Standard.setAsIdentityConversion();
-      Result.Standard.setFromType(ToType);
-      Result.Standard.setAllToTypes(ToType);
+      Result.setAsIdentityConversion(ToType);
     }
     return Result;
   }
@@ -5455,7 +5456,8 @@ TryObjectArgumentInitialization(Sema &S, SourceLocation Loc, QualType FromType,
   }
 
   // Success. Mark this as a reference binding.
-  ICS.setStandard();
+  // XXXAR: FIXME: DO CHERI CHECK
+  ICS.setStandard(ImplicitConversionSequence::MemsetToZero);
   ICS.Standard.setAsIdentityConversion();
   ICS.Standard.Second = SecondKind;
   ICS.Standard.setFromType(FromType);
@@ -7452,7 +7454,7 @@ void Sema::AddConversionCandidate(
   ImplicitCastExpr ConversionFn(ImplicitCastExpr::OnStack,
                                 Context.getPointerType(Conversion->getType()),
                                 CK_FunctionToPointerDecay, &ConversionRef,
-                                VK_PRValue, FPOptionsOverride());
+                                VK_PRValue, FPOptionsOverride(), Context);
 
   QualType ConversionType = Conversion->getConversionType();
   if (!isCompleteType(From->getBeginLoc(), ConversionType)) {
@@ -8291,6 +8293,8 @@ class BuiltinOperatorOverloadBuilder {
            LastPromotedIntegralType;
   unsigned FirstPromotedArithmeticType,
            LastPromotedArithmeticType;
+  unsigned FirstCapabilityType,
+           LastCapabilityType;
   unsigned NumArithmeticTypes;
 
   void InitArithmeticTypes() {
@@ -8321,6 +8325,15 @@ class BuiltinOperatorOverloadBuilder {
         (S.Context.getAuxTargetInfo() &&
          S.Context.getAuxTargetInfo()->hasInt128Type()))
       ArithmeticTypes.push_back(S.Context.UnsignedInt128Ty);
+
+    // Capability types
+    FirstCapabilityType = ArithmeticTypes.size();
+    if (S.Context.getTargetInfo().SupportsCapabilities()) {
+      ArithmeticTypes.push_back(S.Context.IntCapTy);
+      ArithmeticTypes.push_back(S.Context.UnsignedIntCapTy);
+    }
+    LastCapabilityType = ArithmeticTypes.size();
+
     LastPromotedIntegralType = ArithmeticTypes.size();
     LastPromotedArithmeticType = ArithmeticTypes.size();
     // End of promoted types.
@@ -8847,8 +8860,11 @@ public:
     if (!HasArithmeticOrEnumeralCandidateType)
       return;
 
+    unsigned LastType = S.Context.getTargetInfo().SupportsCapabilities()
+                        ? LastCapabilityType : LastPromotedIntegralType;
+    // XXXAR: allow any type as the RHS operand for a bitwise op with capabilities
     for (unsigned Left = FirstPromotedIntegralType;
-         Left < LastPromotedIntegralType; ++Left) {
+         Left < LastType; ++Left) {
       for (unsigned Right = FirstPromotedIntegralType;
            Right < LastPromotedIntegralType; ++Right) {
         QualType LandR[2] = { ArithmeticTypes[Left],
@@ -10678,6 +10694,8 @@ static void DiagnoseBadConversion(Sema &S, OverloadCandidate *Cand,
   // Special diagnostic for failure to convert an initializer list, since
   // telling the user that it has type void is not useful.
   if (FromExpr && isa<InitListExpr>(FromExpr)) {
+    // XXXAR: it would be nice if we could somehow diagnose capability -> pointer
+    // narrowing conversions here instead of just printing candidate not viable
     S.Diag(Fn->getLocation(), diag::note_ovl_candidate_bad_list_argument)
         << (unsigned)FnKindPair.first << (unsigned)FnKindPair.second << FnDesc
         << (FromExpr ? FromExpr->getSourceRange() : SourceRange()) << FromTy

@@ -128,11 +128,11 @@ SDValue ARMSelectionDAGInfo::EmitSpecializedLibcall(
   TargetLowering::CallLoweringInfo CLI(DAG);
   CLI.setDebugLoc(dl)
       .setChain(Chain)
-      .setLibCallee(
-          TLI->getLibcallCallingConv(LC), Type::getVoidTy(*DAG.getContext()),
-          DAG.getExternalSymbol(FunctionNames[AEABILibcall][AlignVariant],
-                                TLI->getPointerTy(DAG.getDataLayout())),
-          std::move(Args))
+      .setLibCallee(TLI->getLibcallCallingConv(LC),
+                    Type::getVoidTy(*DAG.getContext()),
+                    DAG.getExternalFunctionSymbol(
+                        FunctionNames[AEABILibcall][AlignVariant]),
+                    std::move(Args))
       .setDiscardResult();
   std::pair<SDValue,SDValue> CallResult = TLI->LowerCallTo(CLI);
 
@@ -169,7 +169,8 @@ static bool shouldGenerateInlineTPLoop(const ARMSubtarget &Subtarget,
 SDValue ARMSelectionDAGInfo::EmitTargetCodeForMemcpy(
     SelectionDAG &DAG, const SDLoc &dl, SDValue Chain, SDValue Dst, SDValue Src,
     SDValue Size, Align Alignment, bool isVolatile, bool AlwaysInline,
-    MachinePointerInfo DstPtrInfo, MachinePointerInfo SrcPtrInfo) const {
+    bool MustPreserveCheriCapabilities, MachinePointerInfo DstPtrInfo,
+    MachinePointerInfo SrcPtrInfo) const {
   const ARMSubtarget &Subtarget =
       DAG.getMachineFunction().getSubtarget<ARMSubtarget>();
   ConstantSDNode *ConstantSize = dyn_cast<ConstantSDNode>(Size);
@@ -289,9 +290,10 @@ SDValue ARMSelectionDAGInfo::EmitTargetCodeForMemcpy(
 SDValue ARMSelectionDAGInfo::EmitTargetCodeForMemmove(
     SelectionDAG &DAG, const SDLoc &dl, SDValue Chain, SDValue Dst, SDValue Src,
     SDValue Size, Align Alignment, bool isVolatile,
-    MachinePointerInfo DstPtrInfo, MachinePointerInfo SrcPtrInfo) const {
-  return EmitSpecializedLibcall(DAG, dl, Chain, Dst, Src, Size,
-                                Alignment.value(), RTLIB::MEMMOVE);
+    bool MustPreserveCheriCapabilities, MachinePointerInfo DstPtrInfo,
+    MachinePointerInfo SrcPtrInfo) const {
+  return EmitSpecializedLibcall(DAG, dl, Chain, Dst, Src, Size, Alignment.value(),
+                                RTLIB::MEMMOVE);
 }
 
 SDValue ARMSelectionDAGInfo::EmitTargetCodeForMemset(

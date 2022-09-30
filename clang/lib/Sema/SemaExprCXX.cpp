@@ -2309,7 +2309,7 @@ Sema::BuildCXXNew(SourceRange Range, bool UseGlobal,
         SizeTy, SourceLocation());
     ImplicitCastExpr DesiredAlignment(ImplicitCastExpr::OnStack, AlignValT,
                                       CK_IntegralCast, &AlignmentLiteral,
-                                      VK_PRValue, FPOptionsOverride());
+                                      VK_PRValue, FPOptionsOverride(), Context);
 
     // Adjust placement args by prepending conjured size and alignment exprs.
     llvm::SmallVector<Expr *, 8> CallArgs;
@@ -2632,7 +2632,7 @@ bool Sema::FindAllocationFunctions(SourceLocation StartLoc, SourceRange Range,
   // tree? Or should the consumer just recalculate the value?
   // FIXME: Using a dummy value will interact poorly with attribute enable_if.
   IntegerLiteral Size(
-      Context, llvm::APInt::getZero(Context.getTargetInfo().getPointerWidth(0)),
+      Context, llvm::APInt::getZero(Context.getTargetInfo().getPointerRange(0)),
       Context.getSizeType(), SourceLocation());
   AllocArgs.push_back(&Size);
 
@@ -3854,7 +3854,8 @@ Sema::SemaBuiltinOperatorNewDeleteOverloaded(ExprResult TheCallResult,
   auto Callee = dyn_cast<ImplicitCastExpr>(TheCall->getCallee());
   assert(Callee && Callee->getCastKind() == CK_BuiltinFnToFnPtr &&
          "Callee expected to be implicit cast to a builtin function pointer");
-  Callee->setType(OperatorNewOrDelete->getType());
+  Callee->setType(OperatorNewOrDelete->getType(), Context,
+                  Callee->getSubExpr());
 
   return TheCallResult;
 }
@@ -4282,12 +4283,13 @@ Sema::PerformImplicitConversion(Expr *From, QualType ToType,
     break;
   }
 
-  case ICK_Array_To_Pointer:
-    FromType = Context.getArrayDecayedType(FromType);
-    From = ImpCastExprToType(From, FromType, CK_ArrayToPointerDecay, VK_PRValue,
-                             /*BasePath=*/nullptr, CCK)
-               .get();
+  case ICK_Array_To_Pointer: {
+    PointerInterpretationKind PIK = PointerInterpretationForBaseExpr(From);
+    FromType = Context.getArrayDecayedType(FromType, PIK);
+    From = ImpCastExprToType(From, FromType, CK_ArrayToPointerDecay,
+                             VK_PRValue, /*BasePath=*/nullptr, CCK).get();
     break;
+  }
 
   case ICK_Function_To_Pointer:
     FromType = Context.getPointerType(FromType);
@@ -4299,6 +4301,7 @@ Sema::PerformImplicitConversion(Expr *From, QualType ToType,
   default:
     llvm_unreachable("Improper first standard conversion");
   }
+  assert(From && "Should have returned an error for SCS.First");
 
   // Perform the second implicit conversion
   switch (SCS.Second) {
@@ -4451,6 +4454,8 @@ Sema::PerformImplicitConversion(Expr *From, QualType ToType,
       CheckObjCConversion(SourceRange(), NewToType, From, CCK);
     From = ImpCastExprToType(From, NewToType, Kind, VK_PRValue, &BasePath, CCK)
                .get();
+    if (!From)
+      return ExprError();
     break;
   }
 
@@ -4622,6 +4627,8 @@ Sema::PerformImplicitConversion(Expr *From, QualType ToType,
     llvm_unreachable("Improper second standard conversion");
   }
 
+  assert(From && "Should have returned an error for SCS.Second");
+
   switch (SCS.Third) {
   case ICK_Identity:
     // Nothing to do.
@@ -4659,18 +4666,23 @@ Sema::PerformImplicitConversion(Expr *From, QualType ToType,
           << InitialFromType << ToType;
     }
 
+    // ImpCastExprToType may return an ExprError, so cache the current value of
+    Expr *FromOld = From;
     From = ImpCastExprToType(From, ToType.getNonLValueExprType(Context), CK, VK,
                              /*BasePath=*/nullptr, CCK)
                .get();
 
     if (SCS.DeprecatedStringLiteralToCharPtr &&
         !getLangOpts().WritableStrings) {
-      Diag(From->getBeginLoc(),
+      Diag(FromOld->getBeginLoc(),
            getLangOpts().CPlusPlus11
                ? diag::ext_deprecated_string_literal_conversion
                : diag::warn_deprecated_string_literal_conversion)
           << ToType.getNonReferenceType();
     }
+
+    if (!From)
+      return ExprError();
 
     break;
   }
@@ -4679,14 +4691,16 @@ Sema::PerformImplicitConversion(Expr *From, QualType ToType,
     llvm_unreachable("Improper third standard conversion");
   }
 
+  assert(From && "Should have returned an error for SCS.Third");
+
   // If this conversion sequence involved a scalar -> atomic conversion, perform
   // that conversion now.
   if (!ToAtomicType.isNull()) {
     assert(Context.hasSameType(
         ToAtomicType->castAs<AtomicType>()->getValueType(), From->getType()));
     From = ImpCastExprToType(From, ToAtomicType, CK_NonAtomicToAtomic,
-                             VK_PRValue, nullptr, CCK)
-               .get();
+                             VK_PRValue, nullptr, CCK).get();
+    assert(From);
   }
 
   // Materialize a temporary if we're implicitly converting to a reference
@@ -4697,6 +4711,7 @@ Sema::PerformImplicitConversion(Expr *From, QualType ToType,
     if (Res.isInvalid())
       return ExprError();
     From = Res.get();
+    assert(From);
   }
 
   // If this conversion sequence succeeded and involved implicitly converting a
@@ -4755,6 +4770,7 @@ static bool CheckUnaryTypeTraitTypeCompleteness(Sema &S, TypeTrait UTT,
   case UTT_IsObject:
   case UTT_IsScalar:
   case UTT_IsCompound:
+  case UTT_MarkedNoSubobjectBounds: /* XXXAR: Should be fine to use on incomplete types */
   case UTT_IsMemberPointer:
     // Fall-through
 
@@ -4893,6 +4909,15 @@ static bool EvaluateUnaryTypeTrait(Sema &Self, TypeTrait UTT,
     return T->isRValueReferenceType();
   case UTT_IsMemberFunctionPointer:
     return T->isMemberFunctionPointerType();
+  case UTT_MarkedNoSubobjectBounds:
+    // Note: checking hasAttr is not sufficient, also need to check the decl
+    // since otherwise we miss some cases.
+    if (T->hasAttr(attr::CHERINoSubobjectBounds))
+      return true;
+    if (RecordDecl *RD = T->getAsRecordDecl())
+      if (RD->hasAttr<CHERINoSubobjectBoundsAttr>())
+        return true;
+    return false;
   case UTT_IsMemberObjectPointer:
     return T->isMemberDataPointerType();
   case UTT_IsEnum:
@@ -6809,14 +6834,18 @@ QualType Sema::FindCompositePointerType(SourceLocation Loc,
     /// The class for a pointer-to-member; a constant array type with a bound
     /// (if any) for an array.
     const Type *ClassOrBound;
+    llvm::Optional<PointerInterpretationKind> PIK;
 
-    Step(Kind K, const Type *ClassOrBound = nullptr)
-        : K(K), ClassOrBound(ClassOrBound) {}
+    Step(Kind K, const Type *ClassOrBound = nullptr,
+         llvm::Optional<PointerInterpretationKind> PIK = llvm::None)
+        : K(K), ClassOrBound(ClassOrBound), PIK(PIK) {}
     QualType rebuild(ASTContext &Ctx, QualType T) const {
       T = Ctx.getQualifiedType(T, Quals);
+      PointerInterpretationKind DefaultPIK =
+          Ctx.getDefaultPointerInterpretation();
       switch (K) {
       case Pointer:
-        return Ctx.getPointerType(T);
+        return Ctx.getPointerType(T, PIK.value_or(DefaultPIK));
       case MemberPointer:
         return Ctx.getMemberPointerType(T, ClassOrBound);
       case ObjCPointer:
@@ -6944,7 +6973,10 @@ QualType Sema::FindCompositePointerType(SourceLocation Loc,
         (Ptr2 = Composite2->getAs<PointerType>())) {
       Composite1 = Ptr1->getPointeeType();
       Composite2 = Ptr2->getPointeeType();
-      Steps.emplace_back(Step::Pointer);
+      if (Ptr1->getPointerInterpretation() != Ptr2->getPointerInterpretation())
+        return QualType();
+      Steps.emplace_back(Step::Pointer, nullptr,
+                         Ptr1->getPointerInterpretation());
       continue;
     }
 

@@ -89,7 +89,8 @@ void RISCVDAGToDAGISel::PreprocessISelDAG() {
       MachinePointerInfo MPI = MachinePointerInfo::getFixedStack(MF, FI);
       const TargetLowering &TLI = CurDAG->getTargetLoweringInfo();
       SDValue StackSlot =
-          CurDAG->getFrameIndex(FI, TLI.getPointerTy(CurDAG->getDataLayout()));
+          CurDAG->getFrameIndex(FI, TLI.getPointerTy(CurDAG->getDataLayout(),
+                                                     CurDAG->getDataLayout().getAllocaAddrSpace()));
 
       SDValue Chain = CurDAG->getEntryNode();
       Lo = CurDAG->getStore(Chain, DL, Lo, StackSlot, MPI, Align(8));
@@ -146,6 +147,7 @@ void RISCVDAGToDAGISel::PostprocessISelDAG() {
       continue;
 
     MadeChange |= doPeepholeSExtW(N);
+    MadeChange |= doPeepholeLoadStoreOffset(N);
     MadeChange |= doPeepholeMaskedRVV(N);
   }
 
@@ -1751,9 +1753,11 @@ bool RISCVDAGToDAGISel::SelectInlineAsmMemoryOperand(
 bool RISCVDAGToDAGISel::SelectAddrFrameIndex(SDValue Addr, SDValue &Base,
                                              SDValue &Offset) {
   if (auto *FIN = dyn_cast<FrameIndexSDNode>(Addr)) {
-    Base = CurDAG->getTargetFrameIndex(FIN->getIndex(), Subtarget->getXLenVT());
-    Offset = CurDAG->getTargetConstant(0, SDLoc(Addr), Subtarget->getXLenVT());
-    return true;
+    if (Addr.getValueType().isScalarInteger()) {
+      Base = CurDAG->getTargetFrameIndex(FIN->getIndex(), Subtarget->getXLenVT());
+      Offset = CurDAG->getTargetConstant(0, SDLoc(Addr), Subtarget->getXLenVT());
+      return true;
+    }
   }
 
   return false;
@@ -1779,6 +1783,17 @@ bool RISCVDAGToDAGISel::SelectFrameAddrRegImm(SDValue Addr, SDValue &Base,
     }
   }
 
+  return false;
+}
+
+bool RISCVDAGToDAGISel::SelectCapFI(SDValue Cap, SDValue &Base) {
+  if (auto FIN = dyn_cast<FrameIndexSDNode>(Cap)) {
+    if (Cap.getValueType().isFatPointer()) {
+      Base = CurDAG->getTargetFrameIndex(FIN->getIndex(),
+                                         Subtarget->typeForCapabilities());
+      return true;
+    }
+  }
   return false;
 }
 
@@ -2405,6 +2420,118 @@ bool RISCVDAGToDAGISel::doPeepholeSExtW(SDNode *N) {
   }
 
   return false;
+}
+
+// Returns true if N is a MachineSDNode that has a reg and simm12 memory
+// operand. The indices of the base pointer and offset are returned in BaseOpIdx
+// and OffsetOpIdx.
+static bool hasMemOffset(SDNode *N, unsigned &BaseOpIdx,
+                         unsigned &OffsetOpIdx) {
+  switch (N->getMachineOpcode()) {
+  case RISCV::CLB:
+  case RISCV::CLH:
+  case RISCV::CLW:
+  case RISCV::CLBU:
+  case RISCV::CLHU:
+  case RISCV::CLWU:
+  case RISCV::CLD:
+  case RISCV::CLC_64:
+  case RISCV::CLC_128:
+  case RISCV::CFLW:
+  case RISCV::CFLD:
+    BaseOpIdx = 0;
+    OffsetOpIdx = 1;
+    return true;
+  case RISCV::CSB:
+  case RISCV::CSH:
+  case RISCV::CSW:
+  case RISCV::CSD:
+  case RISCV::CSC_64:
+  case RISCV::CSC_128:
+  case RISCV::CFSW:
+  case RISCV::CFSD:
+    BaseOpIdx = 1;
+    OffsetOpIdx = 2;
+    return true;
+  }
+
+  return false;
+}
+
+// Merge an ADDI or CIncOffsetImm into the offset of a load/store instruction
+// where possible.
+// (load (op base, off1), off2) -> (load base, off1+off2)
+// (store val, (op base, off1), off2) -> (store val, base, off1+off2)
+// This is possible when off1+off2 fits a 12-bit immediate.
+bool RISCVDAGToDAGISel::doPeepholeLoadStoreOffset(SDNode *N) {
+  unsigned OffsetOpIdx, BaseOpIdx;
+  if (!hasMemOffset(N, BaseOpIdx, OffsetOpIdx))
+    return false;
+
+  if (!isa<ConstantSDNode>(N->getOperand(OffsetOpIdx)))
+    return false;
+
+  SDValue Base = N->getOperand(BaseOpIdx);
+
+  if (!Base.isMachineOpcode())
+    return false;
+
+  if (Base.getMachineOpcode() != RISCV::CIncOffsetImm)
+    return false;
+
+  SDValue ImmOperand = Base.getOperand(1);
+  uint64_t Offset2 = N->getConstantOperandVal(OffsetOpIdx);
+
+  if (auto *Const = dyn_cast<ConstantSDNode>(ImmOperand)) {
+    int64_t Offset1 = Const->getSExtValue();
+    int64_t CombinedOffset = Offset1 + Offset2;
+    if (!isInt<12>(CombinedOffset))
+      return false;
+    ImmOperand = CurDAG->getTargetConstant(CombinedOffset, SDLoc(ImmOperand),
+                                            ImmOperand.getValueType());
+  } else if (auto *GA = dyn_cast<GlobalAddressSDNode>(ImmOperand)) {
+    // If the off1 in (op base, off1) is a global variable's address (its
+    // low part, really), then we can rely on the alignment of that variable
+    // to provide a margin of safety before off1 can overflow the 12 bits.
+    // Check if off2 falls within that margin; if so off1+off2 can't overflow.
+    const DataLayout &DL = CurDAG->getDataLayout();
+    Align Alignment = GA->getGlobal()->getPointerAlignment(DL);
+    if (Offset2 != 0 && Alignment <= Offset2)
+      return false;
+    int64_t Offset1 = GA->getOffset();
+    int64_t CombinedOffset = Offset1 + Offset2;
+    ImmOperand = CurDAG->getTargetGlobalAddress(
+        GA->getGlobal(), SDLoc(ImmOperand), ImmOperand.getValueType(),
+        CombinedOffset, GA->getTargetFlags());
+  } else if (auto *CP = dyn_cast<ConstantPoolSDNode>(ImmOperand)) {
+    // Ditto.
+    Align Alignment = CP->getAlign();
+    if (Offset2 != 0 && Alignment <= Offset2)
+      return false;
+    int64_t Offset1 = CP->getOffset();
+    int64_t CombinedOffset = Offset1 + Offset2;
+    ImmOperand = CurDAG->getTargetConstantPool(
+        CP->getConstVal(), ImmOperand.getValueType(), CP->getAlign(),
+        CombinedOffset, CP->getTargetFlags());
+  } else {
+    return false;
+  }
+
+  LLVM_DEBUG(dbgs() << "Folding offsetting into mem-op:\nBase:    ");
+  LLVM_DEBUG(Base->dump(CurDAG));
+  LLVM_DEBUG(dbgs() << "\nN: ");
+  LLVM_DEBUG(N->dump(CurDAG));
+  LLVM_DEBUG(dbgs() << "\n");
+
+  // Modify the offset operand of the load/store.
+  if (BaseOpIdx == 0) // Load
+    CurDAG->UpdateNodeOperands(N, Base.getOperand(0), ImmOperand,
+                                N->getOperand(2));
+  else // Store
+    CurDAG->UpdateNodeOperands(N, N->getOperand(0), Base.getOperand(0),
+                                ImmOperand, N->getOperand(3));
+
+  return true;
 }
 
 // Optimize masked RVV pseudo instructions with a known all-ones mask to their

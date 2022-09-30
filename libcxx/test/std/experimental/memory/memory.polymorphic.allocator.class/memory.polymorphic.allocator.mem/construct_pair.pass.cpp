@@ -6,7 +6,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-// UNSUPPORTED: c++03
+// UNSUPPORTED: c++03, libcpp-no-rtti
 
 // Aligned allocation is required by std::experimental::pmr, but it was not provided
 // before macosx10.13 and as a result we get linker errors when deploying to older than

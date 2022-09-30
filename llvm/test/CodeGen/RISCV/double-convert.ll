@@ -640,7 +640,7 @@ define i64 @fcvt_l_d_sat(double %a) nounwind {
 ; RV32I-NEXT:    mv a1, s0
 ; RV32I-NEXT:    call __fixdfdi@plt
 ; RV32I-NEXT:    mv s5, a1
-; RV32I-NEXT:    mv a1, s2
+; RV32I-NEXT:    li a1, 0
 ; RV32I-NEXT:    blt s6, s2, .LBB12_2
 ; RV32I-NEXT:  # %bb.1: # %start
 ; RV32I-NEXT:    mv a1, a0

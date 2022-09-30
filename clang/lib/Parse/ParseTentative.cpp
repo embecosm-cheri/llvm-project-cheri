@@ -845,7 +845,7 @@ Parser::TPResult Parser::TryParsePtrOperatorSeq() {
       while (Tok.isOneOf(tok::kw_const, tok::kw_volatile, tok::kw_restrict,
                          tok::kw__Nonnull, tok::kw__Nullable,
                          tok::kw__Nullable_result, tok::kw__Null_unspecified,
-                         tok::kw__Atomic))
+                         tok::kw__Atomic, tok::kw___capability))
         ConsumeToken();
     } else {
       return TPResult::True;
@@ -1397,6 +1397,10 @@ Parser::isCXXDeclarationSpecifier(Parser::TPResult BracedCastResult,
   case tok::kw_volatile:
     return TPResult::True;
 
+    // CHERI C qualifier
+  case tok::kw___capability:
+    return TPResult::True;
+
     // OpenCL address space qualifiers
   case tok::kw_private:
     if (!getLangOpts().OpenCL)
@@ -1629,6 +1633,7 @@ Parser::isCXXDeclarationSpecifier(Parser::TPResult BracedCastResult,
   case tok::kw_long:
   case tok::kw___int64:
   case tok::kw___int128:
+  case tok::kw___intcap:
   case tok::kw_signed:
   case tok::kw_unsigned:
   case tok::kw_half:
@@ -1746,6 +1751,7 @@ bool Parser::isCXXDeclarationSpecifierAType() {
   case tok::kw_long:
   case tok::kw___int64:
   case tok::kw___int128:
+  case tok::kw___intcap:
   case tok::kw_signed:
   case tok::kw_unsigned:
   case tok::kw_half:

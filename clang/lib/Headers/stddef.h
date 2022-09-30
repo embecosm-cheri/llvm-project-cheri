@@ -9,17 +9,19 @@
 
 #if !defined(__STDDEF_H) || defined(__need_ptrdiff_t) ||                       \
     defined(__need_size_t) || defined(__need_wchar_t) ||                       \
-    defined(__need_NULL) || defined(__need_wint_t)
+    defined(__need_NULL) || defined(__need_wint_t) ||                          \
+    defined(__need_ptraddr_t)
 
 #if !defined(__need_ptrdiff_t) && !defined(__need_size_t) &&                   \
     !defined(__need_wchar_t) && !defined(__need_NULL) &&                       \
-    !defined(__need_wint_t)
+    !defined(__need_wint_t) && !defined(__need_ptraddr_t)
 /* Always define miscellaneous pieces when modules are available. */
 #if !__has_feature(modules)
 #define __STDDEF_H
 #endif
 #define __need_ptrdiff_t
 #define __need_size_t
+#define __need_ptraddr_t
 #define __need_wchar_t
 #define __need_NULL
 #define __need_STDDEF_H_misc
@@ -27,10 +29,11 @@
 #endif
 
 #if defined(__need_ptrdiff_t)
-#if !defined(_PTRDIFF_T) || __has_feature(modules)
+#if !(defined(_PTRDIFF_T) || defined(_PTRDIFF_T_DECLARED)) || __has_feature(modules)
 /* Always define ptrdiff_t when modules are available. */
 #if !__has_feature(modules)
 #define _PTRDIFF_T
+#define _PTRDIFF_T_DECLARED /* FreeBSD */
 #endif
 typedef __PTRDIFF_TYPE__ ptrdiff_t;
 #endif
@@ -38,24 +41,39 @@ typedef __PTRDIFF_TYPE__ ptrdiff_t;
 #endif /* defined(__need_ptrdiff_t) */
 
 #if defined(__need_size_t)
-#if !defined(_SIZE_T) || __has_feature(modules)
+#if !(defined(_SIZE_T) || defined(_SIZE_T_DECLARED)) || __has_feature(modules)
 /* Always define size_t when modules are available. */
 #if !__has_feature(modules)
 #define _SIZE_T
+#define _SIZE_T_DECLARED /* FreeBSD */
 #endif
 typedef __SIZE_TYPE__ size_t;
 #endif
 #undef __need_size_t
 #endif /*defined(__need_size_t) */
 
+#if defined(__need_ptraddr_t)
+#if !(defined(_PTRADDR_T) || defined(_PTRADDR_T_DECLARED)) ||                  \
+    __has_feature(modules)
+/* Always define ptraddr_t when modules are available. */
+#if !__has_feature(modules)
+#define _PTRADDR_T
+#define _PTRADDR_T_DECLARED /* FreeBSD */
+#endif
+typedef __PTRADDR_TYPE__ ptraddr_t;
+#endif
+#undef __need_ptraddr_t
+#endif /*defined(__need_ptraddr_t) */
+
 #if defined(__need_STDDEF_H_misc)
 /* ISO9899:2011 7.20 (C11 Annex K): Define rsize_t if __STDC_WANT_LIB_EXT1__ is
  * enabled. */
 #if (defined(__STDC_WANT_LIB_EXT1__) && __STDC_WANT_LIB_EXT1__ >= 1 && \
-     !defined(_RSIZE_T)) || __has_feature(modules)
+     !defined(_RSIZE_T) && !defined(_RSIZE_T_DEFINED)) || __has_feature(modules)
 /* Always define rsize_t when modules are available. */
 #if !__has_feature(modules)
 #define _RSIZE_T
+#define _RSIZE_T_DEFINED /* FreeBSD, inconsistent! */
 #endif
 typedef __SIZE_TYPE__ rsize_t;
 #endif
@@ -64,9 +82,10 @@ typedef __SIZE_TYPE__ rsize_t;
 #if defined(__need_wchar_t)
 #if !defined(__cplusplus) || (defined(_MSC_VER) && !_NATIVE_WCHAR_T_DEFINED)
 /* Always define wchar_t when modules are available. */
-#if !defined(_WCHAR_T) || __has_feature(modules)
+#if !(defined(_WCHAR_T) || defined(_WCHAR_T_DECLARED)) || __has_feature(modules)
 #if !__has_feature(modules)
 #define _WCHAR_T
+#define _WCHAR_T_DECLARED /* FreeBSD */
 #if defined(_MSC_EXTENSIONS)
 #define _WCHAR_T_DEFINED
 #endif
@@ -109,9 +128,10 @@ using ::std::nullptr_t;
 __WINT_TYPE__ directly; accommodate both by requiring __need_wint_t */
 #if defined(__need_wint_t)
 /* Always define wint_t when modules are available. */
-#if !defined(_WINT_T) || __has_feature(modules)
+#if !(defined(_WINT_T) || defined(_WINT_T_DECLARED)) || __has_feature(modules)
 #if !__has_feature(modules)
 #define _WINT_T
+#define _WINT_T_DECLARED
 #endif
 typedef __WINT_TYPE__ wint_t;
 #endif

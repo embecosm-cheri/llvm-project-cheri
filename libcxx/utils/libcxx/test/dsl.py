@@ -245,6 +245,11 @@ def hasAnyLocale(config, locales):
   %{exec} -- this means that the command may be executed on a remote host
   depending on the %{exec} substitution.
   """
+  # Avoid the (potentially) slow checks for locale support if the library
+  # under test doesn't care about localizatin (e.g. libunwind). This can speed
+  # up the test suite significantly when running it on an emulator over SSH.
+  if not getattr(config, "test_localization", True):
+    return False
   program = """
     #include <stddef.h>
     #if defined(_LIBCPP_HAS_NO_LOCALIZATION)

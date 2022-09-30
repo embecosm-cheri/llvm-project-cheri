@@ -601,6 +601,9 @@ public:
   /// Return true if this instruction may throw an exception.
   bool mayThrow() const;
 
+  /// Return true if this instruction unmodeled side-effects.
+  bool hasSideEffects() const;
+
   /// Return true if this instruction behaves like a memory fence: it can load
   /// or store to memory location without being given a memory location.
   bool isFenceLike() const {

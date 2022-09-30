@@ -221,9 +221,10 @@ CGNVCUDARuntime::CGNVCUDARuntime(CodeGenModule &CGM)
   SizeTy = CGM.SizeTy;
   VoidTy = CGM.VoidTy;
 
-  CharPtrTy = llvm::PointerType::getUnqual(Types.ConvertType(Ctx.CharTy));
+  unsigned DefaultAS = CGM.getTargetCodeGenInfo().getDefaultAS();
+  CharPtrTy = llvm::PointerType::get(Types.ConvertType(Ctx.CharTy), DefaultAS);
   VoidPtrTy = cast<llvm::PointerType>(Types.ConvertType(Ctx.VoidPtrTy));
-  VoidPtrPtrTy = VoidPtrTy->getPointerTo();
+  VoidPtrPtrTy = VoidPtrTy->getPointerTo(DefaultAS);
 }
 
 llvm::FunctionCallee CGNVCUDARuntime::getSetupArgumentFn() const {
@@ -363,7 +364,7 @@ void CGNVCUDARuntime::emitDeviceStubBodyNew(CodeGenFunction &CGF,
     return;
   }
   // Create temporary dim3 grid_dim, block_dim.
-  ParmVarDecl *GridDimParam = cudaLaunchKernelFD->getParamDecl(1);
+  const ParmVarDecl *GridDimParam = cudaLaunchKernelFD->getParamDecl(1);
   QualType Dim3Ty = GridDimParam->getType();
   Address GridDim =
       CGF.CreateMemTemp(Dim3Ty, CharUnits::fromQuantity(8), "grid_dim");
@@ -519,11 +520,12 @@ llvm::Function *CGNVCUDARuntime::makeRegisterGlobalsFn() {
   CGBuilderTy Builder(CGM, Context);
   Builder.SetInsertPoint(EntryBB);
 
+  unsigned DefaultAS = CGM.getTargetCodeGenInfo().getDefaultAS();
   // void __cudaRegisterFunction(void **, const char *, char *, const char *,
   //                             int, uint3*, uint3*, dim3*, dim3*, int*)
   llvm::Type *RegisterFuncParams[] = {
       VoidPtrPtrTy, CharPtrTy, CharPtrTy, CharPtrTy, IntTy,
-      VoidPtrTy,    VoidPtrTy, VoidPtrTy, VoidPtrTy, IntTy->getPointerTo()};
+      VoidPtrTy,    VoidPtrTy, VoidPtrTy, VoidPtrTy, IntTy->getPointerTo(DefaultAS)};
   llvm::FunctionCallee RegisterFunc = CGM.CreateRuntimeFunction(
       llvm::FunctionType::get(IntTy, RegisterFuncParams, false),
       addUnderscoredPrefixToName("RegisterFunction"));
@@ -546,7 +548,7 @@ llvm::Function *CGNVCUDARuntime::makeRegisterGlobalsFn() {
         NullPtr,
         NullPtr,
         NullPtr,
-        llvm::ConstantPointerNull::get(IntTy->getPointerTo())};
+        llvm::ConstantPointerNull::get(IntTy->getPointerTo(DefaultAS))};
     Builder.CreateCall(RegisterFunc, Args);
   }
 

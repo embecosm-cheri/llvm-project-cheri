@@ -40,16 +40,17 @@ using namespace llvm;
 /// has array of i8 type filled in with the nul terminated string value
 /// specified.  If Name is specified, it is the name of the global variable
 /// created.
-GlobalVariable *IRBuilderBase::CreateGlobalString(StringRef Str,
-                                                  const Twine &Name,
-                                                  unsigned AddressSpace,
-                                                  Module *M) {
+GlobalVariable *
+IRBuilderBase::CreateGlobalString(StringRef Str, const Twine &Name,
+                                  Optional<unsigned> AddressSpace, Module *M) {
   Constant *StrConstant = ConstantDataArray::getString(Context, Str);
   if (!M)
     M = BB->getParent()->getParent();
   auto *GV = new GlobalVariable(
       *M, StrConstant->getType(), true, GlobalValue::PrivateLinkage,
-      StrConstant, Name, nullptr, GlobalVariable::NotThreadLocal, AddressSpace);
+      StrConstant, Name, nullptr, GlobalVariable::NotThreadLocal,
+      AddressSpace ? *AddressSpace
+                   : M->getDataLayout().getGlobalsAddressSpace());
   GV->setUnnamedAddr(GlobalValue::UnnamedAddr::Global);
   GV->setAlignment(Align(1));
   return GV;
@@ -58,6 +59,24 @@ GlobalVariable *IRBuilderBase::CreateGlobalString(StringRef Str,
 Type *IRBuilderBase::getCurrentFunctionReturnType() const {
   assert(BB && BB->getParent() && "No current function!");
   return BB->getParent()->getReturnType();
+}
+
+Value *IRBuilderBase::getCastedInt8PtrValue(Value *Ptr, unsigned TargetAS) {
+  PointerType *PT = cast<PointerType>(Ptr->getType());
+  unsigned AS = PT->getAddressSpace();
+  if (PT->isOpaqueOrPointeeTypeMatches(getInt8Ty()) && AS == TargetAS)
+    return Ptr;
+
+  // Otherwise, we need to insert a bitcast.
+  PT = getInt8PtrTy(TargetAS);
+  Instruction *I;
+  if (TargetAS == AS)
+    I = new BitCastInst(Ptr, PT, "");
+  else
+    I = new AddrSpaceCastInst(Ptr, PT, "");
+  BB->getInstList().insert(InsertPt, I);
+  SetInstDebugLocation(I);
+  return I;
 }
 
 Value *IRBuilderBase::getCastedInt8PtrValue(Value *Ptr) {
@@ -349,6 +368,10 @@ CallInst *IRBuilderBase::CreateMemMove(Value *Dst, MaybeAlign DstAlign,
   Type *Tys[] = { Dst->getType(), Src->getType(), Size->getType() };
   Module *M = BB->getParent()->getParent();
   Function *TheFn = Intrinsic::getDeclaration(M, Intrinsic::memmove, Tys);
+  if (Tys[2]->getIntegerBitWidth() > 64) {
+    report_fatal_error("Created MemTransfer with size type > i64: " +
+                       TheFn->getName());
+  }
 
   CallInst *CI = createCallHelper(TheFn, Ops, this);
 

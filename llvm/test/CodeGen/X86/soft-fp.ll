@@ -15,20 +15,20 @@
 define i32 @t1(i32 %a, ...) nounwind {
 entry:
 	%va = alloca [1 x %struct.__va_list_tag], align 8		; <ptr> [#uses=2]
-	call void @llvm.va_start(ptr %va)
+	call void @llvm.va_start.p0(ptr %va)
 	%va3 = getelementptr [1 x %struct.__va_list_tag], ptr %va, i64 0, i64 0		; <ptr> [#uses=1]
 	call void @bar(ptr %va3) nounwind
-	call void @llvm.va_end(ptr %va)
+	call void @llvm.va_end.p0(ptr %va)
 	ret i32 undef
 ; CHECK-LABEL: t1:
 ; CHECK:       ret{{[lq]}}
 }
 
-declare void @llvm.va_start(ptr) nounwind
+declare void @llvm.va_start.p0(ptr) nounwind
 
 declare void @bar(ptr)
 
-declare void @llvm.va_end(ptr) nounwind
+declare void @llvm.va_end.p0(ptr) nounwind
 
 define float @t2(float %a, float %b) nounwind readnone {
 entry:

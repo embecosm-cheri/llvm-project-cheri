@@ -23,8 +23,9 @@ public:
 
   SDValue EmitTargetCodeForMemcpy(SelectionDAG &DAG, const SDLoc &DL,
                                   SDValue Chain, SDValue Dst, SDValue Src,
-                                  SDValue Size, Align Alignment,
-                                  bool IsVolatile, bool AlwaysInline,
+                                  SDValue Size, Align Alignment, bool IsVolatile,
+                                  bool AlwaysInline,
+                                  bool MustPreserveCheriCapabilities,
                                   MachinePointerInfo DstPtrInfo,
                                   MachinePointerInfo SrcPtrInfo) const override;
 

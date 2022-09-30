@@ -176,6 +176,8 @@ static void DefineTypeSize(const Twine &MacroName, unsigned TypeWidth,
 /// the width, suffix, and signedness of the given type
 static void DefineTypeSize(const Twine &MacroName, TargetInfo::IntType Ty,
                            const TargetInfo &TI, MacroBuilder &Builder) {
+  assert(Ty != TargetInfo::UnsignedIntCap);
+  assert(Ty != TargetInfo::SignedIntCap);
   DefineTypeSize(MacroName, TI.getTypeWidth(Ty), TI.getTypeConstantSuffix(Ty),
                  TI.isTypeSigned(Ty), Builder);
 }
@@ -948,6 +950,43 @@ static void InitializePredefinedMacros(const TargetInfo &TI,
     Builder.defineMacro("__ILP32__");
   }
 
+  auto UIntPtrRangeTy = TI.getUIntPtrType();
+  auto IntPtrRangeTy = TI.getIntPtrType();
+
+  // Target-independent CHERI definitions. The MIPS backend still defines the
+  // values for __CHERI_CAP_PERMISSION_* and _MIPS_SZCAP, etc.
+  if (TI.SupportsCapabilities()) {
+    const uint64_t CapWidth = TI.getCHERICapabilityWidth();
+    const uint64_t CapRange = TI.getPointerRangeForCHERICapability();
+    Builder.defineMacro("__CHERI__", "1"); // TODO: or define __CHERI__ to 128/256?
+    Builder.defineMacro("__CHERI_CAPABILITY_WIDTH__", Twine(CapWidth));
+    DefineTypeSizeof("__SIZEOF_CHERI_CAPABILITY__", CapWidth, TI, Builder);
+    Builder.defineMacro("__CHERI_ADDRESS_BITS__", Twine(CapRange));
+
+    // Since these are always the same primitive types (unlike uintptr_t which
+    // varies), we follow the same convention as those, namely only define the
+    // sizeof and max macros, and not the type and width ones.
+    DefineTypeSizeof("__SIZEOF_UINTCAP__", CapWidth, TI, Builder);
+    DefineTypeSizeof("__SIZEOF_INTCAP__", CapWidth, TI, Builder);
+    // For the range we use the underlying ptrdiff_t/ptraddr_t type
+    DefineTypeSize("__INTCAP_MAX__", TI.getIntTypeByWidth(CapRange, true), TI, Builder);
+    DefineTypeSize("__UINTCAP_MAX__", TI.getIntTypeByWidth(CapRange, false), TI, Builder);
+
+    if (TI.areAllPointersCapabilities()) {
+      // XXXAR is there a reason we use two instead of just defining it?
+      // I don't think we have any checks that rely on the value
+      Builder.defineMacro("__CHERI_PURE_CAPABILITY__", "2");
+
+      // Ensure that __UINTPTR_MAX__ and __INTPTR_MAX__ have sane values
+      // See https://github.com/CTSRD-CHERI/llvm-project/issues/316
+      IntPtrRangeTy = TI.getIntTypeByWidth(CapRange, true);
+      UIntPtrRangeTy = TI.getIntTypeByWidth(CapRange, false);
+      if (LangOpts.getCheriBounds() > LangOptions::CBM_Conservative)
+        Builder.defineMacro("__CHERI_SUBOBJECT_BOUNDS__",
+                            Twine(LangOpts.getCheriBounds()));
+    }
+  }
+
   // Define type sizing macros based on the target properties.
   assert(TI.getCharWidth() == 8 && "Only support 8-bit char so far");
   Builder.defineMacro("__CHAR_BIT__", Twine(TI.getCharWidth()));
@@ -977,8 +1016,8 @@ static void InitializePredefinedMacros(const TargetInfo &TI,
 
   DefineTypeSizeAndWidth("__UINTMAX", TI.getUIntMaxType(), TI, Builder);
   DefineTypeSizeAndWidth("__PTRDIFF", TI.getPtrDiffType(0), TI, Builder);
-  DefineTypeSizeAndWidth("__INTPTR", TI.getIntPtrType(), TI, Builder);
-  DefineTypeSizeAndWidth("__UINTPTR", TI.getUIntPtrType(), TI, Builder);
+  DefineTypeSizeAndWidth("__INTPTR", IntPtrRangeTy, TI, Builder);
+  DefineTypeSizeAndWidth("__UINTPTR", UIntPtrRangeTy, TI, Builder);
 
   DefineTypeSizeof("__SIZEOF_DOUBLE__", TI.getDoubleWidth(), TI, Builder);
   DefineTypeSizeof("__SIZEOF_FLOAT__", TI.getFloatWidth(), TI, Builder);
@@ -1009,6 +1048,19 @@ static void InitializePredefinedMacros(const TargetInfo &TI,
                       TI.getTypeConstantSuffix(TI.getUIntMaxType()));
   DefineType("__PTRDIFF_TYPE__", TI.getPtrDiffType(0), Builder);
   DefineFmt("__PTRDIFF", TI.getPtrDiffType(0), TI, Builder);
+  DefineTypeWidth("__PTRDIFF_WIDTH__", TI.getPtrDiffType(0), TI, Builder);
+  /*
+   * ptraddr_t can be used to hold the address of a pointer.
+   * For most architectures this is the same as uintptr_t, but for CHERI it is
+   * half the size of uintptr_t and store hold tag bits.
+   */
+  auto PtrAddrTy =
+      TI.areAllPointersCapabilities()
+          ? TI.getIntTypeByWidth(TI.getPointerRangeForCHERICapability(), false)
+          : TI.getUIntPtrType();
+  DefineType("__PTRADDR_TYPE__", PtrAddrTy, Builder);
+  DefineFmt("__PTRADDR", PtrAddrTy, TI, Builder);
+  DefineTypeWidth("__PTRADDR_WIDTH__", PtrAddrTy, TI, Builder);
   DefineType("__INTPTR_TYPE__", TI.getIntPtrType(), Builder);
   DefineFmt("__INTPTR", TI.getIntPtrType(), TI, Builder);
   DefineType("__SIZE_TYPE__", TI.getSizeType(), Builder);

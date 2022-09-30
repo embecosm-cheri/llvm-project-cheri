@@ -93,7 +93,7 @@ RISCVSubtarget::RISCVSubtarget(const Triple &TT, StringRef CPU,
     : RISCVGenSubtargetInfo(TT, CPU, TuneCPU, FS),
       UserReservedRegister(RISCV::NUM_TARGET_REGS),
       FrameLowering(initializeSubtargetDependencies(TT, CPU, TuneCPU, FS, ABIName)),
-      InstrInfo(*this), RegInfo(getHwMode()), TLInfo(TM, *this) {
+      InstrInfo(*this), RegInfo(*this), TLInfo(TM, *this) {
   CallLoweringInfo.reset(new RISCVCallLowering(*getTargetLowering()));
   Legalizer.reset(new RISCVLegalizerInfo(*this));
 

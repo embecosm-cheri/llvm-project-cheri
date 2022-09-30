@@ -12,13 +12,13 @@ entry:
 ; CHECK: leaq   24(%rsp), %rax
 
   %ap = alloca ptr, align 8                       ; <ptr> [#uses=1]
-  call void @llvm.va_start(ptr %ap)
+  call void @llvm.va_start.p0(ptr %ap)
   ret void
 }
 
-declare void @llvm.va_start(ptr) nounwind
-declare void @llvm.va_copy(ptr, ptr) nounwind
-declare void @llvm.va_end(ptr) nounwind
+declare void @llvm.va_start.p0(ptr) nounwind
+declare void @llvm.va_copy.p0.p0(ptr, ptr) nounwind
+declare void @llvm.va_end.p0(ptr) nounwind
 
 ; CHECK-LABEL: f5:
 ; CHECK: pushq
@@ -26,7 +26,7 @@ declare void @llvm.va_end(ptr) nounwind
 define win64cc ptr @f5(i64 %a0, i64 %a1, i64 %a2, i64 %a3, i64 %a4, ...) nounwind {
 entry:
   %ap = alloca ptr, align 8
-  call void @llvm.va_start(ptr %ap)
+  call void @llvm.va_start.p0(ptr %ap)
   ret ptr %ap
 }
 
@@ -36,7 +36,7 @@ entry:
 define win64cc ptr @f4(i64 %a0, i64 %a1, i64 %a2, i64 %a3, ...) nounwind {
 entry:
   %ap = alloca ptr, align 8
-  call void @llvm.va_start(ptr %ap)
+  call void @llvm.va_start.p0(ptr %ap)
   ret ptr %ap
 }
 
@@ -46,7 +46,7 @@ entry:
 define win64cc ptr @f3(i64 %a0, i64 %a1, i64 %a2, ...) nounwind {
 entry:
   %ap = alloca ptr, align 8
-  call void @llvm.va_start(ptr %ap)
+  call void @llvm.va_start.p0(ptr %ap)
   ret ptr %ap
 }
 
@@ -62,8 +62,8 @@ define win64cc void @copy1(i64 %a0, ...) nounwind {
 entry:
   %ap = alloca ptr, align 8
   %cp = alloca ptr, align 8
-  call void @llvm.va_start(ptr %ap)
-  call void @llvm.va_copy(ptr %cp, ptr %ap)
+  call void @llvm.va_start.p0(ptr %ap)
+  call void @llvm.va_copy.p0.p0(ptr %cp, ptr %ap)
   ret void
 }
 
@@ -76,8 +76,8 @@ define win64cc void @copy4(i64 %a0, i64 %a1, i64 %a2, i64 %a3, ...) nounwind {
 entry:
   %ap = alloca ptr, align 8
   %cp = alloca ptr, align 8
-  call void @llvm.va_start(ptr %ap)
-  call void @llvm.va_copy(ptr %cp, ptr %ap)
+  call void @llvm.va_start.p0(ptr %ap)
+  call void @llvm.va_copy.p0.p0(ptr %cp, ptr %ap)
   ret void
 }
 
@@ -91,7 +91,7 @@ entry:
 define win64cc i32 @arg4(i64 %a0, i64 %a1, i64 %a2, i64 %a3, ...) nounwind {
 entry:
   %ap = alloca ptr, align 8
-  call void @llvm.va_start(ptr %ap)
+  call void @llvm.va_start.p0(ptr %ap)
   %tmp = va_arg ptr %ap, i32
   ret i32 %tmp
 }

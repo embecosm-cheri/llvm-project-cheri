@@ -49,7 +49,7 @@ exit:
 
 @buf = internal global [5 x ptr] zeroinitializer
 declare ptr @llvm.frameaddress(i32) nounwind readnone
-declare ptr @llvm.stacksave() nounwind
+declare ptr @llvm.stacksave.p0i8() nounwind
 declare i32 @llvm.eh.sjlj.setjmp(ptr) nounwind
 declare void @llvm.eh.sjlj.longjmp(ptr) nounwind
 
@@ -61,7 +61,7 @@ early_out:
 sj:
   %fp = call ptr @llvm.frameaddress(i32 0)
   store ptr %fp, ptr @buf, align 16
-  %sp = call ptr @llvm.stacksave()
+  %sp = call ptr @llvm.stacksave.p0i8()
   store ptr %sp, ptr getelementptr inbounds ([5 x ptr], ptr @buf, i64 0, i64 2), align 16
   call i32 @llvm.eh.sjlj.setjmp(ptr @buf)
   ret void

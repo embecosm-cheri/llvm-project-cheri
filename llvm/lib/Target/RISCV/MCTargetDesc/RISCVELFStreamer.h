@@ -10,7 +10,10 @@
 #define LLVM_LIB_TARGET_RISCV_MCTARGETDESC_RISCVELFSTREAMER_H
 
 #include "RISCVTargetStreamer.h"
+#include "llvm/MC/MCAsmBackend.h"
+#include "llvm/MC/MCCodeEmitter.h"
 #include "llvm/MC/MCELFStreamer.h"
+#include "llvm/MC/MCObjectWriter.h"
 
 namespace llvm {
 
@@ -106,6 +109,8 @@ public:
   void emitDirectiveOptionNoRVC() override;
   void emitDirectiveOptionRelax() override;
   void emitDirectiveOptionNoRelax() override;
+  void emitDirectiveOptionCapMode() override;
+  void emitDirectiveOptionNoCapMode() override;
 
   void finish() override;
 };

@@ -33,7 +33,7 @@ entry:
   store i32 3, ptr %elems, align 4, !dbg !14
   %0 = load i32, ptr %elems, align 4, !dbg !15
   %1 = zext i32 %0 to i64, !dbg !16
-  %2 = call ptr @llvm.stacksave(), !dbg !16
+  %2 = call ptr @llvm.stacksave.p0i8(), !dbg !16
   store ptr %2, ptr %saved_stack, !dbg !16
   %vla = alloca i32, i64 %1, align 16, !dbg !16
   call void @llvm.dbg.declare(metadata ptr %vla, metadata !17, metadata !21), !dbg !22
@@ -50,7 +50,7 @@ entry:
   %5 = load i32, ptr %vla3, align 4, !dbg !35
   store i32 1, ptr %cleanup.dest.slot
   %6 = load ptr, ptr %saved_stack, !dbg !36
-  call void @llvm.stackrestore(ptr %6), !dbg !36
+  call void @llvm.stackrestore.p0i8(ptr %6), !dbg !36
   ret i32 %5, !dbg !36
 }
 
@@ -58,10 +58,10 @@ entry:
 declare void @llvm.dbg.declare(metadata, metadata, metadata) #1
 
 ; Function Attrs: nounwind
-declare ptr @llvm.stacksave() #2
+declare ptr @llvm.stacksave.p0i8() #2
 
 ; Function Attrs: nounwind
-declare void @llvm.stackrestore(ptr) #2
+declare void @llvm.stackrestore.p0i8(ptr) #2
 
 attributes #0 = { nounwind uwtable "less-precise-fpmad"="false" "frame-pointer"="all" "no-infs-fp-math"="false" "no-nans-fp-math"="false" "stack-protector-buffer-size"="8" "unsafe-fp-math"="false" "use-soft-float"="false" }
 attributes #1 = { nounwind readnone }

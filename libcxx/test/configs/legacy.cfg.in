@@ -23,6 +23,7 @@ config.generate_coverage        = @LIBCXX_GENERATE_COVERAGE@
 config.target_info              = "@LIBCXX_TARGET_INFO@"
 config.test_linker_flags        = "@LIBCXX_TEST_LINKER_FLAGS@"
 config.test_compiler_flags      = "@LIBCXX_TEST_COMPILER_FLAGS@"
+config.slow_test_host           = "@LIBCXX_SLOW_TEST_HOST@"
 
 config.executor                 = "@LIBCXX_EXECUTOR@"
 config.llvm_unwinder            = @LIBCXXABI_USE_LLVM_UNWINDER@
@@ -33,6 +34,7 @@ config.libcxxabi_shared         = @LIBCXX_LINK_TESTS_WITH_SHARED_LIBCXXABI@
 config.cxx_ext_threads          = @LIBCXX_BUILD_EXTERNAL_THREAD_LIBRARY@
 config.pstl_src_root            = "@ParallelSTL_SOURCE_DIR@" if @LIBCXX_ENABLE_PARALLEL_ALGORITHMS@ else None
 config.pstl_obj_root            = "@ParallelSTL_BINARY_DIR@" if @LIBCXX_ENABLE_PARALLEL_ALGORITHMS@ else None
+config.long_tests               = @LIBCXX_RUN_LONG_TESTS@
 
 # Code signing
 config.llvm_codesign_identity   = "@LLVM_CODESIGNING_IDENTITY@"

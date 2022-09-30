@@ -31,6 +31,20 @@ SUBST = {
     '%clang': [],
     '%clang_cc1': ['-cc1'],
     '%clangxx': ['--driver-mode=g++'],
+    '%cheri_cc1': ['-cc1', "-triple=mips64-unknown-freebsd", "-target-cpu", "cheri128", "-cheri-size", "128"],
+    '%cheri_clang': ['-target', 'mips64-unknown-freebsd', '-cheri'],
+    '%cheri128_cc1': ['-cc1', "-triple=mips64-unknown-freebsd", "-target-cpu", "cheri128", "-cheri-size", "128"],
+    '%cheri_purecap_clang': ['-target', 'mips64-unknown-freebsd', '-mabi=purecap'],
+    '%cheri_purecap_cc1': ['-cc1', "-triple=mips64-unknown-freebsd", "-target-abi", "purecap", "-target-cpu", "cheri128", "-cheri-size", "128"],
+    '%cheri128_purecap_cc1': ['-cc1', "-triple=mips64-unknown-freebsd", "-target-abi", "purecap", "-target-cpu", "cheri128", "-cheri-size", "128"],
+    '%riscv32_cheri_cc1': ['-cc1', "-triple=riscv32-unknown-freebsd", "-target-feature", "+xcheri"],
+    '%riscv64_cheri_cc1': ['-cc1', "-triple=riscv64-unknown-freebsd", "-target-feature", "+xcheri"],
+    '%riscv32_cheri_clang': ['-target', 'riscv32-unknown-freebsd', '-march=rv32imafdcxcheri'],
+    '%riscv64_cheri_clang': ['-target', 'riscv64-unknown-freebsd', '-march=rv64imafdcxcheri'],
+    '%riscv32_cheri_purecap_cc1': ['-cc1', "-triple=riscv32-unknown-freebsd", "-target-feature", "+xcheri", "-target-abi", "il32pc64", '-target-feature', '+cap-mode'],
+    '%riscv64_cheri_purecap_cc1': ['-cc1', "-triple=riscv64-unknown-freebsd", "-target-feature", "+xcheri", "-target-abi", "l64pc128", '-target-feature', '+cap-mode'],
+    '%riscv32_cheri_purecap_clang': ['-target', 'riscv32-unknown-freebsd', '-march=rv32imafdcxcheri', '-mabi=il32pc64'],
+    '%riscv64_cheri_purecap_clang': ['-target', 'riscv64-unknown-freebsd', '-march=rv64imafdcxcheri', '-mabi=l64pc128'],
 }
 
 def get_line2func_list(args, clang_args):
@@ -269,11 +283,25 @@ def main():
       for s in subs:
         clang_args = [i.replace(s, subs[s]) if s in i else i for i in clang_args]
       clang_args += ti.args.clang_args
+      # Remove all -verify arguments since they could cause the IR generation to fail
+      clang_args = [x for x in clang_args if not x.startswith("-verify")]
+
+      if '-ast-dump' in clang_args:
+        print('WARNING: Skipping -ast-dump RUN line: ' + l, file=sys.stderr)
+        continue
+      if '-fsynatx-only' in clang_args:
+        print('WARNING: Skipping -fsynatx-only RUN line: ' + l, file=sys.stderr)
+        continue
+
+      # Permit piping the output through opt
+      if not (len(commands) == 2 or
+              (len(commands) == 3 and commands[1].startswith('opt'))):
+        print('WARNING: Skipping non-clang RUN line: ' + l, file=sys.stderr)
 
       # Extract -check-prefix in FileCheck args
       filecheck_cmd = commands[-1]
       common.verify_filecheck_prefixes(filecheck_cmd)
-      if not filecheck_cmd.startswith('FileCheck '):
+      if not filecheck_cmd.startswith('FileCheck ') and not filecheck_cmd.startswith('%cheri_FileCheck '):
         # Execute non-filechecked clang runline.
         exe = [ti.args.clang] + clang_args
         run_list.append((None, exe, None, None))

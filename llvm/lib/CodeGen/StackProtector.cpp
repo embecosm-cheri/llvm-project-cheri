@@ -58,6 +58,11 @@ STATISTIC(NumAddrTaken, "Number of local variables that have their address"
 
 static cl::opt<bool> EnableSelectionDAGSP("enable-selectiondag-sp",
                                           cl::init(true), cl::Hidden);
+static cl::opt<bool>
+    EnablePurecapSP("enable-purecap-stack-protector",
+                    cl::desc("Allow stack protector even for pure-capability "
+                             "code (should be used for testing only)"),
+                    cl::init(false), cl::Hidden);
 
 char StackProtector::ID = 0;
 
@@ -279,6 +284,14 @@ bool StackProtector::RequiresStackProtector() {
   bool Strong = false;
   bool NeedsProtector = false;
 
+  // Skip stack-protector for pure-capability CHERI
+  const DataLayout& DL = F->getParent()->getDataLayout();
+  const bool IsCheriPurecap = DL.isFatPointer(DL.getAllocaAddrSpace());
+  if (IsCheriPurecap && !EnablePurecapSP) {
+    // Skip the SSP analysis since SSP is useless when compiling in purecap mode.
+    return false;
+  }
+
   if (F->hasFnAttribute(Attribute::SafeStack))
     return false;
 
@@ -422,7 +435,8 @@ static bool CreatePrologue(Function *F, Module *M, ReturnInst *RI,
   AI = B.CreateAlloca(PtrTy, nullptr, "StackGuardSlot");
 
   Value *GuardSlot = getStackGuard(TLI, M, B, &SupportsSelectionDAGSP);
-  B.CreateCall(Intrinsic::getDeclaration(M, Intrinsic::stackprotector),
+  B.CreateCall(Intrinsic::getDeclaration(M, Intrinsic::stackprotector,
+                                         AI->getType()),
                {GuardSlot, AI});
   return SupportsSelectionDAGSP;
 }

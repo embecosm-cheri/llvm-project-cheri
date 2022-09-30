@@ -27,6 +27,8 @@
 
 namespace llvm {
 
+class MipsABIInfo; // To update RA after creation
+
 /// MCRegisterClass - Base class of TargetRegisterClass.
 class MCRegisterClass {
 public:
@@ -347,6 +349,7 @@ public:
   friend class MCRegUnitIterator;
   friend class MCRegUnitMaskIterator;
   friend class MCRegUnitRootIterator;
+  friend class MipsABIInfo; // Hack to update RA register after creation
 
   /// Initialize MCRegisterInfo, called by TableGen
   /// auto-generated routines. *DO NOT USE*.

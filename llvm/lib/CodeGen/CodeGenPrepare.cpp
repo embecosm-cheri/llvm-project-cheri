@@ -2158,6 +2158,7 @@ bool CodeGenPrepare::optimizeCallInst(CallInst *CI, bool &ModifiedDT) {
     }
     // If this is a memcpy (or similar) then we may be able to improve the
     // alignment
+    // FIXME: this does not work without an assumptioncache!!!
     if (MemIntrinsic *MI = dyn_cast<MemIntrinsic>(CI)) {
       Align DestAlign = getKnownAlignment(MI->getDest(), *DL);
       MaybeAlign MIDestAlign = MI->getDestAlign();
@@ -5357,7 +5358,7 @@ bool CodeGenPrepare::optimizeMemoryInst(Instruction *MemoryInst, Value *Addr,
           // We need to add this separately from the scale above to help with
           // SDAG consecutive load/store merging.
           if (ResultPtr->getType() != I8PtrTy)
-            ResultPtr = Builder.CreatePointerCast(ResultPtr, I8PtrTy);
+            ResultPtr = Builder.CreatePointerBitCastOrAddrSpaceCast(ResultPtr, I8PtrTy);
           ResultPtr = Builder.CreateGEP(I8Ty, ResultPtr, ResultIndex,
                                         "sunkaddr", AddrMode.InBounds);
         }
@@ -5369,7 +5370,7 @@ bool CodeGenPrepare::optimizeMemoryInst(Instruction *MemoryInst, Value *Addr,
         SunkAddr = ResultPtr;
       } else {
         if (ResultPtr->getType() != I8PtrTy)
-          ResultPtr = Builder.CreatePointerCast(ResultPtr, I8PtrTy);
+          ResultPtr = Builder.CreatePointerBitCastOrAddrSpaceCast(ResultPtr, I8PtrTy);
         SunkAddr = Builder.CreateGEP(I8Ty, ResultPtr, ResultIndex, "sunkaddr",
                                      AddrMode.InBounds);
       }
@@ -5387,7 +5388,7 @@ bool CodeGenPrepare::optimizeMemoryInst(Instruction *MemoryInst, Value *Addr,
           SunkAddr =
               Builder.CreateIntToPtr(SunkAddr, Addr->getType(), "sunkaddr");
         } else
-          SunkAddr = Builder.CreatePointerCast(SunkAddr, Addr->getType());
+          SunkAddr = Builder.CreatePointerBitCastOrAddrSpaceCast(SunkAddr, Addr->getType());
       }
     }
   } else {

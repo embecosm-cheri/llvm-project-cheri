@@ -40,7 +40,8 @@ config.test_source_root = os.path.dirname(__file__)
 config.test_exec_root = os.path.join(config.clang_obj_root, 'test')
 
 llvm_config.use_default_substitutions()
-
+# Not really required but makes debugging tests easier
+llvm_config.add_cheri_tool_substitutions(["llc", "opt", "llvm-mc"])
 llvm_config.use_clang()
 
 config.substitutions.append(
@@ -66,6 +67,8 @@ tools = [
     ToolSubst('%clang_dxc', command=config.clang,
         extra_args=['--driver-mode=dxc']),
 ]
+# XXXAR: needed by some CHERI tests:
+tools += ['llvm-readobj', 'llvm-objdump', 'llvm-dwarfdump']
 
 if config.clang_examples:
     config.available_features.add('examples')
@@ -108,6 +111,10 @@ if config.clang_staticanalyzer:
          '"%s" %s' % (config.python_executable, check_analyzer_fixit_path)))
 
 llvm_config.add_tool_substitutions(tools, tool_dirs)
+
+if llvm_config.add_tool_substitutions(
+        [ToolSubst('llvm-rc', unresolved='break')], tool_dirs):
+    config.available_features.add('llvm-rc')
 
 config.substitutions.append(
     ('%hmaptool', "'%s' %s" % (config.python_executable,

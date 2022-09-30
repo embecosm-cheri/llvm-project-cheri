@@ -568,7 +568,8 @@ void CodeExtractor::findAllocas(const CodeExtractorAnalysisCache &CEAC,
     for (Instruction *I : LifetimeBitcastUsers) {
       Module *M = AIFunc->getParent();
       LLVMContext &Ctx = M->getContext();
-      auto *Int8PtrTy = Type::getInt8PtrTy(Ctx);
+      auto *Int8PtrTy =
+          Type::getInt8PtrTy(Ctx, AI->getType()->getPointerAddressSpace());
       CastInst *CastI =
           CastInst::CreatePointerCast(AI, Int8PtrTy, "lt.cast", I);
       I->replaceUsesOfWith(I->getOperand(1), CastI);
@@ -849,7 +850,8 @@ Function *CodeExtractor::constructFunction(const ValueSet &inputs,
       AggParamTy.push_back(output->getType());
       StructValues.insert(output);
     } else
-      ParamTy.push_back(PointerType::getUnqual(output->getType()));
+      ParamTy.push_back(PointerType::get(
+          output->getType(), M->getDataLayout().getAllocaAddrSpace()));
   }
 
   assert(
@@ -864,7 +866,8 @@ Function *CodeExtractor::constructFunction(const ValueSet &inputs,
   StructType *StructTy = nullptr;
   if (AggregateArgs && !AggParamTy.empty()) {
     StructTy = StructType::get(M->getContext(), AggParamTy);
-    ParamTy.push_back(PointerType::getUnqual(StructTy));
+    ParamTy.push_back(PointerType::get(
+          StructTy, M->getDataLayout().getAllocaAddrSpace()));
   }
 
   LLVM_DEBUG({
@@ -905,6 +908,7 @@ Function *CodeExtractor::constructFunction(const ValueSet &inputs,
       case Attribute::ArgMemOnly:
       case Attribute::Builtin:
       case Attribute::Convergent:
+      case Attribute::HasSideEffects:
       case Attribute::InaccessibleMemOnly:
       case Attribute::InaccessibleMemOrArgMemOnly:
       case Attribute::JumpTable:
@@ -922,6 +926,7 @@ Function *CodeExtractor::constructFunction(const ValueSet &inputs,
       case Attribute::WriteOnly:
       case Attribute::AllocKind:
       case Attribute::PresplitCoroutine:
+      case Attribute::MustPreserveCheriTags:
         continue;
       // Those attributes should be safe to propagate to the extracted function.
       case Attribute::AlwaysInline:
@@ -1091,7 +1096,6 @@ static void insertLifetimeMarkersSurroundingCall(
     Module *M, ArrayRef<Value *> LifetimesStart, ArrayRef<Value *> LifetimesEnd,
     CallInst *TheCall) {
   LLVMContext &Ctx = M->getContext();
-  auto Int8PtrTy = Type::getInt8PtrTy(Ctx);
   auto NegativeOne = ConstantInt::getSigned(Type::getInt64Ty(Ctx), -1);
   Instruction *Term = TheCall->getParent()->getTerminator();
 
@@ -1101,12 +1105,14 @@ static void insertLifetimeMarkersSurroundingCall(
 
   // Emit lifetime markers for the pointers given in \p Objects. Insert the
   // markers before the call if \p InsertBefore, and after the call otherwise.
-  auto insertMarkers = [&](Function *MarkerFunc, ArrayRef<Value *> Objects,
+  auto insertMarkers = [&](Intrinsic::ID IID, ArrayRef<Value *> Objects,
                            bool InsertBefore) {
     for (Value *Mem : Objects) {
       assert((!isa<Instruction>(Mem) || cast<Instruction>(Mem)->getFunction() ==
                                             TheCall->getFunction()) &&
              "Input memory not defined in original function");
+      auto Int8PtrTy =
+          Type::getInt8PtrTy(Ctx, Mem->getType()->getPointerAddressSpace());
       Value *&MemAsI8Ptr = Bitcasts[Mem];
       if (!MemAsI8Ptr) {
         if (Mem->getType() == Int8PtrTy)
@@ -1116,6 +1122,7 @@ static void insertLifetimeMarkersSurroundingCall(
               CastInst::CreatePointerCast(Mem, Int8PtrTy, "lt.cast", TheCall);
       }
 
+      auto MarkerFunc = llvm::Intrinsic::getDeclaration(M, IID, Int8PtrTy);
       auto Marker = CallInst::Create(MarkerFunc, {NegativeOne, MemAsI8Ptr});
       if (InsertBefore)
         Marker->insertBefore(TheCall);
@@ -1125,15 +1132,13 @@ static void insertLifetimeMarkersSurroundingCall(
   };
 
   if (!LifetimesStart.empty()) {
-    auto StartFn = llvm::Intrinsic::getDeclaration(
-        M, llvm::Intrinsic::lifetime_start, Int8PtrTy);
-    insertMarkers(StartFn, LifetimesStart, /*InsertBefore=*/true);
+    insertMarkers(llvm::Intrinsic::lifetime_start, LifetimesStart,
+                  /*InsertBefore=*/true);
   }
 
   if (!LifetimesEnd.empty()) {
-    auto EndFn = llvm::Intrinsic::getDeclaration(
-        M, llvm::Intrinsic::lifetime_end, Int8PtrTy);
-    insertMarkers(EndFn, LifetimesEnd, /*InsertBefore=*/false);
+    insertMarkers(llvm::Intrinsic::lifetime_end, LifetimesEnd,
+                  /*InsertBefore=*/false);
   }
 }
 

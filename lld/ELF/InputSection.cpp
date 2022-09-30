@@ -1,4 +1,3 @@
-//===- InputSection.cpp ---------------------------------------------------===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -15,6 +14,7 @@
 #include "Symbols.h"
 #include "SyntheticSections.h"
 #include "Target.h"
+#include "Arch/Cheri.h"
 #include "lld/Common/CommonLinkerContext.h"
 #include "llvm/Support/Compiler.h"
 #include "llvm/Support/Compression.h"
@@ -233,14 +233,24 @@ InputSection *InputSectionBase::getLinkOrderDep() const {
 Defined *InputSectionBase::getEnclosingFunction(uint64_t offset) {
   for (Symbol *b : file->getSymbols())
     if (Defined *d = dyn_cast<Defined>(b))
-      if (d->section == this && d->type == STT_FUNC && d->value <= offset &&
+      if (d->section == this && d->type == SymbolType && d->value <= offset &&
           offset < d->value + d->size)
         return d;
   return nullptr;
 }
 
+template <class ELFT>
+Defined *InputSectionBase::getEnclosingFunction(uint64_t offset) const {
+  return getEnclosingSymbol<ELFT, STT_FUNC>(offset);
+}
+
+template <class ELFT>
+Defined *InputSectionBase::getEnclosingObject(uint64_t offset) const {
+  return getEnclosingSymbol<ELFT, STT_OBJECT>(offset);
+}
+
 // Returns an object file location string. Used to construct an error message.
-std::string InputSectionBase::getLocation(uint64_t offset) {
+std::string InputSectionBase::getLocation(uint64_t offset) const {
   std::string secAndOffset =
       (name + "+0x" + Twine::utohexstr(offset) + ")").str();
 
@@ -261,7 +271,10 @@ std::string InputSectionBase::getLocation(uint64_t offset) {
 //   foo.c:42 (/home/alice/possibly/very/long/path/foo.c:42)
 //
 //  Returns an empty string if there's no way to get line info.
-std::string InputSectionBase::getSrcMsg(const Symbol &sym, uint64_t offset) {
+std::string InputSectionBase::getSrcMsg(const Symbol &sym, uint64_t offset) const {
+  // Synthetic sections don't have input files.
+  if (!file)
+    return "";
   return file->getSrcMsg(sym, *this, offset);
 }
 
@@ -274,7 +287,10 @@ std::string InputSectionBase::getSrcMsg(const Symbol &sym, uint64_t offset) {
 // or
 //
 //   path/to/foo.o:(function bar) in archive path/to/bar.a
-std::string InputSectionBase::getObjMsg(uint64_t off) {
+std::string InputSectionBase::getObjMsg(uint64_t off) const {
+  // Synthetic sections don't have input files.
+  if (!file)
+    return ("<internal>:(" + name + "+0x" + utohexstr(off) + ")").str();
   std::string filename = std::string(file->getName());
 
   std::string archive;
@@ -555,7 +571,10 @@ static Relocation *getRISCVPCRelHi20(const Symbol *sym, uint64_t addend) {
 
   for (auto it = range.first; it != range.second; ++it)
     if (it->type == R_RISCV_PCREL_HI20 || it->type == R_RISCV_GOT_HI20 ||
-        it->type == R_RISCV_TLS_GD_HI20 || it->type == R_RISCV_TLS_GOT_HI20)
+        it->type == R_RISCV_TLS_GD_HI20 || it->type == R_RISCV_TLS_GOT_HI20 ||
+        it->type == R_RISCV_CHERI_CAPTAB_PCREL_HI20 ||
+        it->type == R_RISCV_CHERI_TLS_GD_CAPTAB_PCREL_HI20 ||
+        it->type == R_RISCV_CHERI_TLS_IE_CAPTAB_PCREL_HI20)
       return &*it;
 
   errorOrWarn("R_RISCV_PCREL_LO12 relocation points to " +
@@ -595,7 +614,11 @@ static int64_t getTlsTpOffset(const Symbol &s) {
     // Adjusted Variant 1. TP is placed with a displacement of 0x7000, which is
     // to allow a signed 16-bit offset to reach 0x1000 of TCB/thread-library
     // data and 0xf000 of the program's TLS segment.
-    return s.getVA(0) + (tls->p_vaddr & (tls->p_align - 1)) - 0x7000;
+    //
+    // For CheriABI we always use an offset of 0 to stay representable.
+    if (!config->isCheriAbi)
+      return s.getVA(0) + (tls->p_vaddr & (tls->p_align - 1)) - 0x7000;
+    LLVM_FALLTHROUGH;
   case EM_RISCV:
     return s.getVA(0) + (tls->p_vaddr & (tls->p_align - 1));
 
@@ -613,7 +636,9 @@ static int64_t getTlsTpOffset(const Symbol &s) {
 
 uint64_t InputSectionBase::getRelocTargetVA(const InputFile *file, RelType type,
                                             int64_t a, uint64_t p,
-                                            const Symbol &sym, RelExpr expr) {
+                                            const Symbol &sym, RelExpr expr,
+                                            const InputSectionBase *isec,
+                                            uint64_t offset) {
   switch (expr) {
   case R_ABS:
   case R_DTPREL:
@@ -699,7 +724,7 @@ uint64_t InputSectionBase::getRelocTargetVA(const InputFile *file, RelType type,
   case R_RISCV_PC_INDIRECT: {
     if (const Relocation *hiRel = getRISCVPCRelHi20(&sym, a))
       return getRelocTargetVA(file, hiRel->type, hiRel->addend, sym.getVA(),
-                              *hiRel->sym, hiRel->expr);
+                              *hiRel->sym, hiRel->expr, isec, offset);
     return 0;
   }
   case R_PC:
@@ -801,6 +826,46 @@ uint64_t InputSectionBase::getRelocTargetVA(const InputFile *file, RelType type,
     return in.got->getTlsIndexOff() + a;
   case R_TLSLD_PC:
     return in.got->getTlsIndexVA() + a - p;
+  case R_CHERI_CAPABILITY:
+    llvm_unreachable("R_CHERI_CAPABILITY should not be handled here!");
+  case R_CHERI_CAPABILITY_TABLE_INDEX:
+  case R_CHERI_CAPABILITY_TABLE_INDEX_SMALL_IMMEDIATE:
+  case R_CHERI_CAPABILITY_TABLE_INDEX_CALL:
+  case R_CHERI_CAPABILITY_TABLE_INDEX_CALL_SMALL_IMMEDIATE:
+    assert(a == 0 && "capability table index relocs should not have addends");
+    return sym.getCapTableOffset(isec, offset);
+  case R_CHERI_CAPABILITY_TABLE_ENTRY_PC: {
+    assert(a == 0 && "capability table entry relocs should not have addends");
+    return sym.getCapTableVA(isec, offset) - p;
+  }
+  case R_CHERI_CAPABILITY_TABLE_TLSGD_ENTRY_PC: {
+    assert(a == 0 && "capability table index relocs should not have addends");
+    uint64_t capTableOffset =
+        in.cheriCapTable->getDynTlsOffset(sym);
+    return ElfSym::cheriCapabilityTable->getVA() + capTableOffset - p;
+  }
+  case R_CHERI_CAPABILITY_TABLE_TLSIE_ENTRY_PC: {
+    assert(a == 0 && "capability table index relocs should not have addends");
+    uint64_t capTableOffset =
+        in.cheriCapTable->getTlsOffset(sym);
+    return ElfSym::cheriCapabilityTable->getVA() + capTableOffset - p;
+  }
+  case R_CHERI_CAPABILITY_TABLE_REL:
+    if (!ElfSym::cheriCapabilityTable) {
+      error("cannot compute difference between non-existent "
+            "CheriCapabilityTable and symbol " + toString(sym));
+      return sym.getVA(a);
+    }
+    return sym.getVA(a) - ElfSym::cheriCapabilityTable->getVA();
+  case R_MIPS_CHERI_CAPTAB_TLSGD:
+    assert(a == 0 && "capability table index relocs should not have addends");
+    return in.cheriCapTable->getDynTlsOffset(sym);
+  case R_MIPS_CHERI_CAPTAB_TLSLD:
+    assert(a == 0 && "capability table index relocs should not have addends");
+    return in.cheriCapTable->getTlsIndexOffset();
+  case R_MIPS_CHERI_CAPTAB_TPREL:
+    assert(a == 0 && "capability table index relocs should not have addends");
+    return in.cheriCapTable->getTlsOffset(sym);
   default:
     llvm_unreachable("invalid expression");
   }
@@ -984,6 +1049,10 @@ void InputSectionBase::relocateAlloc(uint8_t *buf, uint8_t *bufEnd) {
     uint64_t secAddr = getOutputSection()->addr;
     if (auto *sec = dyn_cast<InputSection>(this))
       secAddr += sec->outSecOff;
+    if (!rel.sym) {
+      error(getErrorLocation(bufLoc) + "cannot create relocation against NULL symbol");
+      continue;
+    }
     const uint64_t addrLoc = secAddr + offset;
     const uint64_t targetVA =
         SignExtend64(getRelocTargetVA(file, rel.type, rel.addend, addrLoc,

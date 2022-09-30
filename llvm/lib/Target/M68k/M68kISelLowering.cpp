@@ -218,7 +218,8 @@ static SDValue CreateCopyOfByValArgument(SDValue Src, SDValue Dst,
   return DAG.getMemcpy(
       Chain, DL, Dst, Src, SizeNode, Flags.getNonZeroByValAlign(),
       /*isVolatile=*/false, /*AlwaysInline=*/true,
-      /*isTailCall=*/false, MachinePointerInfo(), MachinePointerInfo());
+      /*isTailCall=*/false, /*MustPreserveCheriCapabilities=*/false,
+      MachinePointerInfo(), MachinePointerInfo());
 }
 
 /// Return true if the calling convention is one that we can guarantee TCO for.
@@ -342,7 +343,8 @@ M68kTargetLowering::getReturnAddressFrameIndex(SelectionDAG &DAG) const {
     FuncInfo->setRAIndex(ReturnAddrIndex);
   }
 
-  return DAG.getFrameIndex(ReturnAddrIndex, getPointerTy(DAG.getDataLayout()));
+  return DAG.getFrameIndex(ReturnAddrIndex, getPointerTy(DAG.getDataLayout(),
+                                                         /*AS=*/0));
 }
 
 SDValue M68kTargetLowering::EmitTailCallLoadRetAddr(SelectionDAG &DAG,
@@ -350,7 +352,7 @@ SDValue M68kTargetLowering::EmitTailCallLoadRetAddr(SelectionDAG &DAG,
                                                     SDValue Chain,
                                                     bool IsTailCall, int FPDiff,
                                                     const SDLoc &DL) const {
-  EVT VT = getPointerTy(DAG.getDataLayout());
+  EVT VT = getPointerTy(DAG.getDataLayout(), /*AS=*/0);
   OutRetAddr = getReturnAddressFrameIndex(DAG);
 
   // Load the "old" Return address.
@@ -422,7 +424,7 @@ M68kTargetLowering::LowerMemArgument(SDValue Chain, CallingConv::ID CallConv,
     int FI = MFI.CreateFixedObject(Bytes, Offset, IsImmutable);
     // TODO Interrupt handlers
     // Adjust SP offset of interrupt parameter.
-    return DAG.getFrameIndex(FI, getPointerTy(DAG.getDataLayout()));
+    return DAG.getFrameIndex(FI, getPointerTy(DAG.getDataLayout(), /*AS=*/0));
   } else {
     int FI =
         MFI.CreateFixedObject(ValVT.getSizeInBits() / 8, Offset, IsImmutable);
@@ -437,7 +439,8 @@ M68kTargetLowering::LowerMemArgument(SDValue Chain, CallingConv::ID CallConv,
     // TODO Interrupt handlers
     // Adjust SP offset of interrupt parameter.
 
-    SDValue FIN = DAG.getFrameIndex(FI, getPointerTy(DAG.getDataLayout()));
+    SDValue FIN = DAG.getFrameIndex(FI, getPointerTy(DAG.getDataLayout(),
+                                                     /*AS=*/0));
     SDValue Val = DAG.getLoad(
         ValVT, DL, Chain, FIN,
         MachinePointerInfo::getFixedStack(DAG.getMachineFunction(), FI));
@@ -453,7 +456,8 @@ SDValue M68kTargetLowering::LowerMemOpCallTo(SDValue Chain, SDValue StackPtr,
                                              ISD::ArgFlagsTy Flags) const {
   unsigned LocMemOffset = VA.getLocMemOffset();
   SDValue PtrOff = DAG.getIntPtrConstant(LocMemOffset, DL);
-  PtrOff = DAG.getNode(ISD::ADD, DL, getPointerTy(DAG.getDataLayout()),
+  PtrOff = DAG.getNode(ISD::ADD, DL, getPointerTy(DAG.getDataLayout(),
+                                                  /*AS=*/0),
                        StackPtr, PtrOff);
   if (Flags.isByVal())
     return CreateCopyOfByValArgument(Arg, PtrOff, Chain, Flags, DAG, DL);
@@ -633,7 +637,8 @@ SDValue M68kTargetLowering::LowerCall(TargetLowering::CallLoweringInfo &CLI,
       assert(VA.isMemLoc());
       if (!StackPtr.getNode()) {
         StackPtr = DAG.getCopyFromReg(Chain, DL, RegInfo->getStackRegister(),
-                                      getPointerTy(DAG.getDataLayout()));
+                                      getPointerTy(DAG.getDataLayout(),
+                                                   /*AS=*/0));
       }
       MemOpChains.push_back(
           LowerMemOpCallTo(Chain, StackPtr, Arg, DL, DAG, VA, Flags));
@@ -684,16 +689,18 @@ SDValue M68kTargetLowering::LowerCall(TargetLowering::CallLoweringInfo &CLI,
       int32_t Offset = VA.getLocMemOffset() + FPDiff;
       uint32_t OpSize = (VA.getLocVT().getSizeInBits() + 7) / 8;
       FI = MF.getFrameInfo().CreateFixedObject(OpSize, Offset, true);
-      FIN = DAG.getFrameIndex(FI, getPointerTy(DAG.getDataLayout()));
+      FIN = DAG.getFrameIndex(FI, getPointerTy(DAG.getDataLayout(), /*AS=*/0));
 
       if (Flags.isByVal()) {
         // Copy relative to framepointer.
         SDValue Source = DAG.getIntPtrConstant(VA.getLocMemOffset(), DL);
         if (!StackPtr.getNode()) {
           StackPtr = DAG.getCopyFromReg(Chain, DL, RegInfo->getStackRegister(),
-                                        getPointerTy(DAG.getDataLayout()));
+                                        getPointerTy(DAG.getDataLayout(),
+                                                     /*AS=*/0));
         }
-        Source = DAG.getNode(ISD::ADD, DL, getPointerTy(DAG.getDataLayout()),
+        Source = DAG.getNode(ISD::ADD, DL, getPointerTy(DAG.getDataLayout(),
+                                                        /*AS=*/0),
                              StackPtr, Source);
 
         MemOpChains2.push_back(
@@ -711,7 +718,8 @@ SDValue M68kTargetLowering::LowerCall(TargetLowering::CallLoweringInfo &CLI,
 
     // Store the return address to the appropriate stack slot.
     Chain = EmitTailCallStoreRetAddr(DAG, MF, Chain, RetFI,
-                                     getPointerTy(DAG.getDataLayout()),
+                                     getPointerTy(DAG.getDataLayout(),
+                                                  /*AS=*/0),
                                      Subtarget.getSlotSize(), FPDiff, DL);
   }
 
@@ -737,18 +745,20 @@ SDValue M68kTargetLowering::LowerCall(TargetLowering::CallLoweringInfo &CLI,
       unsigned char OpFlags = Subtarget.classifyGlobalFunctionReference(GV);
 
       Callee = DAG.getTargetGlobalAddress(
-          GV, DL, getPointerTy(DAG.getDataLayout()), G->getOffset(), OpFlags);
+          GV, DL, getPointerTy(DAG.getDataLayout(), /*AS=*/0), G->getOffset(),
+          OpFlags);
 
       if (OpFlags == M68kII::MO_GOTPCREL) {
 
         // Add a wrapper.
         Callee = DAG.getNode(M68kISD::WrapperPC, DL,
-                             getPointerTy(DAG.getDataLayout()), Callee);
+                             getPointerTy(DAG.getDataLayout(), /*AS=*/0),
+                             Callee);
 
         // Add extra indirection
         Callee = DAG.getLoad(
-            getPointerTy(DAG.getDataLayout()), DL, DAG.getEntryNode(), Callee,
-            MachinePointerInfo::getGOT(DAG.getMachineFunction()));
+            getPointerTy(DAG.getDataLayout(), /*AS=*/0), DL, DAG.getEntryNode(),
+            Callee, MachinePointerInfo::getGOT(DAG.getMachineFunction()));
       }
     }
   } else if (ExternalSymbolSDNode *S = dyn_cast<ExternalSymbolSDNode>(Callee)) {
@@ -757,7 +767,7 @@ SDValue M68kTargetLowering::LowerCall(TargetLowering::CallLoweringInfo &CLI,
         Subtarget.classifyGlobalFunctionReference(nullptr, *Mod);
 
     Callee = DAG.getTargetExternalSymbol(
-        S->getSymbol(), getPointerTy(DAG.getDataLayout()), OpFlags);
+        S->getSymbol(), getPointerTy(DAG.getDataLayout(), /*AS=*/0), OpFlags);
   }
 
   // Returns a chain & a flag for retval copy to use.
@@ -948,7 +958,7 @@ SDValue M68kTargetLowering::LowerFormalArguments(
     if (Ins[i].Flags.isSRet()) {
       unsigned Reg = MMFI->getSRetReturnReg();
       if (!Reg) {
-        MVT PtrTy = getPointerTy(DAG.getDataLayout());
+        MVT PtrTy = getPointerTy(DAG.getDataLayout(), /*AS=*/0);
         Reg = MF.getRegInfo().createVirtualRegister(getRegClassFor(PtrTy));
         MMFI->setSRetReturnReg(Reg);
       }
@@ -1090,7 +1100,8 @@ M68kTargetLowering::LowerReturn(SDValue Chain, CallingConv::ID CCID,
 
     // So here, we use RetOps[0] (i.e Chain_0) for getCopyFromReg.
     SDValue Val = DAG.getCopyFromReg(RetOps[0], DL, SRetReg,
-                                     getPointerTy(MF.getDataLayout()));
+                                     getPointerTy(MF.getDataLayout(),
+                                                  /*AS=*/0));
 
     // ??? How will this work if CC does not use registers for args passing?
     // ??? What if I return multiple structs?
@@ -1099,7 +1110,8 @@ M68kTargetLowering::LowerReturn(SDValue Chain, CallingConv::ID CCID,
     Flag = Chain.getValue(1);
 
     RetOps.push_back(
-        DAG.getRegister(RetValReg, getPointerTy(DAG.getDataLayout())));
+        DAG.getRegister(RetValReg, getPointerTy(DAG.getDataLayout(),
+                                                /*AS=*/0)));
   }
 
   RetOps[0] = Chain; // Update chain.
@@ -2509,7 +2521,7 @@ SDValue M68kTargetLowering::LowerConstantPool(SDValue Op,
     WrapperKind = M68kISD::WrapperPC;
   }
 
-  MVT PtrVT = getPointerTy(DAG.getDataLayout());
+  MVT PtrVT = getPointerTy(DAG.getDataLayout(), /*AS=*/0);
   SDValue Result = DAG.getTargetConstantPool(
       CP->getConstVal(), PtrVT, CP->getAlign(), CP->getOffset(), OpFlag);
 
@@ -2540,7 +2552,7 @@ SDValue M68kTargetLowering::LowerExternalSymbol(SDValue Op,
     WrapperKind = M68kISD::WrapperPC;
   }
 
-  auto PtrVT = getPointerTy(DAG.getDataLayout());
+  auto PtrVT = getPointerTy(DAG.getDataLayout(), /*AS=*/0);
   SDValue Result = DAG.getTargetExternalSymbol(Sym, PtrVT, OpFlag);
 
   SDLoc DL(Op);
@@ -2569,7 +2581,7 @@ SDValue M68kTargetLowering::LowerBlockAddress(SDValue Op,
   const BlockAddress *BA = cast<BlockAddressSDNode>(Op)->getBlockAddress();
   int64_t Offset = cast<BlockAddressSDNode>(Op)->getOffset();
   SDLoc DL(Op);
-  auto PtrVT = getPointerTy(DAG.getDataLayout());
+  auto PtrVT = getPointerTy(DAG.getDataLayout(), /*AS=*/0);
 
   // Create the TargetBlockAddressAddress node.
   SDValue Result = DAG.getTargetBlockAddress(BA, PtrVT, Offset, OpFlags);
@@ -2594,7 +2606,7 @@ SDValue M68kTargetLowering::LowerGlobalAddress(const GlobalValue *GV,
                                                const SDLoc &DL, int64_t Offset,
                                                SelectionDAG &DAG) const {
   unsigned char OpFlags = Subtarget.classifyGlobalReference(GV);
-  auto PtrVT = getPointerTy(DAG.getDataLayout());
+  auto PtrVT = getPointerTy(DAG.getDataLayout(), /*AS=*/0);
 
   // Create the TargetGlobalAddress node, folding in the constant
   // offset if it is legal.
@@ -2659,7 +2671,7 @@ SDValue M68kTargetLowering::LowerJumpTable(SDValue Op,
     WrapperKind = M68kISD::WrapperPC;
   }
 
-  auto PtrVT = getPointerTy(DAG.getDataLayout());
+  auto PtrVT = getPointerTy(DAG.getDataLayout(), /*AS=*/0);
   SDValue Result = DAG.getTargetJumpTable(JT->getIndex(), PtrVT, OpFlag);
   SDLoc DL(JT);
   Result = DAG.getNode(WrapperKind, DL, PtrVT, Result);
@@ -2689,7 +2701,7 @@ SDValue M68kTargetLowering::getPICJumpTableRelocBase(SDValue Table,
                                                      SelectionDAG &DAG) const {
   if (getJumpTableEncoding() == MachineJumpTableInfo::EK_Custom32)
     return DAG.getNode(M68kISD::GLOBAL_BASE_REG, SDLoc(),
-                       getPointerTy(DAG.getDataLayout()));
+                       getPointerTy(DAG.getDataLayout(), /*AS=*/0));
 
   // MachineJumpTableInfo::EK_LabelDifference32 entry
   return Table;
@@ -3179,7 +3191,7 @@ M68kTargetLowering::EmitInstrWithCustomInserter(MachineInstr &MI,
 
 SDValue M68kTargetLowering::LowerVASTART(SDValue Op, SelectionDAG &DAG) const {
   MachineFunction &MF = DAG.getMachineFunction();
-  auto PtrVT = getPointerTy(MF.getDataLayout());
+  auto PtrVT = getPointerTy(MF.getDataLayout(), /*AS=*/0);
   M68kMachineFunctionInfo *FuncInfo = MF.getInfo<M68kMachineFunctionInfo>();
 
   const Value *SV = cast<SrcValueSDNode>(Op.getOperand(2))->getValue();
@@ -3218,7 +3230,7 @@ SDValue M68kTargetLowering::LowerDYNAMIC_STACKALLOC(SDValue Op,
   SDValue Result;
   if (SplitStack) {
     auto &MRI = MF.getRegInfo();
-    auto SPTy = getPointerTy(DAG.getDataLayout());
+    auto SPTy = getPointerTy(DAG.getDataLayout(), /*AS=*/0);
     auto *ARClass = getRegClassFor(SPTy);
     Register Vreg = MRI.createVirtualRegister(ARClass);
     Chain = DAG.getCopyToReg(Chain, DL, Vreg, Size);

@@ -4,7 +4,7 @@
 ; the prologue and epilogue.
 
 declare void @bar(ptr)
-declare void @llvm.va_start(ptr)
+declare void @llvm.va_start.p0(ptr)
 
 ; For stack frames between 2GB and 16GB, do multiple adjustments.
 
@@ -24,7 +24,7 @@ define i32 @stack_frame_8gb(i32 %x, ...) nounwind {
 ; CHECK:      retq
   %1 = alloca [u0x200000000 x i8]
   %va = alloca i8, i32 24
-  call void @llvm.va_start(ptr %va)
+  call void @llvm.va_start.p0(ptr %va)
   call void @bar(ptr %1)
   ret i32 %x
 }
@@ -53,7 +53,7 @@ define i32 @stack_frame_16gb(i32 %x, ...) nounwind {
 ; CHECK:      retq
   %1 = alloca [u0x400000000 x i8]
   %va = alloca i8, i32 24
-  call void @llvm.va_start(ptr %va)
+  call void @llvm.va_start.p0(ptr %va)
   call void @bar(ptr %1)
   ret i32 %x
 }

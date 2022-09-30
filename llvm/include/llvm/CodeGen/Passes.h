@@ -467,6 +467,9 @@ namespace llvm {
   /// This pass frees the memory occupied by the MachineFunction.
   FunctionPass *createFreeMachineFunctionPass();
 
+  /// This pass logs information on generated CSetBounds calls
+  FunctionPass *createLogCheriSetBoundsPass();
+
   /// This pass performs outlining on machine instructions directly before
   /// printing assembly.
   ModulePass *createMachineOutlinerPass(bool RunOnAllFunctions = true);
@@ -509,6 +512,9 @@ namespace llvm {
 
   /// Create Hardware Loop pass. \see HardwareLoops.cpp
   FunctionPass *createHardwareLoopsPass();
+
+  /// Create CHERI pass to bound alloca.s
+  ModulePass *createCheriBoundAllocasPass();
 
   /// This pass inserts pseudo probe annotation for callsite profiling.
   FunctionPass *createPseudoProbeInserter();

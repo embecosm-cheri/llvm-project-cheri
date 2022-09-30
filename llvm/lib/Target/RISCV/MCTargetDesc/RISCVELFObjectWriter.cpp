@@ -86,6 +86,18 @@ unsigned RISCVELFObjectWriter::getRelocType(MCContext &Ctx,
       return ELF::R_RISCV_CALL;
     case RISCV::fixup_riscv_call_plt:
       return ELF::R_RISCV_CALL_PLT;
+    case RISCV::fixup_riscv_captab_pcrel_hi20:
+      return ELF::R_RISCV_CHERI_CAPTAB_PCREL_HI20;
+    case RISCV::fixup_riscv_tls_ie_captab_pcrel_hi20:
+      return ELF::R_RISCV_CHERI_TLS_IE_CAPTAB_PCREL_HI20;
+    case RISCV::fixup_riscv_tls_gd_captab_pcrel_hi20:
+      return ELF::R_RISCV_CHERI_TLS_GD_CAPTAB_PCREL_HI20;
+    case RISCV::fixup_riscv_cjal:
+      return ELF::R_RISCV_CHERI_CJAL;
+    case RISCV::fixup_riscv_ccall:
+      return ELF::R_RISCV_CHERI_CCALL;
+    case RISCV::fixup_riscv_rvc_cjump:
+      return ELF::R_RISCV_CHERI_RVC_CJUMP;
     case RISCV::fixup_riscv_add_8:
       return ELF::R_RISCV_ADD8;
     case RISCV::fixup_riscv_sub_8:
@@ -140,6 +152,10 @@ unsigned RISCVELFObjectWriter::getRelocType(MCContext &Ctx,
     return ELF::R_RISCV_RELAX;
   case RISCV::fixup_riscv_align:
     return ELF::R_RISCV_ALIGN;
+  case RISCV::fixup_riscv_capability:
+    return ELF::R_RISCV_CHERI_CAPABILITY;
+  case RISCV::fixup_riscv_tprel_cincoffset:
+    return ELF::R_RISCV_CHERI_TPREL_CINCOFFSET;
   case RISCV::fixup_riscv_set_6b:
     return ELF::R_RISCV_SET6;
   case RISCV::fixup_riscv_sub_6b:

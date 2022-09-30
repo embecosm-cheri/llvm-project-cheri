@@ -213,7 +213,7 @@ void RenderFrame(InternalScopedString *buffer, const char *format, int frame_no,
                              info->module_offset, info->module_arch, "");
         MaybeBuildIdToBuffer(*info, /*PrefixSpace=*/true, buffer);
       } else {
-        buffer->append("(%p)", (void *)address);
+        buffer->append("(%p)", (void *)(uptr)address);
       }
       break;
     default:

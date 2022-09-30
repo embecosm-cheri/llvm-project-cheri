@@ -838,6 +838,12 @@ void TypeInfer::expandOverloads(TypeSetByHwMode::SetType &Out,
       case MVT::iPTRAny:
         Out.insert(MVT::iPTR);
         return;
+      case MVT::iFATPTRAny:
+        Out.insert(MVT::iFATPTR64);
+        Out.insert(MVT::iFATPTR128);
+        Out.insert(MVT::iFATPTR256);
+        Out.insert(MVT::iFATPTR512);
+        return;
       case MVT::iAny:
         for (MVT T : MVT::integer_valuetypes())
           if (Legal.count(T))
@@ -1651,9 +1657,21 @@ bool SDTypeConstraint::ApplyTypeConstraint(TreePatternNode *N,
   case SDTCisVT:
     // Operand must be a particular type.
     return NodeToApply->UpdateNodeType(ResNo, VVT, TP);
-  case SDTCisPtrTy:
-    // Operand must be same as target pointer type.
+  case SDTCisPtrTy: {
+    // Operand must be a pointer type.
+    // If we support fat pointers, then this narrows it down to two types.
+    if (TP.getDAGPatterns().enableFatPointers()) {
+      // FIXME: We should be able to do the type inference correctly from the
+      // two types, but for now just disable this constraint on architectures
+      // with fat pointers.
+      return false;
+//       TypeSetByHwMode VTS(MVT::iPTR);
+//       for (auto &I : VTS)
+//         I.second.insert(MVT::iFATPTRAny);
+//       return NodeToApply->UpdateNodeType(ResNo, VTS, TP);
+    }
     return NodeToApply->UpdateNodeType(ResNo, MVT::iPTR, TP);
+  }
   case SDTCisInt:
     // Require it to be one of the legal integer VTs.
      return TI.EnforceInteger(NodeToApply->getExtType(ResNo));
@@ -3189,6 +3207,10 @@ CodeGenDAGPatterns::CodeGenDAGPatterns(RecordKeeper &R,
                                        PatternRewriterFn PatternRewriter)
     : Records(R), Target(R), LegalVTS(Target.getLegalValueTypes()),
       PatternRewriter(PatternRewriter) {
+
+  // If the target declares a class called SupportsFatPointers, then we enable
+  // support for two types of pointer.
+  FatPointers = R.getClass("SupportsFatPointers");
 
   Intrinsics = CodeGenIntrinsicTable(Records);
   ParseNodeInfo();

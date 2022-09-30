@@ -68,6 +68,11 @@ HoistCheapInsts("hoist-cheap-insts",
                 cl::desc("MachineLICM should hoist even cheap instructions"),
                 cl::init(false), cl::Hidden);
 
+static cl::opt<bool> IgnoreRegPressure(
+    "machinelicm-ignore-reg-pressure",
+    cl::desc("Ignore register pressure when hoisting instructions"),
+    cl::init(false), cl::Hidden);
+
 static cl::opt<bool>
 HoistConstStores("hoist-const-stores",
                  cl::desc("Hoist invariant stores"),
@@ -877,7 +882,7 @@ MachineLICMBase::calcRegisterCost(const MachineInstr *MI, bool ConsiderSeen,
 }
 
 /// Return true if this machine instruction loads from global offset table or
-/// constant pool.
+/// constant pool. The capability table is included as a GOT-like entity.
 static bool mayLoadFromGOTOrConstantPool(MachineInstr &MI) {
   assert(MI.mayLoad() && "Expected MI that loads!");
 
@@ -888,7 +893,7 @@ static bool mayLoadFromGOTOrConstantPool(MachineInstr &MI) {
 
   for (MachineMemOperand *MemOp : MI.memoperands())
     if (const PseudoSourceValue *PSV = MemOp->getPseudoValue())
-      if (PSV->isGOT() || PSV->isConstantPool())
+      if (PSV->isGOT() || PSV->isCapTable() || PSV->isConstantPool())
         return true;
 
   return false;
@@ -994,6 +999,15 @@ bool MachineLICMBase::IsLICMCandidate(MachineInstr &I) {
   // control flow.
   if (I.isConvergent())
     return false;
+
+  if (I.mayTrap()) {
+    if (!IsGuaranteedToExecute(I.getParent()))
+      return false;
+    // TODO: we probably also shouldn't be hoisting potentially trapping
+    // instructions if there is an earlier trap/noreturn call
+    LLVM_DEBUG(dbgs() << "Potentially trapping instruction is candidate: ";
+               I.dump());
+  }
 
   if (!TII->shouldHoist(I, CurLoop))
     return false;
@@ -1203,7 +1217,7 @@ bool MachineLICMBase::IsProfitableToHoist(MachineInstr &MI) {
 
   // Visit BBs from header to current BB, if hoisting this doesn't cause
   // high register pressure, then it's safe to proceed.
-  if (!CanCauseHighRegPressure(Cost, CheapInstr)) {
+  if (IgnoreRegPressure || !CanCauseHighRegPressure(Cost, CheapInstr)) {
     LLVM_DEBUG(dbgs() << "Hoist non-reg-pressure: " << MI);
     ++NumLowRP;
     return true;

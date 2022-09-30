@@ -175,10 +175,11 @@ static SDValue CreateCopyOfByValArgument(SDValue Src, SDValue Dst,
                                          SDValue Chain, ISD::ArgFlagsTy Flags,
                                          SelectionDAG &DAG, const SDLoc &dl) {
   SDValue SizeNode = DAG.getConstant(Flags.getByValSize(), dl, MVT::i32);
-  return DAG.getMemcpy(
-      Chain, dl, Dst, Src, SizeNode, Flags.getNonZeroByValAlign(),
-      /*isVolatile=*/false, /*AlwaysInline=*/false,
-      /*isTailCall=*/false, MachinePointerInfo(), MachinePointerInfo());
+  return DAG.getMemcpy(Chain, dl, Dst, Src, SizeNode, Flags.getNonZeroByValAlign(),
+                       /*isVolatile=*/false, /*AlwaysInline=*/false,
+                       /*isTailCall=*/false,
+                       /*MustPreserveCheriCapabilities=*/false,
+                       MachinePointerInfo(), MachinePointerInfo());
 }
 
 bool
@@ -576,7 +577,7 @@ HexagonTargetLowering::LowerCall(TargetLowering::CallLoweringInfo &CLI,
     Callee = DAG.getTargetGlobalAddress(G->getGlobal(), dl, PtrVT, 0, Flags);
   } else if (ExternalSymbolSDNode *S =
              dyn_cast<ExternalSymbolSDNode>(Callee)) {
-    Callee = DAG.getTargetExternalSymbol(S->getSymbol(), PtrVT, Flags);
+    Callee = DAG.getTargetExternalFunctionSymbol(S->getSymbol(), Flags);
   }
 
   // Returns a chain & a flag for retval copy to use.
@@ -1023,6 +1024,7 @@ HexagonTargetLowering::LowerVACOPY(SDValue Op, SelectionDAG &DAG) const {
   return DAG.getMemcpy(Chain, DL, DestPtr, SrcPtr,
                        DAG.getIntPtrConstant(12, DL), Align(4),
                        /*isVolatile*/ false, false, false,
+                       /*MustPreserveCheriCapabilities=*/false,
                        MachinePointerInfo(DestSV), MachinePointerInfo(SrcSV));
 }
 

@@ -1213,7 +1213,11 @@ bool SelectionDAGISel::PrepareEHLandingPad() {
   const Constant *PersonalityFn = FuncInfo->Fn->getPersonalityFn();
   const BasicBlock *LLVMBB = MBB->getBasicBlock();
   const TargetRegisterClass *PtrRC =
-      TLI->getRegClassFor(TLI->getPointerTy(CurDAG->getDataLayout()));
+      TLI->getRegClassFor(TLI->getPointerTy(CurDAG->getDataLayout(),
+                  TLI->getExceptionPointerAS()));
+  // FIXME: what type is sel? pointer or pointer range?
+  const TargetRegisterClass *SelRC =
+      TLI->getRegClassFor(TLI->getPointerRangeTy(CurDAG->getDataLayout()));
 
   auto Pers = classifyEHPersonality(PersonalityFn);
 
@@ -1261,7 +1265,7 @@ bool SelectionDAGISel::PrepareEHLandingPad() {
       FuncInfo->ExceptionPointerVirtReg = MBB->addLiveIn(Reg, PtrRC);
     // Mark exception selector register as live in.
     if (unsigned Reg = TLI->getExceptionSelectorRegister(PersonalityFn))
-      FuncInfo->ExceptionSelectorVirtReg = MBB->addLiveIn(Reg, PtrRC);
+      FuncInfo->ExceptionSelectorVirtReg = MBB->addLiveIn(Reg, SelRC);
   }
 
   return true;
@@ -1277,6 +1281,30 @@ static bool isFoldedOrDeadInstruction(const Instruction *I,
          !isa<DbgInfoIntrinsic>(I) && // Debug instructions aren't folded.
          !I->isEHPad() &&             // EH pad instructions aren't folded.
          !FuncInfo.isExportedInst(I); // Exported instrs must be computed.
+}
+
+static const AllocaInst *findAllocaForDbgDeclare(const Value *Address) {
+  if (const auto *AI = dyn_cast<AllocaInst>(Address))
+    return AI;
+#if 0
+  // Look through any csetbounds/mipsstacktocap instructions to find the alloca.
+  // This is needed because the MIPS CHERI PurecapABI pass inserts a setbounds
+  // for every stack allocation
+  // TODO: should we just not update the dbg.declare statements instead of
+  // working around it here?
+  if (const auto *CI = dyn_cast<CallInst>(Address))
+    if (const auto *F = CI->getCalledFunction())
+      if (F->getIntrinsicID() == Intrinsic::cheri_cap_bounds_set ||
+          F->getIntrinsicID() == Intrinsic::mips_stack_to_cap)
+        return findAllocaForDbgDeclare(CI->getArgOperand(0));
+  // We also need to ignore the bitcast that is used in order to call the
+  // stacktocap/bounds_set
+  if (auto *O = dyn_cast<Operator>(Address))
+    if (O->getOpcode() == Instruction::BitCast ||
+        O->getOpcode() == Instruction::AddrSpaceCast)
+      return findAllocaForDbgDeclare(O->getOperand(0));
+#endif
+  return nullptr;
 }
 
 /// Collect llvm.dbg.declare information. This is done after argument lowering
@@ -1301,14 +1329,17 @@ static void processDbgDeclares(FunctionLoweringInfo &FuncInfo) {
 
       // Look through casts and constant offset GEPs. These mostly come from
       // inalloca.
-      APInt Offset(DL.getTypeSizeInBits(Address->getType()), 0);
+      APInt Offset(DL.getTypeIntegerRangeInBits(Address->getType()), 0);
       Address = Address->stripAndAccumulateInBoundsConstantOffsets(DL, Offset);
 
       // Check if the variable is a static alloca or a byval or inalloca
       // argument passed in memory. If it is not, then we will ignore this
       // intrinsic and handle this during isel like dbg.value.
       int FI = std::numeric_limits<int>::max();
-      if (const auto *AI = dyn_cast<AllocaInst>(Address)) {
+      // XXXAR: we can't just do a dyn_cast here since the CheriPurecap pass
+      // will insert csetbounds instructions for each alloca and updates
+      // the dbg.declare to no longer point to the alloca
+      if (const auto *AI = findAllocaForDbgDeclare(Address)) {
         auto SI = FuncInfo.StaticAllocaMap.find(AI);
         if (SI != FuncInfo.StaticAllocaMap.end())
           FI = SI->second;
@@ -2540,7 +2571,7 @@ CheckType(const unsigned char *MatcherTable, unsigned &MatcherIndex, SDValue N,
   if (N.getValueType() == VT) return true;
 
   // Handle the case when VT is iPTR.
-  return VT == MVT::iPTR && N.getValueType() == TLI->getPointerTy(DL);
+  return VT == MVT::iPTR && N.getValueType() == TLI->getPointerTy(DL, 0);
 }
 
 LLVM_ATTRIBUTE_ALWAYS_INLINE static bool
@@ -2576,7 +2607,8 @@ CheckValueType(const unsigned char *MatcherTable, unsigned &MatcherIndex,
     return true;
 
   // Handle the case when VT is iPTR.
-  return VT == MVT::iPTR && cast<VTSDNode>(N)->getVT() == TLI->getPointerTy(DL);
+  return VT == MVT::iPTR &&
+         cast<VTSDNode>(N)->getVT() == TLI->getPointerTy(DL, 0);
 }
 
 // Bit 0 stores the sign of the immediate. The upper bits contain the magnitude
@@ -3168,8 +3200,9 @@ void SelectionDAGISel::SelectCodeCommon(SDNode *NodeToMatch,
         if (CaseSize == 0) break;
 
         MVT CaseVT = (MVT::SimpleValueType)MatcherTable[MatcherIndex++];
+        // FIXME: is AS0 correct here?
         if (CaseVT == MVT::iPTR)
-          CaseVT = TLI->getPointerTy(CurDAG->getDataLayout());
+          CaseVT = TLI->getPointerTy(CurDAG->getDataLayout(), 0);
 
         // If the VT matches, then we will execute this case.
         if (CurNodeVT == CaseVT)
@@ -3450,8 +3483,9 @@ void SelectionDAGISel::SelectCodeCommon(SDNode *NodeToMatch,
       for (unsigned i = 0; i != NumVTs; ++i) {
         MVT::SimpleValueType VT =
           (MVT::SimpleValueType)MatcherTable[MatcherIndex++];
+        // FIXME: is AS0 correct here? This is what it was before
         if (VT == MVT::iPTR)
-          VT = TLI->getPointerTy(CurDAG->getDataLayout()).SimpleTy;
+          VT = TLI->getPointerTy(CurDAG->getDataLayout(), 0).SimpleTy;
         VTs.push_back(VT);
       }
 

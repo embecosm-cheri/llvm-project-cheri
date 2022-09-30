@@ -864,11 +864,13 @@ SDValue MSP430TargetLowering::LowerCCCCallTo(
 
       if (Flags.isByVal()) {
         SDValue SizeNode = DAG.getConstant(Flags.getByValSize(), dl, MVT::i16);
-        MemOp = DAG.getMemcpy(
-            Chain, dl, PtrOff, Arg, SizeNode, Flags.getNonZeroByValAlign(),
-            /*isVolatile*/ false,
-            /*AlwaysInline=*/true,
-            /*isTailCall=*/false, MachinePointerInfo(), MachinePointerInfo());
+        MemOp = DAG.getMemcpy(Chain, dl, PtrOff, Arg, SizeNode,
+                              Flags.getNonZeroByValAlign(),
+                              /*isVolatile*/ false,
+                              /*AlwaysInline=*/true,
+                              /*isTailCall=*/false,
+                              /*MustPreserveCheriCapabilities=*/false,
+                              MachinePointerInfo(), MachinePointerInfo());
       } else {
         MemOp = DAG.getStore(Chain, dl, Arg, PtrOff, MachinePointerInfo());
       }
@@ -898,7 +900,7 @@ SDValue MSP430TargetLowering::LowerCCCCallTo(
   if (GlobalAddressSDNode *G = dyn_cast<GlobalAddressSDNode>(Callee))
     Callee = DAG.getTargetGlobalAddress(G->getGlobal(), dl, MVT::i16);
   else if (ExternalSymbolSDNode *E = dyn_cast<ExternalSymbolSDNode>(Callee))
-    Callee = DAG.getTargetExternalSymbol(E->getSymbol(), MVT::i16);
+    Callee = DAG.getTargetExternalFunctionSymbol(E->getSymbol());
 
   // Returns a chain & a flag for retval copy to use.
   SDVTList NodeTys = DAG.getVTList(MVT::Other, MVT::Glue);

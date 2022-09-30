@@ -22,6 +22,7 @@
 #include "llvm/CodeGen/TargetRegisterInfo.h"
 #include "llvm/IR/DataLayout.h"
 #include "llvm/IR/DerivedTypes.h"
+#include "llvm/IR/DiagnosticInfo.h"
 #include "llvm/IR/GlobalVariable.h"
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/MC/MCAsmInfo.h"
@@ -31,6 +32,7 @@
 #include "llvm/Support/KnownBits.h"
 #include "llvm/Support/MathExtras.h"
 #include "llvm/Target/TargetMachine.h"
+#include "llvm/Transforms/Utils/CheriSetBounds.h"
 #include <cctype>
 using namespace llvm;
 
@@ -169,8 +171,7 @@ TargetLowering::makeLibCall(SelectionDAG &DAG, RTLIB::Libcall LC, EVT RetVT,
 
   if (LC == RTLIB::UNKNOWN_LIBCALL)
     report_fatal_error("Unsupported library call operation!");
-  SDValue Callee = DAG.getExternalSymbol(getLibcallName(LC),
-                                         getPointerTy(DAG.getDataLayout()));
+  SDValue Callee = DAG.getExternalFunctionSymbol(getLibcallName(LC));
 
   Type *RetTy = RetVT.getTypeForEVT(*DAG.getContext());
   TargetLowering::CallLoweringInfo CLI(DAG);
@@ -195,12 +196,30 @@ TargetLowering::makeLibCall(SelectionDAG &DAG, RTLIB::Libcall LC, EVT RetVT,
 
 bool TargetLowering::findOptimalMemOpLowering(
     std::vector<EVT> &MemOps, unsigned Limit, const MemOp &Op, unsigned DstAS,
-    unsigned SrcAS, const AttributeList &FuncAttributes) const {
+    unsigned SrcAS, const AttributeList &FuncAttributes,
+    bool *ReachedLimit) const {
+  if (ReachedLimit)
+    *ReachedLimit = false;
   if (Limit != ~unsigned(0) && Op.isMemcpyWithFixedDstAlign() &&
       Op.getSrcAlign() < Op.getDstAlign())
     return false;
 
   EVT VT = getOptimalMemOpType(Op, FuncAttributes);
+
+  // XXXAR: (ab)use MVT::isVoid to indicate that a memcpy call must be made
+  if (VT == MVT::isVoid) {
+    return false; // cannot lower as memops
+  }
+  // If the type is a fat pointer, then forcibly disable overlap.
+  // XXXAR: Note this is not the same as TLI.allowsMisalignedMemoryAccesses().
+  // Even if we support unaligned access for 8-byte values, we must never
+  // perform an overlapping store if the previous store was a capability store
+  // since the 8-byte store will clear the the tag bit if it overlaps with the
+  // prior capability store!
+  bool AllowOverlap = Op.allowOverlap();
+  if (VT.isFatPointer()) {
+    AllowOverlap = false;
+  }
 
   if (VT == MVT::Other) {
     // Use the largest integer type whose alignment constraints are satisfied.
@@ -248,6 +267,10 @@ bool TargetLowering::findOptimalMemOpLowering(
           Found = true;
         }
       }
+      if (VT.isFatPointer()) {
+        NewVT = MVT::i64;
+        Found = isSafeMemOpType(NewVT.getSimpleVT());
+      }
 
       if (!Found) {
         do {
@@ -261,7 +284,7 @@ bool TargetLowering::findOptimalMemOpLowering(
       // If the new VT cannot cover all of the remaining bits, then consider
       // issuing a (or a pair of) unaligned and overlapping load / store.
       bool Fast;
-      if (NumMemOps && Op.allowOverlap() && NewVTSize < Size &&
+      if (NumMemOps && AllowOverlap && NewVTSize < Size &&
           allowsMisalignedMemoryAccesses(
               VT, DstAS, Op.isFixedDstAlign() ? Op.getDstAlign() : Align(1),
               MachineMemOperand::MONone, &Fast) &&
@@ -273,8 +296,16 @@ bool TargetLowering::findOptimalMemOpLowering(
       }
     }
 
-    if (++NumMemOps > Limit)
+    if (++NumMemOps > Limit) {
+      if (ReachedLimit)
+        *ReachedLimit = true;
       return false;
+    }
+
+    // If we are preserving capabilities, the first VT must be a capability
+    if (Op.MustPreserveCheriCaps && MemOps.empty() && !VT.isFatPointer()) {
+      return false;
+    }
 
     MemOps.push_back(VT);
     Size -= VTSize;
@@ -457,7 +488,8 @@ SDValue TargetLowering::getPICJumpTableRelocBase(SDValue Table,
 
   if ((JTEncoding == MachineJumpTableInfo::EK_GPRel64BlockAddress) ||
       (JTEncoding == MachineJumpTableInfo::EK_GPRel32BlockAddress))
-    return DAG.getGLOBAL_OFFSET_TABLE(getPointerTy(DAG.getDataLayout()));
+    return DAG.getGLOBAL_OFFSET_TABLE(getPointerTy(
+        DAG.getDataLayout(), DAG.getDataLayout().getGlobalsAddressSpace()));
 
   return Table;
 }
@@ -8362,6 +8394,22 @@ SDValue TargetLowering::scalarizeVectorStore(StoreSDNode *ST,
   return DAG.getNode(ISD::TokenFactor, SL, MVT::Other, Stores);
 }
 
+SDValue TargetLowering::unalignedLoadStoreCSetbounds(const char *loadOrStore,
+                                                     SDValue Ptr,
+                                                     const SDLoc &DL,
+                                                     unsigned CapSize,
+                                                     SelectionDAG &DAG) const {
+  // Only set bounds if the pointer was actually a CHERI capability (i.e. skip
+  // setting bounds in hybrid mode)
+  if (!Ptr->getValueType(0).isFatPointer())
+    return Ptr;
+  return DAG.getCSetBounds(Ptr, DL, CapSize, Align(CapSize),
+                           "expanding unaligned capability load/store",
+                           cheri::SetBoundsPointerSource::Stack,
+                           StringRef("expanding unaligned capability ") +
+                               loadOrStore);
+}
+
 std::pair<SDValue, SDValue>
 TargetLowering::expandUnalignedLoad(LoadSDNode *LD, SelectionDAG &DAG) const {
   assert(LD->getAddressingMode() == ISD::UNINDEXED &&
@@ -8372,6 +8420,40 @@ TargetLowering::expandUnalignedLoad(LoadSDNode *LD, SelectionDAG &DAG) const {
   EVT LoadedVT = LD->getMemoryVT();
   SDLoc dl(LD);
   auto &MF = DAG.getMachineFunction();
+
+  if (VT.isFatPointer() && !supportsUnalignedCapabilityMemOps()) {
+    auto CapAlign = VT.getStoreSize();
+    DiagnosticInfoCheriInefficient Warning(
+        MF.getFunction(), dl.getDebugLoc(),
+        "found underaligned load of capability type (aligned to " +
+            Twine(LD->getAlignment()) + " bytes instead of " + Twine(CapAlign) +
+            "). Will use memcpy() instead of capability load to preserve tags "
+            "if it is aligned correctly at runtime");
+    DAG.getContext()->diagnose(Warning);
+
+    SDValue TmpPtr = DAG.CreateStackTemporary(VT);
+    int SPFI = cast<FrameIndexSDNode>(TmpPtr.getNode())->getIndex();
+    auto TmpPtrInfo =
+        MachinePointerInfo::getFixedStack(DAG.getMachineFunction(), SPFI);
+    // Also bound the arguments for the memcpy call
+    SDValue BoundedTmpPtr = unalignedLoadStoreCSetbounds("load stack destination", TmpPtr, dl,
+                                          CapAlign, DAG);
+    SDValue BoundedPtr = unalignedLoadStoreCSetbounds("load memcpy source", Ptr, dl, CapAlign,
+                                       DAG);
+    SDValue Ch = DAG.getMemcpy(Chain, dl, BoundedTmpPtr, BoundedPtr,
+                               DAG.getConstant(CapAlign, dl, MVT::i64),
+                               Align(LD->getAlignment()),
+                               /*isVolatile=*/false,
+                               /*AlwaysInline=*/false,
+                               /*isTailCall=*/false,
+                               /*MustPreserveCheriCapabilities=*/true,
+                               TmpPtrInfo, LD->getPointerInfo(), AAMDNodes(),
+                               /*AA=*/nullptr,
+                               "!!<CHERI-NODIAG>!!");
+    // Load the updated value (does not need to be bounded!)
+    auto Result = DAG.getLoad(VT, dl, Ch, TmpPtr, TmpPtrInfo);
+    return std::make_pair(Result, Result.getValue(1));
+  }
 
   if (VT.isFloatingPoint() || VT.isVector()) {
     EVT intVT = EVT::getIntegerVT(*DAG.getContext(), LoadedVT.getSizeInBits());
@@ -8408,12 +8490,6 @@ TargetLowering::expandUnalignedLoad(LoadSDNode *LD, SelectionDAG &DAG) const {
     SDValue StackPtr = StackBase;
     unsigned Offset = 0;
 
-    EVT PtrVT = Ptr.getValueType();
-    EVT StackPtrVT = StackPtr.getValueType();
-
-    SDValue PtrIncrement = DAG.getConstant(RegBytes, dl, PtrVT);
-    SDValue StackPtrIncrement = DAG.getConstant(RegBytes, dl, StackPtrVT);
-
     // Do all but one copies using the full register width.
     for (unsigned i = 1; i < NumRegs; i++) {
       // Load one integer register's worth from the original location.
@@ -8428,8 +8504,9 @@ TargetLowering::expandUnalignedLoad(LoadSDNode *LD, SelectionDAG &DAG) const {
       // Increment the pointers.
       Offset += RegBytes;
 
-      Ptr = DAG.getObjectPtrOffset(dl, Ptr, PtrIncrement);
-      StackPtr = DAG.getObjectPtrOffset(dl, StackPtr, StackPtrIncrement);
+      Ptr = DAG.getObjectPtrOffset(dl, Ptr, TypeSize::Fixed(RegBytes));
+      StackPtr =
+          DAG.getObjectPtrOffset(dl, StackPtr, TypeSize::Fixed(RegBytes));
     }
 
     // The last copy may be partial.  Do an extending load.
@@ -8526,6 +8603,40 @@ SDValue TargetLowering::expandUnalignedStore(StoreSDNode *ST,
   auto &MF = DAG.getMachineFunction();
   EVT StoreMemVT = ST->getMemoryVT();
 
+  if (VT.isFatPointer() && !supportsUnalignedCapabilityMemOps()) {
+    auto CapAlign = VT.getStoreSize();
+    SDLoc dl(ST);
+    DiagnosticInfoCheriInefficient Warning(
+        MF.getFunction(), dl.getDebugLoc(),
+        "found underaligned store of capability type (aligned to " +
+            Twine(ST->getAlignment()) + " bytes instead of " + Twine(CapAlign) +
+            "). Will use memcpy() instead of capability load to preserve tags "
+            "if it is aligned correctly at runtime");
+    DAG.getContext()->diagnose(Warning);
+
+    SDValue TmpPtr = DAG.CreateStackTemporary(VT);
+    int SPFI = cast<FrameIndexSDNode>(TmpPtr.getNode())->getIndex();
+    auto TmpPtrInfo =
+        MachinePointerInfo::getFixedStack(DAG.getMachineFunction(), SPFI);
+    SDValue Ch = DAG.getStore(Chain, dl, Val, TmpPtr, TmpPtrInfo);
+    // Add bounds on the arguments to memcpy:
+    TmpPtr = unalignedLoadStoreCSetbounds("store stack source", TmpPtr, dl,
+                                          CapAlign, DAG);
+    Ptr = unalignedLoadStoreCSetbounds("store memcpy destination", Ptr, dl,
+                                       CapAlign, DAG);
+    auto Result = DAG.getMemcpy(Ch, dl, Ptr, TmpPtr,
+                                DAG.getConstant(CapAlign, dl, MVT::i64),
+                                Align(ST->getAlignment()),
+                                /*isVolatile=*/false,
+                                /*AlwaysInline=*/false,
+                                /*isTailCall=*/false,
+                                /*MustPreserveCheriCapabilities=*/true,
+                                ST->getPointerInfo(), TmpPtrInfo, AAMDNodes(),
+                                /*AA=*/nullptr,
+                                "!!<CHERI-NODIAG>!!");
+    return Result;
+  }
+
   SDLoc dl(ST);
   if (StoreMemVT.isFloatingPoint() || StoreMemVT.isVector()) {
     EVT intVT = EVT::getIntegerVT(*DAG.getContext(), VT.getSizeInBits());
@@ -8549,7 +8660,6 @@ SDValue TargetLowering::expandUnalignedStore(StoreSDNode *ST,
     MVT RegVT = getRegisterType(
         *DAG.getContext(),
         EVT::getIntegerVT(*DAG.getContext(), StoreMemVT.getSizeInBits()));
-    EVT PtrVT = Ptr.getValueType();
     unsigned StoredBytes = StoreMemVT.getStoreSize();
     unsigned RegBytes = RegVT.getSizeInBits() / 8;
     unsigned NumRegs = (StoredBytes + RegBytes - 1) / RegBytes;
@@ -8563,10 +8673,6 @@ SDValue TargetLowering::expandUnalignedStore(StoreSDNode *ST,
         Chain, dl, Val, StackPtr,
         MachinePointerInfo::getFixedStack(MF, FrameIndex, 0), StoreMemVT);
 
-    EVT StackPtrVT = StackPtr.getValueType();
-
-    SDValue PtrIncrement = DAG.getConstant(RegBytes, dl, PtrVT);
-    SDValue StackPtrIncrement = DAG.getConstant(RegBytes, dl, StackPtrVT);
     SmallVector<SDValue, 8> Stores;
     unsigned Offset = 0;
 
@@ -8583,8 +8689,9 @@ SDValue TargetLowering::expandUnalignedStore(StoreSDNode *ST,
                                     ST->getMemOperand()->getFlags()));
       // Increment the pointers.
       Offset += RegBytes;
-      StackPtr = DAG.getObjectPtrOffset(dl, StackPtr, StackPtrIncrement);
-      Ptr = DAG.getObjectPtrOffset(dl, Ptr, PtrIncrement);
+      StackPtr =
+          DAG.getObjectPtrOffset(dl, StackPtr, TypeSize::Fixed(RegBytes));
+      Ptr = DAG.getObjectPtrOffset(dl, Ptr, TypeSize::Fixed(RegBytes));
     }
 
     // The last store may be partial.  Do a truncating store.  On big-endian
@@ -8759,7 +8866,8 @@ SDValue TargetLowering::LowerToTLSEmulatedModel(const GlobalAddressSDNode *GA,
                                                 SelectionDAG &DAG) const {
   // Access to address of TLS varialbe xyz is lowered to a function call:
   //   __emutls_get_address( address of global variable named "__emutls_v.xyz" )
-  EVT PtrVT = getPointerTy(DAG.getDataLayout());
+  EVT DataPtrVT = getPointerTy(DAG.getDataLayout(),
+                               DAG.getDataLayout().getGlobalsAddressSpace());
   PointerType *VoidPtrType = Type::getInt8PtrTy(*DAG.getContext());
   SDLoc dl(GA);
 
@@ -8770,11 +8878,11 @@ SDValue TargetLowering::LowerToTLSEmulatedModel(const GlobalAddressSDNode *GA,
   StringRef EmuTlsVarName(NameString);
   GlobalVariable *EmuTlsVar = VariableModule->getNamedGlobal(EmuTlsVarName);
   assert(EmuTlsVar && "Cannot find EmuTlsVar ");
-  Entry.Node = DAG.getGlobalAddress(EmuTlsVar, dl, PtrVT);
+  Entry.Node = DAG.getGlobalAddress(EmuTlsVar, dl, DataPtrVT);
   Entry.Ty = VoidPtrType;
   Args.push_back(Entry);
 
-  SDValue EmuTlsGetAddr = DAG.getExternalSymbol("__emutls_get_address", PtrVT);
+  SDValue EmuTlsGetAddr = DAG.getExternalFunctionSymbol("__emutls_get_address");
 
   TargetLowering::CallLoweringInfo CLI(DAG);
   CLI.setDebugLoc(dl).setChain(DAG.getEntryNode());
@@ -9370,11 +9478,11 @@ bool TargetLowering::expandMULO(SDNode *Node, SDValue &Result,
       HiLHS =
           DAG.getNode(ISD::SRA, dl, VT, LHS,
                       DAG.getConstant(LoSize - 1, dl,
-                                      getPointerTy(DAG.getDataLayout())));
+                                      getPointerRangeTy(DAG.getDataLayout())));
       HiRHS =
           DAG.getNode(ISD::SRA, dl, VT, RHS,
                       DAG.getConstant(LoSize - 1, dl,
-                                      getPointerTy(DAG.getDataLayout())));
+                                      getPointerRangeTy(DAG.getDataLayout())));
     } else {
         HiLHS = DAG.getConstant(0, dl, VT);
         HiRHS = DAG.getConstant(0, dl, VT);

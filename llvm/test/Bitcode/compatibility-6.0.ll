@@ -1343,16 +1343,16 @@ define void @instructions.va_arg(i8* %v, ...) {
   %ap2 = bitcast i8** %ap to i8*
 
   call void @llvm.va_start(i8* %ap2)
-  ; CHECK: call void @llvm.va_start(i8* %ap2)
+  ; CHECK: call void @llvm.va_start.p0i8(i8* %ap2)
 
   va_arg i8* %ap2, i32
   ; CHECK: va_arg i8* %ap2, i32
 
   call void @llvm.va_copy(i8* %v, i8* %ap2)
-  ; CHECK: call void @llvm.va_copy(i8* %v, i8* %ap2)
+  ; CHECK: call void @llvm.va_copy.p0i8.p0i8(i8* %v, i8* %ap2)
 
   call void @llvm.va_end(i8* %ap2)
-  ; CHECK: call void @llvm.va_end(i8* %ap2)
+  ; CHECK: call void @llvm.va_end.p0i8(i8* %ap2)
 
   ret void
 }
@@ -1394,7 +1394,7 @@ declare void @llvm.instrprof_increment(i8*, i64, i32, i32)
 !10 = !{!"rax"}
 define void @intrinsics.codegen() {
   call i8* @llvm.returnaddress(i32 1)
-  ; CHECK: call i8* @llvm.returnaddress(i32 1)
+  ; CHECK: call i8* @llvm.returnaddress.p0i8(i32 1)
   call i8* @llvm.frameaddress(i32 1)
   ; CHECK: call i8* @llvm.frameaddress.p0i8(i32 1)
 
@@ -1408,9 +1408,9 @@ define void @intrinsics.codegen() {
   ; CHECK: call void @llvm.write_register.i64(metadata !10, i64 0)
 
   %stack = call i8* @llvm.stacksave()
-  ; CHECK: %stack = call i8* @llvm.stacksave()
+  ; CHECK: %stack = call i8* @llvm.stacksave.p0i8()
   call void @llvm.stackrestore(i8* %stack)
-  ; CHECK: call void @llvm.stackrestore(i8* %stack)
+  ; CHECK: call void @llvm.stackrestore.p0i8(i8* %stack)
 
   call void @llvm.prefetch(i8* %stack, i32 0, i32 3, i32 0)
   ; CHECK: call void @llvm.prefetch.p0i8(i8* %stack, i32 0, i32 3, i32 0)
@@ -1422,7 +1422,7 @@ define void @intrinsics.codegen() {
   ; CHECK: call i64 @llvm.readcyclecounter()
 
   call void @llvm.clear_cache(i8* null, i8* null)
-  ; CHECK: call void @llvm.clear_cache(i8* null, i8* null)
+  ; CHECK: call void @llvm.clear_cache.p0i8(i8* null, i8* null)
 
   call void @llvm.instrprof_increment(i8* null, i64 0, i32 0, i32 0)
   ; CHECK: call void @llvm.instrprof_increment(i8* null, i64 0, i32 0, i32 0)

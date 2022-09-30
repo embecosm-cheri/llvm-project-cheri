@@ -770,7 +770,7 @@ void CodeGenVTables::addVTableComponent(ConstantArrayBuilder &builder,
           CGM.CreateRuntimeFunction(fnTy, name).getCallee());
       if (auto f = dyn_cast<llvm::Function>(fn))
         f->setUnnamedAddr(llvm::GlobalValue::UnnamedAddr::Global);
-      return llvm::ConstantExpr::getBitCast(fn, CGM.Int8PtrTy);
+      return llvm::ConstantExpr::getPointerBitCastOrAddrSpaceCast(fn, CGM.Int8PtrTy);
     };
 
     llvm::Constant *fnPtr;
@@ -809,7 +809,7 @@ void CodeGenVTables::addVTableComponent(ConstantArrayBuilder &builder,
           builder, fnPtr, vtableAddressPoint, vtableHasLocalLinkage,
           component.getKind() == VTableComponent::CK_CompleteDtorPointer);
     } else
-      return builder.add(llvm::ConstantExpr::getBitCast(fnPtr, CGM.Int8PtrTy));
+      return builder.add(llvm::ConstantExpr::getPointerBitCastOrAddrSpaceCast(fnPtr, CGM.Int8PtrTy));
   }
 
   case VTableComponent::CK_UnusedFunctionPointer:

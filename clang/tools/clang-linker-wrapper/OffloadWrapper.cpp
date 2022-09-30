@@ -40,13 +40,13 @@ enum OffloadEntryKindFlag : uint32_t {
 
 IntegerType *getSizeTTy(Module &M) {
   LLVMContext &C = M.getContext();
-  switch (M.getDataLayout().getPointerTypeSize(Type::getInt8PtrTy(C))) {
-  case 4u:
+  switch (M.getDataLayout().getIndexSizeInBits(M.getDataLayout().getDefaultGlobalsAddressSpace())) {
+  case 32u:
     return Type::getInt32Ty(C);
-  case 8u:
+  case 64u:
     return Type::getInt64Ty(C);
   }
-  llvm_unreachable("unsupported pointer type size");
+  llvm_unreachable("unsupported pointer index size");
 }
 
 // struct __tgt_offload_entry {
@@ -60,14 +60,14 @@ StructType *getEntryTy(Module &M) {
   LLVMContext &C = M.getContext();
   StructType *EntryTy = StructType::getTypeByName(C, "__tgt_offload_entry");
   if (!EntryTy)
-    EntryTy = StructType::create("__tgt_offload_entry", Type::getInt8PtrTy(C),
-                                 Type::getInt8PtrTy(C), getSizeTTy(M),
+    EntryTy = StructType::create("__tgt_offload_entry", Type::getInt8PtrTy(C, M.getDataLayout().getDefaultGlobalsAddressSpace()),
+                                 Type::getInt8PtrTy(C, M.getDataLayout().getDefaultGlobalsAddressSpace()), getSizeTTy(M),
                                  Type::getInt32Ty(C), Type::getInt32Ty(C));
   return EntryTy;
 }
 
 PointerType *getEntryPtrTy(Module &M) {
-  return PointerType::getUnqual(getEntryTy(M));
+  return PointerType::get(getEntryTy(M), M.getDataLayout().getDefaultGlobalsAddressSpace());
 }
 
 // struct __tgt_device_image {
@@ -80,14 +80,14 @@ StructType *getDeviceImageTy(Module &M) {
   LLVMContext &C = M.getContext();
   StructType *ImageTy = StructType::getTypeByName(C, "__tgt_device_image");
   if (!ImageTy)
-    ImageTy = StructType::create("__tgt_device_image", Type::getInt8PtrTy(C),
-                                 Type::getInt8PtrTy(C), getEntryPtrTy(M),
+    ImageTy = StructType::create("__tgt_device_image", Type::getInt8PtrTy(C, M.getDataLayout().getDefaultGlobalsAddressSpace()),
+                                 Type::getInt8PtrTy(C, M.getDataLayout().getDefaultGlobalsAddressSpace()), getEntryPtrTy(M),
                                  getEntryPtrTy(M));
   return ImageTy;
 }
 
 PointerType *getDeviceImagePtrTy(Module &M) {
-  return PointerType::getUnqual(getDeviceImageTy(M));
+  return PointerType::get(getDeviceImageTy(M), M.getDataLayout().getDefaultGlobalsAddressSpace());
 }
 
 // struct __tgt_bin_desc {
@@ -107,7 +107,7 @@ StructType *getBinDescTy(Module &M) {
 }
 
 PointerType *getBinDescPtrTy(Module &M) {
-  return PointerType::getUnqual(getBinDescTy(M));
+  return PointerType::get(getBinDescTy(M), M.getDataLayout().getDefaultGlobalsAddressSpace());
 }
 
 /// Creates binary descriptor for the given device images. Binary descriptor
@@ -285,8 +285,8 @@ StructType *getFatbinWrapperTy(Module &M) {
   StructType *FatbinTy = StructType::getTypeByName(C, "fatbin_wrapper");
   if (!FatbinTy)
     FatbinTy = StructType::create("fatbin_wrapper", Type::getInt32Ty(C),
-                                  Type::getInt32Ty(C), Type::getInt8PtrTy(C),
-                                  Type::getInt8PtrTy(C));
+                                  Type::getInt32Ty(C), Type::getInt8PtrTy(C, M.getDataLayout().getDefaultGlobalsAddressSpace()),
+                                  Type::getInt8PtrTy(C, M.getDataLayout().getDefaultGlobalsAddressSpace()));
   return FatbinTy;
 }
 
@@ -294,7 +294,7 @@ StructType *getFatbinWrapperTy(Module &M) {
 /// runtime.
 GlobalVariable *createFatbinDesc(Module &M, ArrayRef<char> Image, bool IsHIP) {
   LLVMContext &C = M.getContext();
-  llvm::Type *Int8PtrTy = Type::getInt8PtrTy(C);
+  llvm::Type *Int8PtrTy = Type::getInt8PtrTy(C, M.getDataLayout().getDefaultGlobalsAddressSpace());
   llvm::Triple Triple = llvm::Triple(M.getTargetTriple());
 
   // Create the global string containing the fatbinary.
@@ -315,7 +315,7 @@ GlobalVariable *createFatbinDesc(Module &M, ArrayRef<char> Image, bool IsHIP) {
       ConstantInt::get(Type::getInt32Ty(C), IsHIP ? HIPFatMagic : CudaFatMagic),
       ConstantInt::get(Type::getInt32Ty(C), 1),
       ConstantExpr::getPointerBitCastOrAddrSpaceCast(Fatbin, Int8PtrTy),
-      ConstantPointerNull::get(Type::getInt8PtrTy(C))};
+      ConstantPointerNull::get(Type::getInt8PtrTy(C, M.getDataLayout().getDefaultGlobalsAddressSpace()))};
 
   Constant *FatbinInitializer =
       ConstantStruct::get(getFatbinWrapperTy(M), FatbinWrapper);
@@ -367,13 +367,14 @@ GlobalVariable *createFatbinDesc(Module &M, ArrayRef<char> Image, bool IsHIP) {
 /// }
 Function *createRegisterGlobalsFunction(Module &M, bool IsHIP) {
   LLVMContext &C = M.getContext();
+  unsigned AS = M.getDataLayout().getDefaultGlobalsAddressSpace();
   // Get the __cudaRegisterFunction function declaration.
   auto *RegFuncTy = FunctionType::get(
       Type::getInt32Ty(C),
-      {Type::getInt8PtrTy(C)->getPointerTo(), Type::getInt8PtrTy(C),
-       Type::getInt8PtrTy(C), Type::getInt8PtrTy(C), Type::getInt32Ty(C),
-       Type::getInt8PtrTy(C), Type::getInt8PtrTy(C), Type::getInt8PtrTy(C),
-       Type::getInt8PtrTy(C), Type::getInt32PtrTy(C)},
+      {Type::getInt8PtrTy(C, AS)->getPointerTo(), Type::getInt8PtrTy(C, AS),
+       Type::getInt8PtrTy(C, AS), Type::getInt8PtrTy(C, AS), Type::getInt32Ty(C),
+       Type::getInt8PtrTy(C, AS), Type::getInt8PtrTy(C, AS), Type::getInt8PtrTy(C, AS),
+       Type::getInt8PtrTy(C, AS), Type::getInt32PtrTy(C, AS)},
       /*isVarArg*/ false);
   FunctionCallee RegFunc = M.getOrInsertFunction(
       IsHIP ? "__hipRegisterFunction" : "__cudaRegisterFunction", RegFuncTy);
@@ -381,8 +382,8 @@ Function *createRegisterGlobalsFunction(Module &M, bool IsHIP) {
   // Get the __cudaRegisterVar function declaration.
   auto *RegVarTy = FunctionType::get(
       Type::getVoidTy(C),
-      {Type::getInt8PtrTy(C)->getPointerTo(), Type::getInt8PtrTy(C),
-       Type::getInt8PtrTy(C), Type::getInt8PtrTy(C), Type::getInt32Ty(C),
+      {Type::getInt8PtrTy(C, AS)->getPointerTo(), Type::getInt8PtrTy(C, AS),
+       Type::getInt8PtrTy(C, AS), Type::getInt8PtrTy(C, AS), Type::getInt32Ty(C),
        getSizeTTy(M), Type::getInt32Ty(C), Type::getInt32Ty(C)},
       /*isVarArg*/ false);
   FunctionCallee RegVar = M.getOrInsertFunction(
@@ -405,7 +406,7 @@ Function *createRegisterGlobalsFunction(Module &M, bool IsHIP) {
   EntriesE->setVisibility(GlobalValue::HiddenVisibility);
 
   auto *RegGlobalsTy = FunctionType::get(Type::getVoidTy(C),
-                                         Type::getInt8PtrTy(C)->getPointerTo(),
+                                         Type::getInt8PtrTy(C, AS)->getPointerTo(),
                                          /*isVarArg*/ false);
   auto *RegGlobalsFn =
       Function::Create(RegGlobalsTy, GlobalValue::InternalLinkage,
@@ -432,12 +433,12 @@ Function *createRegisterGlobalsFunction(Module &M, bool IsHIP) {
       Builder.CreateInBoundsGEP(getEntryTy(M), Entry,
                                 {ConstantInt::get(getSizeTTy(M), 0),
                                  ConstantInt::get(Type::getInt32Ty(C), 0)});
-  auto *Addr = Builder.CreateLoad(Type::getInt8PtrTy(C), AddrPtr, "addr");
+  auto *Addr = Builder.CreateLoad(Type::getInt8PtrTy(C, AS), AddrPtr, "addr");
   auto *NamePtr =
       Builder.CreateInBoundsGEP(getEntryTy(M), Entry,
                                 {ConstantInt::get(getSizeTTy(M), 0),
                                  ConstantInt::get(Type::getInt32Ty(C), 1)});
-  auto *Name = Builder.CreateLoad(Type::getInt8PtrTy(C), NamePtr, "name");
+  auto *Name = Builder.CreateLoad(Type::getInt8PtrTy(C, AS), NamePtr, "name");
   auto *SizePtr =
       Builder.CreateInBoundsGEP(getEntryTy(M), Entry,
                                 {ConstantInt::get(getSizeTTy(M), 0),
@@ -457,11 +458,11 @@ Function *createRegisterGlobalsFunction(Module &M, bool IsHIP) {
   Builder.CreateCall(RegFunc,
                      {RegGlobalsFn->arg_begin(), Addr, Name, Name,
                       ConstantInt::get(Type::getInt32Ty(C), -1),
-                      ConstantPointerNull::get(Type::getInt8PtrTy(C)),
-                      ConstantPointerNull::get(Type::getInt8PtrTy(C)),
-                      ConstantPointerNull::get(Type::getInt8PtrTy(C)),
-                      ConstantPointerNull::get(Type::getInt8PtrTy(C)),
-                      ConstantPointerNull::get(Type::getInt32PtrTy(C))});
+                      ConstantPointerNull::get(Type::getInt8PtrTy(C, AS)),
+                      ConstantPointerNull::get(Type::getInt8PtrTy(C, AS)),
+                      ConstantPointerNull::get(Type::getInt8PtrTy(C, AS)),
+                      ConstantPointerNull::get(Type::getInt8PtrTy(C, AS)),
+                      ConstantPointerNull::get(Type::getInt32PtrTy(C, AS))});
   Builder.CreateBr(IfEndBB);
   Builder.SetInsertPoint(IfElseBB);
 
@@ -518,6 +519,7 @@ Function *createRegisterGlobalsFunction(Module &M, bool IsHIP) {
 void createRegisterFatbinFunction(Module &M, GlobalVariable *FatbinDesc,
                                   bool IsHIP) {
   LLVMContext &C = M.getContext();
+  unsigned AS = M.getDataLayout().getDefaultGlobalsAddressSpace();
   auto *CtorFuncTy = FunctionType::get(Type::getVoidTy(C), /*isVarArg*/ false);
   auto *CtorFunc =
       Function::Create(CtorFuncTy, GlobalValue::InternalLinkage,
@@ -531,20 +533,20 @@ void createRegisterFatbinFunction(Module &M, GlobalVariable *FatbinDesc,
   DtorFunc->setSection(".text.startup");
 
   // Get the __cudaRegisterFatBinary function declaration.
-  auto *RegFatTy = FunctionType::get(Type::getInt8PtrTy(C)->getPointerTo(),
-                                     Type::getInt8PtrTy(C),
+  auto *RegFatTy = FunctionType::get(Type::getInt8PtrTy(C, AS)->getPointerTo(),
+                                     Type::getInt8PtrTy(C, AS),
                                      /*isVarArg*/ false);
   FunctionCallee RegFatbin = M.getOrInsertFunction(
       IsHIP ? "__hipRegisterFatBinary" : "__cudaRegisterFatBinary", RegFatTy);
   // Get the __cudaRegisterFatBinaryEnd function declaration.
   auto *RegFatEndTy = FunctionType::get(Type::getVoidTy(C),
-                                        Type::getInt8PtrTy(C)->getPointerTo(),
+                                        Type::getInt8PtrTy(C, AS)->getPointerTo(),
                                         /*isVarArg*/ false);
   FunctionCallee RegFatbinEnd =
       M.getOrInsertFunction("__cudaRegisterFatBinaryEnd", RegFatEndTy);
   // Get the __cudaUnregisterFatBinary function declaration.
   auto *UnregFatTy = FunctionType::get(Type::getVoidTy(C),
-                                       Type::getInt8PtrTy(C)->getPointerTo(),
+                                       Type::getInt8PtrTy(C, AS)->getPointerTo(),
                                        /*isVarArg*/ false);
   FunctionCallee UnregFatbin = M.getOrInsertFunction(
       IsHIP ? "__hipUnregisterFatBinary" : "__cudaUnregisterFatBinary",
@@ -556,19 +558,19 @@ void createRegisterFatbinFunction(Module &M, GlobalVariable *FatbinDesc,
   FunctionCallee AtExit = M.getOrInsertFunction("atexit", AtExitTy);
 
   auto *BinaryHandleGlobal = new llvm::GlobalVariable(
-      M, Type::getInt8PtrTy(C)->getPointerTo(), false,
+      M, Type::getInt8PtrTy(C, AS)->getPointerTo(), false,
       llvm::GlobalValue::InternalLinkage,
-      llvm::ConstantPointerNull::get(Type::getInt8PtrTy(C)->getPointerTo()),
+      llvm::ConstantPointerNull::get(Type::getInt8PtrTy(C, AS)->getPointerTo()),
       IsHIP ? ".hip.binary_handle" : ".cuda.binary_handle");
 
   // Create the constructor to register this image with the runtime.
   IRBuilder<> CtorBuilder(BasicBlock::Create(C, "entry", CtorFunc));
   CallInst *Handle = CtorBuilder.CreateCall(
       RegFatbin, ConstantExpr::getPointerBitCastOrAddrSpaceCast(
-                     FatbinDesc, Type::getInt8PtrTy(C)));
+                     FatbinDesc, Type::getInt8PtrTy(C, AS)));
   CtorBuilder.CreateAlignedStore(
       Handle, BinaryHandleGlobal,
-      Align(M.getDataLayout().getPointerTypeSize(Type::getInt8PtrTy(C))));
+      Align(M.getDataLayout().getPointerTypeSize(Type::getInt8PtrTy(C, AS))));
   CtorBuilder.CreateCall(createRegisterGlobalsFunction(M, IsHIP), Handle);
   if (!IsHIP)
     CtorBuilder.CreateCall(RegFatbinEnd, Handle);
@@ -580,8 +582,8 @@ void createRegisterFatbinFunction(Module &M, GlobalVariable *FatbinDesc,
   // `atexit()` intead.
   IRBuilder<> DtorBuilder(BasicBlock::Create(C, "entry", DtorFunc));
   LoadInst *BinaryHandle = DtorBuilder.CreateAlignedLoad(
-      Type::getInt8PtrTy(C)->getPointerTo(), BinaryHandleGlobal,
-      Align(M.getDataLayout().getPointerTypeSize(Type::getInt8PtrTy(C))));
+      Type::getInt8PtrTy(C, AS)->getPointerTo(), BinaryHandleGlobal,
+      Align(M.getDataLayout().getPointerTypeSize(Type::getInt8PtrTy(C, AS))));
   DtorBuilder.CreateCall(UnregFatbin, BinaryHandle);
   DtorBuilder.CreateRetVoid();
 

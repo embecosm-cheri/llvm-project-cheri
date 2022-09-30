@@ -116,6 +116,16 @@ enum NodeType : unsigned {
   // READ_CYCLE_WIDE - A read of the 64-bit cycle CSR on a 32-bit target
   // (returns (Lo, Hi)). It takes a chain operand.
   READ_CYCLE_WIDE,
+  CAP_CALL,
+  CAP_TAIL,
+  /// Legalised int_cheri_cap_tag_get
+  CAP_TAG_GET,
+  /// Legalised int_cheri_cap_sealed_get
+  CAP_SEALED_GET,
+  /// Legalised int_cheri_cap_subset_test
+  CAP_SUBSET_TEST,
+  /// Legalised int_cheri_cap_equal_exact
+  CAP_EQUAL_EXACT,
   // Generalized Reverse and Generalized Or-Combine - directly matching the
   // semantics of the named RISC-V instructions. Lowered as custom nodes as
   // TableGen chokes when faced with commutative permutations in deeply-nested
@@ -493,6 +503,8 @@ public:
   Register
   getExceptionSelectorRegister(const Constant *PersonalityFn) const override;
 
+  uint32_t getExceptionPointerAS() const override;
+
   bool shouldExtendTypeInLibCall(EVT Type) const override;
   bool shouldSignExtendTypeInLibCall(EVT Type, bool IsSigned) const override;
 
@@ -502,6 +514,9 @@ public:
   /// with the clang -ffixed-xX flag for access to be allowed.
   Register getRegisterByName(const char *RegName, LLT VT,
                              const MachineFunction &MF) const override;
+
+  EVT getOptimalMemOpType(const MemOp &Op,
+                          const AttributeList &FuncAttributes) const override;
 
   // Lower incoming arguments, copy physregs into vregs
   SDValue LowerFormalArguments(SDValue Chain, CallingConv::ID CallConv,
@@ -530,6 +545,12 @@ public:
 
   bool isMulAddWithConstProfitable(SDValue AddNode,
                                    SDValue ConstNode) const override;
+
+  AtomicExpansionKind shouldCastAtomicRMWIInIR(AtomicRMWInst *RMWI) const override;
+
+  bool supportsAtomicOperation(const DataLayout &DL, const Instruction *AI,
+                               Type *ValueTy, Type *PointerTy,
+                               Align Alignment) const override;
 
   TargetLowering::AtomicExpansionKind
   shouldExpandAtomicRMWInIR(AtomicRMWInst *AI) const override;
@@ -621,10 +642,12 @@ private:
                          RISCVCCAssignFn Fn) const;
 
   template <class NodeTy>
-  SDValue getAddr(NodeTy *N, SelectionDAG &DAG, bool IsLocal = true) const;
-  SDValue getStaticTLSAddr(GlobalAddressSDNode *N, SelectionDAG &DAG,
-                           bool UseGOT) const;
-  SDValue getDynamicTLSAddr(GlobalAddressSDNode *N, SelectionDAG &DAG) const;
+  SDValue getAddr(NodeTy *N, EVT Ty, SelectionDAG &DAG, bool IsLocal,
+                  bool CanDeriveFromPcc) const;
+  SDValue getStaticTLSAddr(GlobalAddressSDNode *N, EVT Ty, SelectionDAG &DAG,
+                           bool NotLocal) const;
+  SDValue getDynamicTLSAddr(GlobalAddressSDNode *N, EVT Ty,
+                            SelectionDAG &DAG) const;
 
   SDValue lowerGlobalAddress(SDValue Op, SelectionDAG &DAG) const;
   SDValue lowerBlockAddress(SDValue Op, SelectionDAG &DAG) const;
@@ -694,6 +717,12 @@ private:
 
   SDValue expandUnalignedRVVLoad(SDValue Op, SelectionDAG &DAG) const;
   SDValue expandUnalignedRVVStore(SDValue Op, SelectionDAG &DAG) const;
+
+  bool hasCapabilitySetAddress() const override { return true; }
+
+  TailPaddingAmount
+  getTailPaddingForPreciseBounds(uint64_t Size) const override;
+  Align getAlignmentForPreciseBounds(uint64_t Size) const override;
 
   bool isEligibleForTailCallOptimization(
       CCState &CCInfo, CallLoweringInfo &CLI, MachineFunction &MF,

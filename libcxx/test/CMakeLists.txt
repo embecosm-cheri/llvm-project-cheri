@@ -70,6 +70,8 @@ pythonize_bool(LIBCXX_HAVE_CXX_ATOMICS_WITH_LIB)
 pythonize_bool(LIBCXX_BUILD_EXTERNAL_THREAD_LIBRARY)
 pythonize_bool(LIBCXX_DEBUG_BUILD)
 pythonize_bool(LIBCXX_ENABLE_PARALLEL_ALGORITHMS)
+pythonize_bool(LIBCXX_RUN_LONG_TESTS)
+pythonize_bool(LIBCXX_SLOW_TEST_HOST)
 
 # By default, libcxx and libcxxabi share a library directory.
 if (NOT LIBCXX_CXX_ABI_LIBRARY_PATH)

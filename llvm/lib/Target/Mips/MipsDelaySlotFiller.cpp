@@ -349,8 +349,23 @@ void RegDefsUses::init(const MachineInstr &MI) {
 
   // If MI is a call, add RA to Defs to prevent users of RA from going into
   // delay slot.
-  if (MI.isCall())
-    Defs.set(Mips::RA);
+  if (MI.isCall()) {
+    assert(MI.getDesc().getNumImplicitDefs() <= 2 &&
+           "Expected one implicit def for call instruction");
+    for (unsigned i = 0; i < MI.getDesc().getNumImplicitDefs(); i++) {
+      MCPhysReg Reg = MI.getDesc().getImplicitDefs()[i];
+      // XXXAR: currently $cgp is marked as a def for cjalr since I don't see
+      // a better way to ensure that $cgp is saved and restored prior to the
+      // call. However, $cgp will only be clobbered after the cjalr instruction
+      // has been executed (and will still have the old value in the delay slot)
+      // so we should not count it as a def for the delay slot filler.
+      // Otherwise we can't move the restore of $cgp prior to the next call into
+      // delay slots.
+      if (Reg == Mips::C26)
+        continue;
+      Defs.set(Reg);
+    }
+  }
 
   // Add all implicit register operands of branch instructions except
   // register AT.
@@ -394,6 +409,10 @@ void RegDefsUses::setUnallocatableRegs(const MachineFunction &MF) {
 
   AllocSet.set(Mips::ZERO);
   AllocSet.set(Mips::ZERO_64);
+  if (MF.getSubtarget<MipsSubtarget>().isCheri()) {
+    AllocSet.set(Mips::CNULL);
+    AllocSet.set(Mips::DDC); // All writes to DDC are marked as hasSideEffects.
+  }
 
   Defs |= AllocSet.flip();
 }

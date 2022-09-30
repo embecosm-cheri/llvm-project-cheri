@@ -10,6 +10,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "clang/Basic/TargetInfo.h"
 #include "clang/AST/Type.h"
 #include "Linkage.h"
 #include "clang/AST/ASTContext.h"
@@ -116,7 +117,9 @@ bool QualType::isConstant(QualType T, const ASTContext &Ctx) {
 //       size is specified by a constant expression that is
 //       value-dependent,
 ArrayType::ArrayType(TypeClass tc, QualType et, QualType can,
-                     ArraySizeModifier sm, unsigned tq, const Expr *sz)
+                     ArraySizeModifier sm, unsigned tq,
+                     llvm::Optional<PointerInterpretationKind> PIK,
+                     const Expr *sz)
     // Note, we need to check for DependentSizedArrayType explicitly here
     // because we use a DependentSizedArrayType with no size expression as the
     // type of a dependent array of unknown bound with a dependent braced
@@ -136,6 +139,9 @@ ArrayType::ArrayType(TypeClass tc, QualType et, QualType can,
       ElementType(et) {
   ArrayTypeBits.IndexTypeQuals = tq;
   ArrayTypeBits.SizeModifier = sm;
+  ArrayTypeBits.HasPIK = PIK.has_value();
+  if (PIK.has_value())
+    ArrayTypeBits.PIK = *PIK;
 }
 
 unsigned ConstantArrayType::getNumAddressingBits(const ASTContext &Context,
@@ -189,7 +195,8 @@ void ConstantArrayType::Profile(llvm::FoldingSetNodeID &ID,
                                 const ASTContext &Context, QualType ET,
                                 const llvm::APInt &ArraySize,
                                 const Expr *SizeExpr, ArraySizeModifier SizeMod,
-                                unsigned TypeQuals) {
+                                unsigned TypeQuals,
+                                llvm::Optional<PointerInterpretationKind> PIK) {
   ID.AddPointer(ET.getAsOpaquePtr());
   ID.AddInteger(ArraySize.getZExtValue());
   ID.AddInteger(SizeMod);
@@ -197,14 +204,18 @@ void ConstantArrayType::Profile(llvm::FoldingSetNodeID &ID,
   ID.AddBoolean(SizeExpr != nullptr);
   if (SizeExpr)
     SizeExpr->Profile(ID, Context, true);
+  ID.AddBoolean(PIK.has_value());
+  if (PIK.has_value())
+    ID.AddInteger(*PIK);
 }
 
 DependentSizedArrayType::DependentSizedArrayType(const ASTContext &Context,
                                                  QualType et, QualType can,
                                                  Expr *e, ArraySizeModifier sm,
                                                  unsigned tq,
-                                                 SourceRange brackets)
-    : ArrayType(DependentSizedArray, et, can, sm, tq, e),
+                                                 SourceRange brackets,
+                                                 llvm::Optional<PointerInterpretationKind> PIK)
+    : ArrayType(DependentSizedArray, et, can, sm, tq, PIK, e),
       Context(Context), SizeExpr((Stmt*) e), Brackets(brackets) {}
 
 void DependentSizedArrayType::Profile(llvm::FoldingSetNodeID &ID,
@@ -212,11 +223,15 @@ void DependentSizedArrayType::Profile(llvm::FoldingSetNodeID &ID,
                                       QualType ET,
                                       ArraySizeModifier SizeMod,
                                       unsigned TypeQuals,
-                                      Expr *E) {
+                                      Expr *E,
+                                      llvm::Optional<PointerInterpretationKind> PIK) {
   ID.AddPointer(ET.getAsOpaquePtr());
   ID.AddInteger(SizeMod);
   ID.AddInteger(TypeQuals);
   E->Profile(ID, Context, true);
+  ID.AddBoolean(PIK.has_value());
+  if (PIK.has_value())
+    ID.AddInteger(*PIK);
 }
 
 DependentVectorType::DependentVectorType(const ASTContext &Context,
@@ -280,6 +295,26 @@ void DependentAddressSpaceType::Profile(llvm::FoldingSetNodeID &ID,
                                         Expr *AddrSpaceExpr) {
   ID.AddPointer(PointeeType.getAsOpaquePtr());
   AddrSpaceExpr->Profile(ID, Context, true);
+}
+
+DependentPointerType::DependentPointerType(const ASTContext &Context,
+                                           QualType PointerType,
+                                           QualType Canonical,
+                                           PointerInterpretationKind PIK,
+                                           SourceLocation Loc)
+    : Type(DependentPointer, Canonical,
+           TypeDependence::DependentInstantiation |
+               PointerType->getDependence()),
+      Context(Context), PointerType(PointerType), Loc(Loc) {
+  DependentPointerTypeBits.PIK = PIK;
+}
+
+void DependentPointerType::Profile(llvm::FoldingSetNodeID &ID,
+                                   const ASTContext &Context,
+                                   QualType PointerType,
+                                   PointerInterpretationKind PIK) {
+  ID.AddPointer(PointerType.getAsOpaquePtr());
+  ID.AddInteger(PIK);
 }
 
 MatrixType::MatrixType(TypeClass tc, QualType matrixType, QualType canonType,
@@ -584,6 +619,83 @@ bool Type::isStructureOrClassType() const {
     return RD->isStruct() || RD->isClass() || RD->isInterface();
   }
   return false;
+}
+
+bool Type::isCHERICapabilityType(const ASTContext &Context,
+                                 bool IncludeIntCap) const {
+  if (const PointerType *PT = getAs<PointerType>())
+    return PT->isCHERICapability();
+  else if (const ReferenceType *RT = getAs<ReferenceType>())
+    return RT->isCHERICapability();
+  else if (isObjCObjectPointerType() || isBlockPointerType())
+    return Context.getTargetInfo().areAllPointersCapabilities();
+  else if (const EnumType *ET = getAs<EnumType>()) {
+    QualType Ty = ET->getDecl()->getIntegerType();
+    return Ty.isNull() ? false
+                       : Ty->isCHERICapabilityType(Context, IncludeIntCap);
+  } else if (const BuiltinType *BT = getAs<BuiltinType>()) {
+    auto Kind = BT->getKind();
+    if (Kind == BuiltinType::IntCap ||
+        Kind == BuiltinType::UIntCap)
+      return IncludeIntCap;
+    if (Kind == BuiltinType::ObjCId || Kind == BuiltinType::NullPtr)
+      return Context.getTargetInfo().areAllPointersCapabilities();
+  } else if (const AtomicType *AT = getAs<AtomicType>())
+    return AT->getValueType()->isCHERICapabilityType(Context, IncludeIntCap);
+  else if (const MemberPointerType *MPT = getAs<MemberPointerType>())
+    // XXXAR: Currently member function pointers contain capabities, but
+    // pointers to member data don't
+    return Context.getTargetInfo().areAllPointersCapabilities() && MPT->isMemberFunctionPointer();
+  return false;
+}
+
+bool Type::isIntCapType() const {
+  if (const BuiltinType *BT = dyn_cast<BuiltinType>(CanonicalType))
+    return BT->getKind() == BuiltinType::IntCap ||
+           BT->getKind() == BuiltinType::UIntCap;
+  // Also handle enums with underlying type __intcap_t
+  if (const EnumType *ET = dyn_cast<EnumType>(CanonicalType)) {
+    QualType Ty = ET->getDecl()->getIntegerType();
+    if (!Ty.isNull())
+      return Ty->isIntCapType();
+  } else if (const AtomicType *AT = getAs<AtomicType>()) {
+    return AT->getValueType()->isIntCapType();
+  }
+  return false;
+}
+
+bool Type::isCapabilityPointerType() const {
+  if (const PointerType *PT = getAs<PointerType>())
+    return PT->isCHERICapability();
+  else if (const AtomicType *AT = getAs<AtomicType>())
+    return AT->getValueType()->isCapabilityPointerType();
+  return false;
+}
+
+bool Type::canCarryProvenance(const ASTContext &C) const {
+  if (!isCHERICapabilityType(C)) {
+    // In pure-capability mode we know that only capabilities carry provenance
+    if (C.getTargetInfo().areAllPointersCapabilities())
+      return false;
+    // In certain cases in hybrid mode, pointer types can be implicitly
+    // converted to capabilities so even though they don't carry provenance,
+    // the resulting type might do.
+    // However, null pointers never carry provenance.
+    if (!isPointerType())
+      return false;
+    return !isNullPtrType();
+  }
+  if (isNullPtrType())
+    return false;
+  if (hasAttr(attr::CHERINoProvenance))
+    return false; // avoid doubly-annotating a type
+  if (const EnumType *ET = dyn_cast<EnumType>(CanonicalType)) {
+    return ET->getDecl()->getIntegerType()->canCarryProvenance(C);
+  } else if (const AtomicType *AT = getAs<AtomicType>()) {
+    return AT->getValueType()->canCarryProvenance(C);
+  }
+  // Some other kind of capability type -> assume it can carry provenance
+  return true;
 }
 
 bool Type::isVoidPointerType() const {
@@ -903,7 +1015,7 @@ public:
     if (pointeeType.getAsOpaquePtr() == T->getPointeeType().getAsOpaquePtr())
       return QualType(T, 0);
 
-    return Ctx.getPointerType(pointeeType);
+    return Ctx.getPointerType(pointeeType, T->getPointerInterpretation());
   }
 
   QualType VisitBlockPointerType(const BlockPointerType *T) {
@@ -926,7 +1038,8 @@ public:
           == T->getPointeeTypeAsWritten().getAsOpaquePtr())
       return QualType(T, 0);
 
-    return Ctx.getLValueReferenceType(pointeeType, T->isSpelledAsLValue());
+    return Ctx.getLValueReferenceType(pointeeType, T->isSpelledAsLValue(),
+                                      T->getPointerInterpretation());
   }
 
   QualType VisitRValueReferenceType(const RValueReferenceType *T) {
@@ -938,7 +1051,8 @@ public:
           == T->getPointeeTypeAsWritten().getAsOpaquePtr())
       return QualType(T, 0);
 
-    return Ctx.getRValueReferenceType(pointeeType);
+    return Ctx.getRValueReferenceType(pointeeType,
+                                      T->getPointerInterpretation());
   }
 
   QualType VisitMemberPointerType(const MemberPointerType *T) {
@@ -2750,6 +2864,11 @@ bool QualType::isCXX11PODType(const ASTContext &Context) const {
   return false;
 }
 
+bool Type::isCXXStructureOrClassType() const {
+  CXXRecordDecl *CRD = getAsCXXRecordDecl();
+  return CRD && isStructureOrClassType();
+}
+
 bool Type::isNothrowT() const {
   if (const auto *RD = getAsCXXRecordDecl()) {
     IdentifierInfo *II = RD->getIdentifier();
@@ -2998,6 +3117,8 @@ StringRef BuiltinType::getName(const PrintingPolicy &Policy) const {
     return "long long";
   case Int128:
     return "__int128";
+  case IntCap:
+    return "__intcap";
   case UChar:
     return "unsigned char";
   case UShort:
@@ -3010,6 +3131,8 @@ StringRef BuiltinType::getName(const PrintingPolicy &Policy) const {
     return "unsigned long long";
   case UInt128:
     return "unsigned __int128";
+  case UIntCap:
+    return "unsigned __intcap";
   case Half:
     return Policy.Half ? "half" : "__fp16";
   case BFloat16:
@@ -3174,6 +3297,9 @@ QualType QualType::getNonLValueExprType(const ASTContext &Context) const {
 StringRef FunctionType::getNameForCallConv(CallingConv CC) {
   switch (CC) {
   case CC_C: return "cdecl";
+  case CC_CHERICCall: return "cheri_ccall";
+  case CC_CHERICCallee: return "cheri_ccallee";
+  case CC_CHERICCallback: return "attr_cheri_ccallback";
   case CC_X86StdCall: return "stdcall";
   case CC_X86FastCall: return "fastcall";
   case CC_X86ThisCall: return "thiscall";
@@ -3592,6 +3718,8 @@ bool AttributedType::isQualifier() const {
   case attr::TypeNullUnspecified:
   case attr::LifetimeBound:
   case attr::AddressSpace:
+  case attr::CHERICapability:
+  case attr::MemoryAddress:
     return true;
 
   // All other type attributes aren't qualifiers; they rewrite the modified
@@ -3620,6 +3748,9 @@ bool AttributedType::isCallingConv() const {
   default: return false;
   case attr::Pcs:
   case attr::CDecl:
+  case attr::CHERICCall:
+  case attr::CHERICCallback:
+  case attr::CHERICCallee:
   case attr::FastCall:
   case attr::StdCall:
   case attr::ThisCall:
@@ -4215,6 +4346,7 @@ bool Type::canHaveNullability(bool ResultIfUnknown) const {
   case Type::ConstantMatrix:
   case Type::DependentSizedMatrix:
   case Type::DependentAddressSpace:
+  case Type::DependentPointer:
   case Type::FunctionProto:
   case Type::FunctionNoProto:
   case Type::Record:

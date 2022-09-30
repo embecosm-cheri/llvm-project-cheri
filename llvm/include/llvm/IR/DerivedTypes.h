@@ -646,11 +646,13 @@ public:
   /// space.
   static PointerType *get(LLVMContext &C, unsigned AddressSpace);
 
+#ifndef LLVM_NO_DEFAULT_ADDRESS_SPACE
   /// This constructs a pointer to an object of the specified type in the
   /// default address space (address space zero).
   static PointerType *getUnqual(Type *ElementType) {
     return PointerType::get(ElementType, 0);
   }
+#endif
 
   /// This constructs an opaque pointer to an object in the
   /// default address space (address space zero).

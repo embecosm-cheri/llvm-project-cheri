@@ -596,17 +596,17 @@ define void @test_psrlq_by_volatile_shift_amount(ptr %t) nounwind {
 ; X64-NEXT:    retq
 entry:
   %0 = alloca i32, align 4
-  call void @llvm.lifetime.start(i64 4, ptr nonnull %0)
+  call void @llvm.lifetime.start.p0i8(i64 4, ptr nonnull %0)
   store volatile i32 1, ptr %0, align 4
   %1 = load volatile i32, ptr %0, align 4
   %2 = tail call x86_mmx @llvm.x86.mmx.psrli.q(x86_mmx bitcast (<1 x i64> <i64 255> to x86_mmx), i32 %1)
   store x86_mmx %2, ptr %t, align 8
-  call void @llvm.lifetime.end(i64 4, ptr nonnull %0)
+  call void @llvm.lifetime.end.p0i8(i64 4, ptr nonnull %0)
   ret void
 }
 
-declare void @llvm.lifetime.start(i64, ptr nocapture)
-declare void @llvm.lifetime.end(i64, ptr nocapture)
+declare void @llvm.lifetime.start.p0i8(i64, ptr nocapture)
+declare void @llvm.lifetime.end.p0i8(i64, ptr nocapture)
 
 ; Make sure we shrink this vector load and fold it.
 define x86_mmx @vec_load(ptr %x) {

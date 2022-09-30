@@ -59,7 +59,8 @@ static MCInstrInfo *createSparcMCInstrInfo() {
   return X;
 }
 
-static MCRegisterInfo *createSparcMCRegisterInfo(const Triple &TT) {
+static MCRegisterInfo *
+createSparcMCRegisterInfo(const Triple &TT, const MCTargetOptions &Options) {
   MCRegisterInfo *X = new MCRegisterInfo();
   InitSparcMCRegisterInfo(X, SP::O7);
   return X;

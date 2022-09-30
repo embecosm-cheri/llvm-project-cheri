@@ -23,6 +23,7 @@ namespace elf {
 
 class InputFile;
 class Symbol;
+class DynamicReloc;
 
 class Defined;
 struct Partition;
@@ -183,12 +184,16 @@ public:
 
   // Get the function symbol that encloses this offset from within the
   // section.
-  Defined *getEnclosingFunction(uint64_t offset);
+  Defined *getEnclosingFunction(uint64_t offset) const;
+  template <class ELFT>
+  Defined *getEnclosingObject(uint64_t offset) const;
+  template <class ELFT, unsigned SymbolType>
+  Defined *getEnclosingSymbol(uint64_t offset) const;
 
   // Returns a source location string. Used to construct an error message.
-  std::string getLocation(uint64_t offset);
-  std::string getSrcMsg(const Symbol &sym, uint64_t offset);
-  std::string getObjMsg(uint64_t offset);
+  std::string getLocation(uint64_t offset) const;
+  std::string getSrcMsg(const Symbol &sym, uint64_t offset) const;
+  std::string getObjMsg(uint64_t offset) const;
 
   // Each section knows how to relocate itself. These functions apply
   // relocations, assuming that Buf points to this section's copy in
@@ -197,7 +202,8 @@ public:
   void relocateAlloc(uint8_t *buf, uint8_t *bufEnd);
   static uint64_t getRelocTargetVA(const InputFile *File, RelType Type,
                                    int64_t A, uint64_t P, const Symbol &Sym,
-                                   RelExpr Expr);
+                                   RelExpr Expr, const InputSectionBase *isec,
+                                   uint64_t offset);
 
   // The native ELF reloc data type is not very convenient to handle.
   // So we convert ELF reloc records to our own records in Relocations.cpp.

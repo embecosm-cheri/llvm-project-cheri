@@ -7,7 +7,7 @@
 
 declare ptr @llvm.frameaddress(i32) nounwind readnone
 
-declare ptr @llvm.stacksave() nounwind
+declare ptr @llvm.stacksave.p0i8() nounwind
 
 declare i32 @llvm.eh.sjlj.setjmp(ptr) nounwind
 
@@ -16,7 +16,7 @@ declare void @llvm.eh.sjlj.longjmp(ptr) nounwind
 define i32 @sj0() nounwind {
   %fp = tail call ptr @llvm.frameaddress(i32 0)
   store ptr %fp, ptr @buf, align 16
-  %sp = tail call ptr @llvm.stacksave()
+  %sp = tail call ptr @llvm.stacksave.p0i8()
   store ptr %sp, ptr getelementptr inbounds ([5 x ptr], ptr @buf, i64 0, i64 2), align 16
   %r = tail call i32 @llvm.eh.sjlj.setjmp(ptr @buf)
   ret i32 %r

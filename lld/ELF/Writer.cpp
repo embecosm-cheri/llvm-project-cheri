@@ -20,6 +20,7 @@
 #include "Symbols.h"
 #include "SyntheticSections.h"
 #include "Target.h"
+#include "Arch/Cheri.h"
 #include "lld/Common/Arrays.h"
 #include "lld/Common/CommonLinkerContext.h"
 #include "lld/Common/Filesystem.h"
@@ -95,6 +96,10 @@ static bool needsInterpSection() {
          !config->dynamicLinker.empty() && script->needsInterpSection();
 }
 
+bool elf::hasDynamicLinker() {
+  return config->shared || config->pie || !sharedFiles.empty();
+}
+
 template <class ELFT> void elf::writeResult() {
   Writer<ELFT>().run();
 }
@@ -162,8 +167,25 @@ void elf::combineEhSections() {
   llvm::erase_value(inputSections, nullptr);
 }
 
+template <class ELFT> void elf::combineCapRelocsSections() {
+  for (InputSectionBase *&s : inputSections) {
+    if (s->name != "__cap_relocs")
+      continue;
+    // Factory.addInputSec(S, getOutputSectionName(S->Name), InX<ELFT>::CapRelocs->OutSec);
+
+    // We only gather the sections here and add the cap_relocs during
+    // finalizeContents() The reason for this is that we don't know if symbols
+    // are preemptible when this function is called.
+    InX<ELFT>::capRelocs->addSection(s);
+    s = nullptr;
+  }
+  std::vector<InputSectionBase *> &v = inputSections;
+  v.erase(std::remove(v.begin(), v.end(), nullptr), v.end());
+}
+
 static Defined *addOptionalRegular(StringRef name, SectionBase *sec,
-                                   uint64_t val, uint8_t stOther = STV_HIDDEN) {
+                                   uint64_t val, uint8_t stOther = STV_HIDDEN,
+                                   bool canBeSectionStart = true) {
   Symbol *s = symtab->find(name);
   if (!s || s->isDefined() || s->isCommon())
     return nullptr;
@@ -171,6 +193,17 @@ static Defined *addOptionalRegular(StringRef name, SectionBase *sec,
   s->resolve(Defined{nullptr, StringRef(), STB_GLOBAL, stOther, STT_NOTYPE, val,
                      /*size=*/0, sec});
   s->isUsedInRegularObj = true;
+  // If Val == 0 assume this symbol references the start of a section.
+  // When targetting CHERI we set the size of that symbol since otherwise
+  // an expression like foo = &_DYNAMIC will create a zero-length capability
+  // for foo and most likely crash the program.
+  // TODO: I would like to do this for all targets but that might cause
+  // compatibility issues
+  if (val == 0 && canBeSectionStart) {
+    log("Treating " + name + " as a section start symbol");
+    s->isSectionStartSymbol = true;
+  }
+
   return cast<Defined>(s);
 }
 
@@ -321,9 +354,22 @@ template <class ELFT> void elf::createSyntheticSections() {
       hasDataRelRo ? ".data.rel.ro.bss" : ".bss.rel.ro", 0, 1);
   add(*in.bssRelRo);
 
+  if (config->capabilitySize > 0) {
+    InX<ELFT>::capRelocs = make<CheriCapRelocsSection<ELFT>>();
+    in.cheriCapTable = make<CheriCapTableSection>();
+    add(in.cheriCapTable);
+    if (config->capTableScope != CapTableScopePolicy::All) {
+      in.cheriCapTableMapping = make<CheriCapTableMappingSection>();
+      add(in.cheriCapTableMapping);
+    }
+  }
+
   // Add MIPS-specific sections.
   if (config->emachine == EM_MIPS) {
-    if (!config->shared && config->hasDynSymTab) {
+    // XXXAR: also add the RLD_MAP dynamic tags to rtld so that we can use
+    // gdb with rtld direct exec mode.
+    // TODO: should probably try to build rtld as PIE instead?
+    if ((!config->shared || config->buildingFreeBSDRtld) && config->hasDynSymTab) {
       in.mipsRldMap = std::make_unique<MipsRldMapSection>();
       add(*in.mipsRldMap);
     }
@@ -763,7 +809,7 @@ template <class ELFT> void Writer<ELFT>::addSectionSymbols() {
 //
 // This function returns true if a section needs to be put into a
 // PT_GNU_RELRO segment.
-static bool isRelroSection(const OutputSection *sec) {
+bool elf::isRelroSection(const OutputSection *sec) {
   if (!config->zRelro)
     return false;
   if (sec->relro)
@@ -818,6 +864,14 @@ static bool isRelroSection(const OutputSection *sec) {
   if (sec == in.gotPlt->getParent())
     return config->zNow;
 
+  // Similarly the CHERI capability table is also relro since the capabilities
+  // in the table need to be initialized at runtime to set the tag bits
+  if (in.cheriCapTable && sec == in.cheriCapTable->getParent()) {
+    // Without -z now, the PLT stubs can update the captable entries so we
+    // can't mark it as relro. It can also be relro for static binaries:
+    return config->zNow || !config->isPic;
+  }
+
   // .dynamic section contains data for the dynamic linker, and
   // there's no need to write to it at runtime, so it's better to put
   // it into RELRO.
@@ -832,7 +886,8 @@ static bool isRelroSection(const OutputSection *sec) {
   return s == ".data.rel.ro" || s == ".bss.rel.ro" || s == ".ctors" ||
          s == ".dtors" || s == ".jcr" || s == ".eh_frame" ||
          s == ".fini_array" || s == ".init_array" ||
-         s == ".openbsd.randomdata" || s == ".preinit_array";
+         s == ".openbsd.randomdata" || s == ".preinit_array" ||
+         s == "__cap_relocs" || s == ".gcc_except_table";
 }
 
 // We compute a rank for each section. The rank indicates where the
@@ -1866,9 +1921,22 @@ template <class ELFT> void Writer<ELFT>::finalizeSections() {
   // It should be okay as no one seems to care about the type.
   // Even the author of gold doesn't remember why gold behaves that way.
   // https://sourceware.org/ml/binutils/2002-03/msg00360.html
-  if (mainPart->dynamic->parent)
+  if (mainPart->dynamic->parent) {
     symtab->addSymbol(Defined{/*file=*/nullptr, "_DYNAMIC", STB_WEAK, STV_HIDDEN, STT_NOTYPE,
         /*value=*/0, /*size=*/0, mainPart->dynamic.get()})->isUsedInRegularObj = true;
+    // In CheriABI we want sensible bounds if we do &_DYNAMIC in C code
+    s->isSectionStartSymbol = true;
+  }
+
+  // The common check if a program is dynamically linked (&_DYNAMIC != 0)
+  // will not work in the early CHERI startup. In PIC code we also can't
+  // use dla _DYNAMIC since that needs either $gp or text relocations
+  // Instead we just let the linker generate a new symbol _HAS__DYNAMIC
+  if (auto *reference = symtab->find("_HAS__DYNAMIC"))
+    if (!reference->isDefined()) {
+      Defined *hasDynamicSym = addAbsolute("_HAS__DYNAMIC");
+      hasDynamicSym->value = needsDYNAMIC ? 1 : 0;
+    }
 
   // Define __rel[a]_iplt_{start,end} symbols if needed.
   addRelIpltSymbols();
@@ -1905,6 +1973,15 @@ template <class ELFT> void Writer<ELFT>::finalizeSections() {
     }
   }
 
+  StringRef captableSym = "_CHERI_CAPABILITY_TABLE_";
+  if (in.cheriCapTable) {
+    // When creating relocatable output we should not define the
+    // _CHERI_CAPABILITY_TABLE_ symbol because otherwise we get duplicate
+    // symbol errors when linking that into a final executable
+    if (!config->relocatable)
+      ElfSym::cheriCapabilityTable =
+          addOptionalRegular(captableSym, in.cheriCapTable, 0);
+  }
   {
     llvm::TimeTraceScope timeScope("Finalize .eh_frame");
     // This responsible for splitting up .eh_frame section into
@@ -1950,6 +2027,29 @@ template <class ELFT> void Writer<ELFT>::finalizeSections() {
       reportUndefinedSymbols();
       postScanRelocations();
     }
+  }
+
+  // Do the cap table index assignment
+  // Must come before CapRelocs->finalizeContents() because it can add
+  // __cap_relocs
+  if (in.cheriCapTable) {
+    // Ensure that we always have a _CHERI_CAPABILITY_TABLE_ symbol if the
+    // cap table exists. This makes llvm-objdump more useful since it can now
+    // print the target of a cap table load
+    if (!ElfSym::cheriCapabilityTable && in.cheriCapTable->isNeeded()) {
+      ElfSym::cheriCapabilityTable = cast<Defined>(
+          symtab->addSymbol(Defined{nullptr, captableSym, STB_LOCAL,
+            STV_HIDDEN, STT_NOTYPE, 0, 0, in.cheriCapTable}));
+      ElfSym::cheriCapabilityTable->isSectionStartSymbol = true;
+      assert(!ElfSym::cheriCapabilityTable->isPreemptible);
+    }
+    in.cheriCapTable->assignValuesAndAddCapTableSymbols<ELFT>();
+  }
+
+  // Now handle __cap_relocs (must be before RelaDyn because it might
+  // result in new dynamic relocations being added)
+  if (InX<ELFT>::capRelocs) {
+    finalizeSynthetic(InX<ELFT>::capRelocs);
   }
 
   if (in.plt && in.plt->isNeeded())
@@ -2178,6 +2278,35 @@ template <class ELFT> void Writer<ELFT>::finalizeSections() {
   // of finalizing other sections.
   for (OutputSection *sec : outputSections)
     sec->finalize();
+
+  // If a synthetic section was removed from the output we have to manually
+  // change the start&stop symbols to be NULL since otherwise we create a
+  // corrupted symbol table
+  // XXXAR: I think this only affects __cap_relocs since the other potentially
+  // empty synthetic sections will not have start stop symbols
+  for (Symbol *s : symtab->getSymbols()) {
+    auto *reg = dyn_cast<Defined>(s);
+    if (!reg)
+      continue;
+    if (const OutputSection *outSec = reg->getOutputSection())
+      // XXXAR: Out::ElfHeader is a special output section and will never be
+      // marked as live. We still need keep symbols pointing there since they
+      // will then point to the first output section
+      // See assignment above:   Out::ElfHeader->SectionIndex = 1;
+      // Ditto for LinkerScript's "aether" otherwise we will zero out all
+      // symbol assignments outside output sections.
+
+      if (!outSec->isLive() && outSec != Out::elfHeader &&
+          !script->isAether(outSec)) {
+        // errs() << "Symbol " << toString(*Reg) << " points to garbage collected output section " << OutSec->Name << "\n";
+        reg->type = STT_NOTYPE;
+        reg->section = nullptr;
+        reg->value = 0;
+        reg->size = 0;
+        /* Avoid crashes when calling getSize() */
+        reg->isSectionStartSymbol = false;
+      }
+  }
 }
 
 // Ensure data sections are not mixed with executable sections when
@@ -2225,14 +2354,25 @@ template <class ELFT> void Writer<ELFT>::addStartEndSymbols() {
       addOptionalRegular(start, os, 0);
       addOptionalRegular(end, os, -1);
     } else {
-      addOptionalRegular(start, Default, 0);
-      addOptionalRegular(end, Default, 0);
+      // Since this is an empty section we don't want to set canBeSectionStart
+      // Iterating over this should terminate immediately so setting the size
+      // to zero is fine
+      addOptionalRegular(start, Default, 0, STV_HIDDEN, STB_GLOBAL,
+                         /*canBeSectionStart=*/false);
+      // End is not a section start symbol even though it has value 0:
+      addOptionalRegular(end, Default, 0, STV_HIDDEN, STB_GLOBAL,
+                         /*canBeSectionStart=*/false);
     }
   };
 
   define("__preinit_array_start", "__preinit_array_end", Out::preinitArray);
   define("__init_array_start", "__init_array_end", Out::initArray);
   define("__fini_array_start", "__fini_array_end", Out::finiArray);
+  define("__ctors_start", "__ctors_end", findSection(".ctors"));
+  define("__dtors_start", "__dtors_end", findSection(".dtors"));
+  if (in.cheriCapTable)
+    define("__cap_table_start", "__cap_table_end",
+           in.cheriCapTable->getOutputSection());
 
   if (OutputSection *sec = findSection(".ARM.exidx"))
     define("__exidx_start", "__exidx_end", sec);
@@ -3006,3 +3146,8 @@ template void elf::writeResult<ELF32LE>();
 template void elf::writeResult<ELF32BE>();
 template void elf::writeResult<ELF64LE>();
 template void elf::writeResult<ELF64BE>();
+
+template void elf::combineCapRelocsSections<ELF32LE>();
+template void elf::combineCapRelocsSections<ELF32BE>();
+template void elf::combineCapRelocsSections<ELF64LE>();
+template void elf::combineCapRelocsSections<ELF64BE>();

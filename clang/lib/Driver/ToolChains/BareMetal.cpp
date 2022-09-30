@@ -12,6 +12,7 @@
 #include "Gnu.h"
 #include "clang/Driver/InputInfo.h"
 
+#include "Arch/Mips.h"
 #include "Arch/RISCV.h"
 #include "clang/Driver/Compilation.h"
 #include "clang/Driver/Driver.h"
@@ -139,6 +140,23 @@ static bool isAArch64BareMetal(const llvm::Triple &Triple) {
   return Triple.getEnvironmentName() == "elf";
 }
 
+/// Allow mips*-none-elf
+static bool isMIPSBareMetal(const llvm::Triple& Triple) {
+  switch(Triple.getArch()) {
+  case llvm::Triple::mips:
+  case llvm::Triple::mips64el:
+  case llvm::Triple::mips64:
+  case llvm::Triple::mipsel:
+    if (Triple.getVendor() != llvm::Triple::UnknownVendor)
+      return false;
+    if (Triple.getOS() != llvm::Triple::UnknownOS)
+      return false;
+    return Triple.isOSBinFormatELF();
+  default:
+    return false;
+  }
+}
+
 static bool isRISCVBareMetal(const llvm::Triple &Triple) {
   if (Triple.getArch() != llvm::Triple::riscv32 &&
       Triple.getArch() != llvm::Triple::riscv64)
@@ -166,7 +184,7 @@ void BareMetal::findMultilibs(const Driver &D, const llvm::Triple &Triple,
 
 bool BareMetal::handlesTarget(const llvm::Triple &Triple) {
   return isARMBareMetal(Triple) || isAArch64BareMetal(Triple) ||
-         isRISCVBareMetal(Triple);
+         isMIPSBareMetal(Triple) || isRISCVBareMetal(Triple);
 }
 
 Tool *BareMetal::buildLinker() const {
@@ -182,6 +200,16 @@ std::string BareMetal::buildCompilerRTBasename(const llvm::opt::ArgList &,
 }
 
 std::string BareMetal::getRuntimesDir() const {
+  if (getTriple().isMIPS()) {
+    SmallString<128> Dir(getDriver().SysRoot);
+    if (Dir.empty())
+      Dir = getDriver().ResourceDir;
+    if (isCheriPurecap())
+      llvm::sys::path::append(Dir, "libcheri");
+    else
+      llvm::sys::path::append(Dir, "lib");
+    return Dir.str().str();
+  }
   SmallString<128> Dir(getDriver().ResourceDir);
   llvm::sys::path::append(Dir, "lib", "baremetal");
   Dir += SelectedMultilib.gccSuffix();
@@ -278,7 +306,7 @@ void BareMetal::AddCXXStdlibLibArgs(const ArgList &Args,
     CmdArgs.push_back("-lc++");
     if (Args.hasArg(options::OPT_fexperimental_library))
       CmdArgs.push_back("-lc++experimental");
-    CmdArgs.push_back("-lc++abi");
+    CmdArgs.push_back(getTriple().isMIPS() ? "-lcxxrt" : "-lc++abi");
     break;
   case ToolChain::CST_Libstdcxx:
     CmdArgs.push_back("-lstdc++");
@@ -292,10 +320,22 @@ void BareMetal::AddLinkRuntimeLib(const ArgList &Args,
                                   ArgStringList &CmdArgs) const {
   ToolChain::RuntimeLibType RLT = GetRuntimeLibType(Args);
   switch (RLT) {
-  case ToolChain::RLT_CompilerRT:
-    CmdArgs.push_back(
-        Args.MakeArgString("-lclang_rt.builtins-" + getTriple().getArchName()));
+  case ToolChain::RLT_CompilerRT: {
+    SmallString<32> LibName("-lclang_rt.builtins-");
+    if (getTriple().isMIPS()) {
+      if (getTriple().getArch() == llvm::Triple::mips64 && !isCheriPurecap()) {
+        LibName += "mips64";
+      } else if (getTriple().isMIPS() && isCheriPurecap()) {
+        LibName += "cheri"; // TODO: would be nice to have CHERI size here
+      } else {
+        LibName += getTriple().getArchName();
+      }
+    } else {
+      LibName += getTriple().getArchName();
+    }
+    CmdArgs.push_back(Args.MakeArgString(LibName));
     return;
+  }
   case ToolChain::RLT_Libgcc:
     CmdArgs.push_back("-lgcc");
     return;

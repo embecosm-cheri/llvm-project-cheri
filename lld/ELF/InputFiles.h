@@ -115,6 +115,7 @@ public:
   uint16_t emachine = llvm::ELF::EM_NONE;
   const Kind fileKind;
   ELFKind ekind = ELFNoneKind;
+  uint64_t eflags = 0;
   uint8_t osabi = 0;
   uint8_t abiVersion = 0;
 
@@ -244,7 +245,7 @@ public:
     return getSymbol(symIndex);
   }
 
-  llvm::Optional<llvm::DILineInfo> getDILineInfo(InputSectionBase *, uint64_t);
+  llvm::Optional<llvm::DILineInfo> getDILineInfo(const InputSectionBase *, uint64_t);
   llvm::Optional<std::pair<std::string, unsigned>> getVariableLoc(StringRef name);
 
   // Name of source file obtained from STT_FILE symbol value,
@@ -333,6 +334,7 @@ public:
   SharedFile(MemoryBufferRef m, StringRef defaultSoName)
       : ELFFileBase(SharedKind, m), soName(defaultSoName),
         isNeeded(!config->asNeeded) {}
+  uint64_t cheriFlags = 0;
 
   // This is actually a vector of Elf_Verdef pointers.
   SmallVector<const void *, 0> verdefs;

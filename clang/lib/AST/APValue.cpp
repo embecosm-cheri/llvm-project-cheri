@@ -377,9 +377,12 @@ APValue::APValue(const APValue &RHS) : Kind(None) {
     setAddrLabelDiff(RHS.getAddrLabelDiffLHS(), RHS.getAddrLabelDiffRHS());
     break;
   }
+  MustBeNullDerivedCap = RHS.MustBeNullDerivedCap;
 }
 
-APValue::APValue(APValue &&RHS) : Kind(RHS.Kind), Data(RHS.Data) {
+APValue::APValue(APValue &&RHS)
+    : Kind(RHS.Kind), MustBeNullDerivedCap(RHS.MustBeNullDerivedCap),
+      Data(RHS.Data) {
   RHS.Kind = None;
 }
 
@@ -393,6 +396,7 @@ APValue &APValue::operator=(APValue &&RHS) {
   if (Kind != None && Kind != Indeterminate)
     DestroyDataAndMakeUninit();
   Kind = RHS.Kind;
+  MustBeNullDerivedCap = RHS.MustBeNullDerivedCap;
   Data = RHS.Data;
   RHS.Kind = None;
   return *this;
@@ -465,6 +469,7 @@ bool APValue::needsCleanup() const {
 
 void APValue::swap(APValue &RHS) {
   std::swap(Kind, RHS.Kind);
+  std::swap(MustBeNullDerivedCap, RHS.MustBeNullDerivedCap);
   std::swap(Data, RHS.Data);
 }
 
@@ -1011,6 +1016,7 @@ void APValue::setLValue(LValueBase B, const CharUnits &O, NoLValuePath,
   LVal.Offset = O;
   LVal.resizePath((unsigned)-1);
   LVal.IsNullPtr = IsNullPtr;
+  setMustBeNullDerivedCap(B.isNull() || IsNullPtr);
 }
 
 MutableArrayRef<APValue::LValuePathEntry>
@@ -1022,6 +1028,7 @@ APValue::setLValueUninit(LValueBase B, const CharUnits &O, unsigned Size,
   LVal.IsOnePastTheEnd = IsOnePastTheEnd;
   LVal.Offset = O;
   LVal.IsNullPtr = IsNullPtr;
+  setMustBeNullDerivedCap(B.isNull() || IsNullPtr);
   LVal.resizePath(Size);
   return {LVal.getPath(), Size};
 }
@@ -1070,6 +1077,7 @@ void APValue::MakeLValue() {
   static_assert(sizeof(LV) <= DataSize, "LV too big");
   new ((void *)(char *)&Data) LV();
   Kind = LValue;
+  setMustBeNullDerivedCap(false);
 }
 
 void APValue::MakeArray(unsigned InitElts, unsigned Size) {
@@ -1091,6 +1099,7 @@ APValue::setMemberPointerUninit(const ValueDecl *Member, bool IsDerivedMember,
   MPD->MemberAndIsDerivedMember.setPointer(
       Member ? cast<ValueDecl>(Member->getCanonicalDecl()) : nullptr);
   MPD->MemberAndIsDerivedMember.setInt(IsDerivedMember);
+  setMustBeNullDerivedCap(false);
   MPD->resizePath(Size);
   return {MPD->getPath(), MPD->PathLength};
 }

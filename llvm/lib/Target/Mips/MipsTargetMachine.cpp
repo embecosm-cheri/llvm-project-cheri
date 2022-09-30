@@ -11,6 +11,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "MipsTargetMachine.h"
+#include "llvm/Config/config.h"
 #include "MCTargetDesc/MipsABIInfo.h"
 #include "MCTargetDesc/MipsMCTargetDesc.h"
 #include "Mips.h"
@@ -36,11 +37,13 @@
 #include "llvm/IR/Attributes.h"
 #include "llvm/IR/Function.h"
 #include "llvm/InitializePasses.h"
+#include "llvm/MC/MCAsmInfo.h"
 #include "llvm/MC/TargetRegistry.h"
 #include "llvm/Support/CodeGen.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Target/TargetOptions.h"
+#include "llvm/Transforms/Scalar.h"
 #include <string>
 
 using namespace llvm;
@@ -50,6 +53,11 @@ using namespace llvm;
 static cl::opt<bool>
     EnableMulMulFix("mfix4300", cl::init(false),
                     cl::desc("Enable the VR4300 mulmul bug fix."), cl::Hidden);
+
+static llvm::cl::opt<bool>
+UnsafeUsage(
+"cheri-test-mode", llvm::cl::Hidden,
+llvm::cl::init(false));
 
 extern "C" LLVM_EXTERNAL_VISIBILITY void LLVMInitializeMipsTarget() {
   // Register the target.
@@ -66,10 +74,14 @@ extern "C" LLVM_EXTERNAL_VISIBILITY void LLVMInitializeMipsTarget() {
   initializeMipsPreLegalizerCombinerPass(*PR);
   initializeMipsPostLegalizerCombinerPass(*PR);
   initializeMipsMulMulBugFixPass(*PR);
+  initializeMipsOptimizePICCallPass(*PR);
+  initializeCheriAddressingModeFolderPass(*PR);
+  initializeCheriRangeCheckerPass(*PR);
 }
 
 static std::string computeDataLayout(const Triple &TT, StringRef CPU,
                                      const TargetOptions &Options,
+                                     StringRef FS,
                                      bool isLittle) {
   std::string Ret;
   MipsABIInfo ABI = MipsABIInfo::computeTargetABI(TT, CPU, Options.MCOptions);
@@ -85,6 +97,19 @@ static std::string computeDataLayout(const Triple &TT, StringRef CPU,
   else
     Ret += "-m:e";
 
+  // For CHERI256 we need to ensure at least capability-aligned stacks
+  unsigned MinStackAlignBits = 1;
+  if (FS.find("+cheri128") != StringRef::npos) {
+    Ret += "-pf200:128:128:128:64";
+    MinStackAlignBits = 128;
+  } else if (FS.find("+cheri64") != StringRef::npos) {
+    Ret += "-pf200:64:64:64:32";
+    MinStackAlignBits = 64;
+  } else if (FS.find("+cheri256") != StringRef::npos) {
+    Ret += "-pf200:256:256:256:64";
+    MinStackAlignBits = 256;
+  }
+
   // Pointers are 32 bit on some ABIs.
   if (!ABI.IsN64())
     Ret += "-p:32:32";
@@ -97,9 +122,13 @@ static std::string computeDataLayout(const Triple &TT, StringRef CPU,
   // aligned. On N64 64 bit registers are also available and the stack is
   // 128 bit aligned.
   if (ABI.IsN64() || ABI.IsN32())
-    Ret += "-n32:64-S128";
+    Ret += "-n32:64-S" + llvm::utostr(std::max(128u, MinStackAlignBits));
   else
     Ret += "-n32-S64";
+
+  // TODO: we may want to put functions in AS201 at some point
+  if (ABI.IsCheriPureCap())
+    Ret += "-A200-P200-G200";
 
   return Ret;
 }
@@ -123,7 +152,7 @@ MipsTargetMachine::MipsTargetMachine(const Target &T, const Triple &TT,
                                      Optional<CodeModel::Model> CM,
                                      CodeGenOpt::Level OL, bool JIT,
                                      bool isLittle)
-    : LLVMTargetMachine(T, computeDataLayout(TT, CPU, Options, isLittle), TT,
+    : LLVMTargetMachine(T, computeDataLayout(TT, CPU, Options, FS, isLittle), TT,
                         CPU, FS, Options, getEffectiveRelocModel(JIT, RM),
                         getEffectiveCodeModel(CM, CodeModel::Small), OL),
       isLittle(isLittle), TLOF(std::make_unique<MipsTargetObjectFile>()),
@@ -138,6 +167,12 @@ MipsTargetMachine::MipsTargetMachine(const Target &T, const Triple &TT,
 
   // Mips supports the debug entry values.
   setSupportsDebugEntryValues(true);
+
+  // HACK: Update the default CFA register for CHERI purecap
+  ABI.updateCheriInitialFrameStateHack(*AsmInfo, *MRI);
+  if (Subtarget->isCheri()) {
+    assert(DL.getStackAlignment() >= Subtarget->getCapAlignment());
+  }
 }
 
 MipsTargetMachine::~MipsTargetMachine() = default;
@@ -234,6 +269,11 @@ public:
     return *getMipsTargetMachine().getSubtargetImpl();
   }
 
+  void addPostRegAlloc() override {
+    if (getMipsSubtarget().isCheri())
+      addPass(createCheriInvalidatePass());
+  }
+
   void addIRPasses() override;
   bool addInstSelector() override;
   void addPreEmitPass() override;
@@ -265,6 +305,12 @@ void MipsPassConfig::addIRPasses() {
     addPass(createMipsOs16Pass());
   if (getMipsSubtarget().inMips16HardFloat())
     addPass(createMips16HardFloatPass());
+  if (getMipsSubtarget().isCheri()) {
+    addPass(createCheriLoopPointerDecanonicalize());
+    addPass(createAggressiveDCEPass());
+    addPass(createCheriRangeChecker());
+    addPass(createCheriBoundAllocasPass());
+  }
 }
 // Install an instruction selector pass using
 // the ISelDag to gen Mips code.
@@ -277,6 +323,14 @@ bool MipsPassConfig::addInstSelector() {
 
 void MipsPassConfig::addPreRegAlloc() {
   addPass(createMipsOptimizePICCallPass());
+  if (getMipsSubtarget().isCheri()) {
+    addPass(createCheriAddressingModeFolder());
+    // The CheriAddressingModeFolder can sometimes produce new dead instructions
+    // be sure to clean them up:
+    if (getOptLevel() != CodeGenOpt::Level::None)
+      addPass(&DeadMachineInstructionElimID);
+    addPass(createCheri128FailHardPass());
+  }
 }
 
 TargetTransformInfo

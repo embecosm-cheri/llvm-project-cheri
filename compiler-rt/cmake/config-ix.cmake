@@ -217,7 +217,7 @@ file(WRITE ${SIMPLE_SOURCE} "#include <stdlib.h>\n#include <stdio.h>\nint main()
 if (NOT CMAKE_SIZEOF_VOID_P EQUAL 4 AND
     NOT CMAKE_SIZEOF_VOID_P EQUAL 8 AND
     NOT ${arch} MATCHES "avr|msp430")
-  message(FATAL_ERROR "Please use architecture with 4 or 8 byte pointers.")
+  message(WARNING "Please use architecture with 4 or 8 byte pointers.")
 endif()
 
 test_targets()
@@ -698,6 +698,7 @@ if (SANITIZER_COMMON_SUPPORTED_ARCH AND NOT LLVM_USE_SANITIZER AND
   set(COMPILER_RT_HAS_SANITIZER_COMMON TRUE)
 else()
   set(COMPILER_RT_HAS_SANITIZER_COMMON FALSE)
+  message(WARNING "Sanitizer-common not supported for ${COMPILER_RT_SUPPORTED_ARCH}")
 endif()
 
 if (COMPILER_RT_HAS_SANITIZER_COMMON)

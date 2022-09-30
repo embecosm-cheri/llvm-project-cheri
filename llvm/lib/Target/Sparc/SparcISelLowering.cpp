@@ -839,6 +839,7 @@ SparcTargetLowering::LowerCall_32(TargetLowering::CallLoweringInfo &CLI,
                             false,        // isVolatile,
                             (Size <= 32), // AlwaysInline if size <= 32,
                             false,        // isTailCall
+                            /*MustPreserveCheriCapabilities=*/false,
                             MachinePointerInfo(), MachinePointerInfo());
       ByValArgs.push_back(FIPtr);
     }
@@ -1029,7 +1030,7 @@ SparcTargetLowering::LowerCall_32(TargetLowering::CallLoweringInfo &CLI,
   if (GlobalAddressSDNode *G = dyn_cast<GlobalAddressSDNode>(Callee))
     Callee = DAG.getTargetGlobalAddress(G->getGlobal(), dl, MVT::i32, 0, TF);
   else if (ExternalSymbolSDNode *E = dyn_cast<ExternalSymbolSDNode>(Callee))
-    Callee = DAG.getTargetExternalSymbol(E->getSymbol(), MVT::i32, TF);
+    Callee = DAG.getTargetExternalFunctionSymbol(E->getSymbol(), TF);
 
   // Returns a chain & a flag for retval copy to use
   SDVTList NodeTys = DAG.getVTList(MVT::Other, MVT::Glue);
@@ -1342,7 +1343,7 @@ SparcTargetLowering::LowerCall_64(TargetLowering::CallLoweringInfo &CLI,
   if (GlobalAddressSDNode *G = dyn_cast<GlobalAddressSDNode>(Callee))
     Callee = DAG.getTargetGlobalAddress(G->getGlobal(), DL, PtrVT, 0, TF);
   else if (ExternalSymbolSDNode *E = dyn_cast<ExternalSymbolSDNode>(Callee))
-    Callee = DAG.getTargetExternalSymbol(E->getSymbol(), PtrVT, TF);
+    Callee = DAG.getTargetExternalFunctionSymbol(E->getSymbol(), TF);
 
   // Build the operands for the call instruction itself.
   SmallVector<SDValue, 8> Ops;
@@ -2159,7 +2160,7 @@ SDValue SparcTargetLowering::LowerGlobalTLSAddress(SDValue Op,
     Chain = DAG.getCALLSEQ_START(Chain, 1, 0, DL);
     Chain = DAG.getCopyToReg(Chain, DL, SP::O0, Argument, InFlag);
     InFlag = Chain.getValue(1);
-    SDValue Callee = DAG.getTargetExternalSymbol("__tls_get_addr", PtrVT);
+    SDValue Callee = DAG.getTargetExternalFunctionSymbol("__tls_get_addr");
     SDValue Symbol = withTargetFlags(Op, callTF, DAG);
 
     SDVTList NodeTys = DAG.getVTList(MVT::Other, MVT::Glue);
@@ -2262,7 +2263,7 @@ SparcTargetLowering::LowerF128Op(SDValue Op, SelectionDAG &DAG,
   MachineFrameInfo &MFI = DAG.getMachineFunction().getFrameInfo();
   auto PtrVT = getPointerTy(DAG.getDataLayout());
 
-  SDValue Callee = DAG.getExternalSymbol(LibFuncName, PtrVT);
+  SDValue Callee = DAG.getExternalFunctionSymbol(LibFuncName);
   Type *RetTy = Op.getValueType().getTypeForEVT(*DAG.getContext());
   Type *RetTyABI = RetTy;
   SDValue Chain = DAG.getEntryNode();
@@ -2331,8 +2332,7 @@ SDValue SparcTargetLowering::LowerF128Compare(SDValue LHS, SDValue RHS,
   case SPCC::FCC_UE : LibCall = is64Bit? "_Qp_cmp" : "_Q_cmp"; break;
   }
 
-  auto PtrVT = getPointerTy(DAG.getDataLayout());
-  SDValue Callee = DAG.getExternalSymbol(LibCall, PtrVT);
+  SDValue Callee = DAG.getExternalFunctionSymbol(LibCall);
   Type *RetTy = Type::getInt32Ty(*DAG.getContext());
   ArgListTy Args;
   SDValue Chain = DAG.getEntryNode();

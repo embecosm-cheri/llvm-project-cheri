@@ -7,6 +7,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "assembly.h"
+#include "__libunwind_config.h"
 
 #if defined(_AIX)
     .toc
@@ -230,6 +231,120 @@ DEFINE_LIBUNWIND_FUNCTION(__unw_getcontext)
   # return UNW_ESUCCESS
   or    $2, $0, $0
   .set pop
+END_LIBUNWIND_FUNCTION(__unw_getcontext)
+
+#elif defined(__mips__) && defined(__CHERI_PURE_CAPABILITY__)
+
+#if !defined(__mips_soft_float)
+#error "Only soft float supported"
+#endif
+
+.set noreorder
+#
+# extern int __unw_getcontext(unw_context_t* thread_state)
+#
+# On entry:
+#  thread_state pointer is in $c3
+#
+# This is always called from ABI C code, so we only need to initialise the
+# registers that are preserved across calls
+
+DEFINE_LIBUNWIND_FUNCTION(__unw_getcontext)
+#define SAVE_GPR(x) csd $x, $zero, (8*x)($c3)
+  SAVE_GPR(1) # $at
+  SAVE_GPR(2) # $v0
+  SAVE_GPR(3) # $v1
+  SAVE_GPR(4) # $a0
+  SAVE_GPR(5) # $a1
+  SAVE_GPR(6) # $a2
+  SAVE_GPR(7) # $a3
+  SAVE_GPR(8) # $a4
+  SAVE_GPR(9) # $a5
+  SAVE_GPR(10) # $a6
+  SAVE_GPR(11) # $a7
+  SAVE_GPR(12) # $t0/t4
+  SAVE_GPR(13) # $t1/t5
+  SAVE_GPR(14) # $t2/t6
+  SAVE_GPR(15) # $t3/t7
+  SAVE_GPR(16) # $s0
+  SAVE_GPR(17) # $s1
+  SAVE_GPR(18) # $s2
+  SAVE_GPR(19) # $s3
+  SAVE_GPR(20) # $s4
+  SAVE_GPR(21) # $s5
+  SAVE_GPR(22) # $s6
+  SAVE_GPR(23) # $s7
+  SAVE_GPR(24) # $t8
+  SAVE_GPR(25) # $t9
+  SAVE_GPR(26) # $k0
+  SAVE_GPR(27) # $k1
+  SAVE_GPR(28) # $gp
+  SAVE_GPR(29) # $sp
+  SAVE_GPR(30) # $fp
+  SAVE_GPR(31) # $ra
+
+  # hi and lo
+  mfhi	$t0
+  csd	$t0, $zero, (8*64)($c3)
+  mflo	$t0
+  csd	$t0, $zero, (8*65)($c3)
+  # TODO: floating point registers
+
+#ifndef _LIBUNWIND_CAPREG_START
+#error "_LIBUNWIND_CAPREG_START not defined"
+#endif
+#if ((_LIBUNWIND_CAPREG_START*64) % _MIPS_SZCAP) != 0
+#error "unw_context capability register offset is not capability aligned!"
+#endif
+  /* Add the offset of the start of the capability register set to $at */
+  daddiu $1, $zero, _LIBUNWIND_CAPREG_START*8
+#define SAVE_CAP_REG(src, x) csc $c ## src, $1, (x * __SIZEOF_UINTCAP__)($c3)
+#define SAVE_CAP(x) SAVE_CAP_REG(x, x)
+  SAVE_CAP(1)
+  SAVE_CAP(2)
+  SAVE_CAP(3)
+  SAVE_CAP(4)
+  SAVE_CAP(5)
+  SAVE_CAP(6)
+  SAVE_CAP(7)
+  SAVE_CAP(8)
+  SAVE_CAP(9)
+  SAVE_CAP(10)
+  SAVE_CAP(11)
+  SAVE_CAP(12)
+  SAVE_CAP(13)
+  SAVE_CAP(14)
+  SAVE_CAP(15)
+  SAVE_CAP(16)
+  SAVE_CAP(17)
+  SAVE_CAP(18)
+  SAVE_CAP(19)
+  SAVE_CAP(20)
+  SAVE_CAP(21)
+  SAVE_CAP(22)
+  SAVE_CAP(23)
+  SAVE_CAP(24)
+  SAVE_CAP(25)
+  SAVE_CAP(26)
+  // store NULL for 27-31 since they are reserved for kernel use
+  SAVE_CAP_REG(null, 27)
+  SAVE_CAP_REG(null, 28)
+  SAVE_CAP_REG(null, 29)
+  SAVE_CAP_REG(null, 30)
+  SAVE_CAP_REG(null, 31)
+
+  // Use $c12 as a temp register in order to save $ddc since $c12 will hold
+  // the cap for __unw_getcontext and it doesn't make sense to save it
+  cgetdefault $c12
+  SAVE_CAP_REG(12, 0)
+
+  // return UNW_ESUCCESS
+  daddiu $v0, $zero, 0
+  # Store the return address where we expect the current PC
+  daddiu $1, $1, 32*__SIZEOF_UINTCAP__
+  cjr $c17
+  csc $c17, $1, 0($c3)
+END_LIBUNWIND_FUNCTION(__unw_getcontext)
 
 #elif defined(__mips64)
 
@@ -320,6 +435,7 @@ DEFINE_LIBUNWIND_FUNCTION(__unw_getcontext)
   # return UNW_ESUCCESS
   or    $2, $0, $0
   .set pop
+END_LIBUNWIND_FUNCTION(__unw_getcontext)
 
 # elif defined(__mips__)
 
@@ -329,6 +445,7 @@ DEFINE_LIBUNWIND_FUNCTION(__unw_getcontext)
 # Just trap for the time being.
 DEFINE_LIBUNWIND_FUNCTION(__unw_getcontext)
   teq $0, $0
+END_LIBUNWIND_FUNCTION(__unw_getcontext)
 
 #elif defined(__powerpc64__)
 
@@ -728,6 +845,48 @@ DEFINE_LIBUNWIND_FUNCTION(__unw_getcontext)
 //
   .p2align 2
 DEFINE_LIBUNWIND_FUNCTION(__unw_getcontext)
+#ifdef __CHERI_PURE_CAPABILITY__
+  stp    c0, c1,  [c0, #0x000]
+  stp    c2, c3,  [c0, #0x020]
+  stp    c4, c5,  [c0, #0x040]
+  stp    c6, c7,  [c0, #0x060]
+  stp    c8, c9,  [c0, #0x080]
+  stp    c10,c11, [c0, #0x0a0]
+  stp    c12,c13, [c0, #0x0c0]
+  stp    c14,c15, [c0, #0x0e0]
+  stp    c16,c17, [c0, #0x100]
+  stp    c18,c19, [c0, #0x120]
+  stp    c20,c21, [c0, #0x140]
+  stp    c22,c23, [c0, #0x160]
+  stp    c24,c25, [c0, #0x180]
+  stp    c26,c27, [c0, #0x1a0]
+  stp    c28,c29, [c0, #0x1c0]
+  str    c30,     [c0, #0x1e0]
+  mov    c1,csp
+  str    c1,      [c0, #0x1f0]
+  str    c30,     [c0, #0x200]    // store return address as pcc
+  // skip cpsr
+  add    c0, c0, #0x220
+  stp    d0, d1,  [c0, #0x000]
+  stp    d2, d3,  [c0, #0x010]
+  stp    d4, d5,  [c0, #0x020]
+  stp    d6, d7,  [c0, #0x030]
+  stp    d8, d9,  [c0, #0x040]
+  stp    d10,d11, [c0, #0x050]
+  stp    d12,d13, [c0, #0x060]
+  stp    d14,d15, [c0, #0x070]
+  stp    d16,d17, [c0, #0x080]
+  stp    d18,d19, [c0, #0x090]
+  stp    d20,d21, [c0, #0x0a0]
+  stp    d22,d23, [c0, #0x0b0]
+  stp    d24,d25, [c0, #0x0c0]
+  stp    d26,d27, [c0, #0x0d0]
+  stp    d28,d29, [c0, #0x0e0]
+  str    d30,     [c0, #0x0f0]
+  str    d31,     [c0, #0x0f8]
+  mov    x0, #0                   // return UNW_ESUCCESS
+  ret
+#else
   stp    x0, x1,  [x0, #0x000]
   stp    x2, x3,  [x0, #0x010]
   stp    x4, x5,  [x0, #0x020]
@@ -767,6 +926,7 @@ DEFINE_LIBUNWIND_FUNCTION(__unw_getcontext)
   str    d31,     [x0, #0x208]
   mov    x0, #0                   // return UNW_ESUCCESS
   ret
+#endif
 
 #elif defined(__arm__) && !defined(__APPLE__)
 
@@ -1102,6 +1262,22 @@ DEFINE_LIBUNWIND_FUNCTION(__unw_getcontext)
 
 #elif defined(__riscv)
 
+.macro save_fpr num
+#ifdef __CHERI_PURE_CAPABILITY__
+  cfsd   f\num, (__SIZEOF_CHERI_CAPABILITY__ * 32 + 8 * \num)(ca0)
+#else
+  FSTORE f\num, (8 * 32 + 8 * \num)(a0)
+#endif
+.endm
+
+.macro save_gpr num
+#ifdef __CHERI_PURE_CAPABILITY__
+  csc   c\num, (__SIZEOF_CHERI_CAPABILITY__ * \num)(ca0)
+#else
+  ISTORE x\num, (8 * \num)(a0)
+#endif
+.endm
+
 #
 # extern int __unw_getcontext(unw_context_t* thread_state)
 #
@@ -1109,75 +1285,83 @@ DEFINE_LIBUNWIND_FUNCTION(__unw_getcontext)
 #  thread_state pointer is in a0
 #
 DEFINE_LIBUNWIND_FUNCTION(__unw_getcontext)
-  ISTORE    x1, (RISCV_ISIZE * 0)(a0) // store ra as pc
-  ISTORE    x1, (RISCV_ISIZE * 1)(a0)
-  ISTORE    x2, (RISCV_ISIZE * 2)(a0)
-  ISTORE    x3, (RISCV_ISIZE * 3)(a0)
-  ISTORE    x4, (RISCV_ISIZE * 4)(a0)
-  ISTORE    x5, (RISCV_ISIZE * 5)(a0)
-  ISTORE    x6, (RISCV_ISIZE * 6)(a0)
-  ISTORE    x7, (RISCV_ISIZE * 7)(a0)
-  ISTORE    x8, (RISCV_ISIZE * 8)(a0)
-  ISTORE    x9, (RISCV_ISIZE * 9)(a0)
-  ISTORE    x10, (RISCV_ISIZE * 10)(a0)
-  ISTORE    x11, (RISCV_ISIZE * 11)(a0)
-  ISTORE    x12, (RISCV_ISIZE * 12)(a0)
-  ISTORE    x13, (RISCV_ISIZE * 13)(a0)
-  ISTORE    x14, (RISCV_ISIZE * 14)(a0)
-  ISTORE    x15, (RISCV_ISIZE * 15)(a0)
-  ISTORE    x16, (RISCV_ISIZE * 16)(a0)
-  ISTORE    x17, (RISCV_ISIZE * 17)(a0)
-  ISTORE    x18, (RISCV_ISIZE * 18)(a0)
-  ISTORE    x19, (RISCV_ISIZE * 19)(a0)
-  ISTORE    x20, (RISCV_ISIZE * 20)(a0)
-  ISTORE    x21, (RISCV_ISIZE * 21)(a0)
-  ISTORE    x22, (RISCV_ISIZE * 22)(a0)
-  ISTORE    x23, (RISCV_ISIZE * 23)(a0)
-  ISTORE    x24, (RISCV_ISIZE * 24)(a0)
-  ISTORE    x25, (RISCV_ISIZE * 25)(a0)
-  ISTORE    x26, (RISCV_ISIZE * 26)(a0)
-  ISTORE    x27, (RISCV_ISIZE * 27)(a0)
-  ISTORE    x28, (RISCV_ISIZE * 28)(a0)
-  ISTORE    x29, (RISCV_ISIZE * 29)(a0)
-  ISTORE    x30, (RISCV_ISIZE * 30)(a0)
-  ISTORE    x31, (RISCV_ISIZE * 31)(a0)
+  // x0 is zero (index 0 is used for PC)
+#ifdef __CHERI_PURE_CAPABILITY__
+  csc   c1, (__SIZEOF_CHERI_CAPABILITY__ * 0)(ca0) // store ra as pc
+#else
+  ISTORE    x1, (8 * 0)(a0) // store ra as pc
+#endif
+  save_gpr 1
+  save_gpr 2
+  save_gpr 3
+  save_gpr 4
+  save_gpr 5
+  save_gpr 6
+  save_gpr 7
+  save_gpr 8
+  save_gpr 9
+  save_gpr 10
+  save_gpr 11
+  save_gpr 12
+  save_gpr 13
+  save_gpr 14
+  save_gpr 15
+  save_gpr 16
+  save_gpr 17
+  save_gpr 18
+  save_gpr 19
+  save_gpr 20
+  save_gpr 21
+  save_gpr 22
+  save_gpr 23
+  save_gpr 24
+  save_gpr 25
+  save_gpr 26
+  save_gpr 27
+  save_gpr 28
+  save_gpr 29
+  save_gpr 30
+  save_gpr 31
 
 # if defined(__riscv_flen)
-  FSTORE    f0, (RISCV_FOFFSET + RISCV_FSIZE * 0)(a0)
-  FSTORE    f1, (RISCV_FOFFSET + RISCV_FSIZE * 1)(a0)
-  FSTORE    f2, (RISCV_FOFFSET + RISCV_FSIZE * 2)(a0)
-  FSTORE    f3, (RISCV_FOFFSET + RISCV_FSIZE * 3)(a0)
-  FSTORE    f4, (RISCV_FOFFSET + RISCV_FSIZE * 4)(a0)
-  FSTORE    f5, (RISCV_FOFFSET + RISCV_FSIZE * 5)(a0)
-  FSTORE    f6, (RISCV_FOFFSET + RISCV_FSIZE * 6)(a0)
-  FSTORE    f7, (RISCV_FOFFSET + RISCV_FSIZE * 7)(a0)
-  FSTORE    f8, (RISCV_FOFFSET + RISCV_FSIZE * 8)(a0)
-  FSTORE    f9, (RISCV_FOFFSET + RISCV_FSIZE * 9)(a0)
-  FSTORE    f10, (RISCV_FOFFSET + RISCV_FSIZE * 10)(a0)
-  FSTORE    f11, (RISCV_FOFFSET + RISCV_FSIZE * 11)(a0)
-  FSTORE    f12, (RISCV_FOFFSET + RISCV_FSIZE * 12)(a0)
-  FSTORE    f13, (RISCV_FOFFSET + RISCV_FSIZE * 13)(a0)
-  FSTORE    f14, (RISCV_FOFFSET + RISCV_FSIZE * 14)(a0)
-  FSTORE    f15, (RISCV_FOFFSET + RISCV_FSIZE * 15)(a0)
-  FSTORE    f16, (RISCV_FOFFSET + RISCV_FSIZE * 16)(a0)
-  FSTORE    f17, (RISCV_FOFFSET + RISCV_FSIZE * 17)(a0)
-  FSTORE    f18, (RISCV_FOFFSET + RISCV_FSIZE * 18)(a0)
-  FSTORE    f19, (RISCV_FOFFSET + RISCV_FSIZE * 19)(a0)
-  FSTORE    f20, (RISCV_FOFFSET + RISCV_FSIZE * 20)(a0)
-  FSTORE    f21, (RISCV_FOFFSET + RISCV_FSIZE * 21)(a0)
-  FSTORE    f22, (RISCV_FOFFSET + RISCV_FSIZE * 22)(a0)
-  FSTORE    f23, (RISCV_FOFFSET + RISCV_FSIZE * 23)(a0)
-  FSTORE    f24, (RISCV_FOFFSET + RISCV_FSIZE * 24)(a0)
-  FSTORE    f25, (RISCV_FOFFSET + RISCV_FSIZE * 25)(a0)
-  FSTORE    f26, (RISCV_FOFFSET + RISCV_FSIZE * 26)(a0)
-  FSTORE    f27, (RISCV_FOFFSET + RISCV_FSIZE * 27)(a0)
-  FSTORE    f28, (RISCV_FOFFSET + RISCV_FSIZE * 28)(a0)
-  FSTORE    f29, (RISCV_FOFFSET + RISCV_FSIZE * 29)(a0)
-  FSTORE    f30, (RISCV_FOFFSET + RISCV_FSIZE * 30)(a0)
-  FSTORE    f31, (RISCV_FOFFSET + RISCV_FSIZE * 31)(a0)
-# endif
+  save_fpr 0
+  save_fpr 1
+  save_fpr 2
+  save_fpr 3
+  save_fpr 4
+  save_fpr 5
+  save_fpr 6
+  save_fpr 7
+  save_fpr 8
+  save_fpr 9
+  save_fpr 10
+  save_fpr 11
+  save_fpr 12
+  save_fpr 13
+  save_fpr 14
+  save_fpr 15
+  save_fpr 16
+  save_fpr 17
+  save_fpr 18
+  save_fpr 19
+  save_fpr 20
+  save_fpr 21
+  save_fpr 22
+  save_fpr 23
+  save_fpr 24
+  save_fpr 25
+  save_fpr 26
+  save_fpr 27
+  save_fpr 28
+  save_fpr 29
+  save_fpr 30
+  save_fpr 31
+#endif
 
   li     a0, 0  // return UNW_ESUCCESS
+#ifdef __CHERI_PURE_CAPABILITY__
+  cret          // jump to cra
+#else
   ret           // jump to ra
 
 #elif defined(__s390x__)
@@ -1221,6 +1405,9 @@ DEFINE_LIBUNWIND_FUNCTION(__unw_getcontext)
   // Return UNW_ESUCCESS
   lghi %r2, 0
   br %r14
+
+#endif
+END_LIBUNWIND_FUNCTION(__unw_getcontext)
 
 #endif
 

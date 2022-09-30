@@ -749,7 +749,9 @@ public:
   ///
   /// By default, performs semantic analysis when building the pointer type.
   /// Subclasses may override this routine to provide different behavior.
-  QualType RebuildPointerType(QualType PointeeType, SourceLocation Sigil);
+  QualType RebuildPointerType(QualType PointeeType,
+                              PointerInterpretationKind PIK,
+                              SourceLocation Sigil);
 
   /// Build a new block pointer type given its pointee type.
   ///
@@ -816,7 +818,8 @@ public:
                             const llvm::APInt *Size,
                             Expr *SizeExpr,
                             unsigned IndexTypeQuals,
-                            SourceRange BracketsRange);
+                            SourceRange BracketsRange,
+                            llvm::Optional<PointerInterpretationKind> PIK);
 
   /// Build a new constant array type given the element type, size
   /// modifier, (known) size of the array, and index type qualifiers.
@@ -828,7 +831,8 @@ public:
                                     const llvm::APInt &Size,
                                     Expr *SizeExpr,
                                     unsigned IndexTypeQuals,
-                                    SourceRange BracketsRange);
+                                    SourceRange BracketsRange,
+                                    llvm::Optional<PointerInterpretationKind> PIK);
 
   /// Build a new incomplete array type given the element type, size
   /// modifier, and index type qualifiers.
@@ -838,7 +842,8 @@ public:
   QualType RebuildIncompleteArrayType(QualType ElementType,
                                       ArrayType::ArraySizeModifier SizeMod,
                                       unsigned IndexTypeQuals,
-                                      SourceRange BracketsRange);
+                                      SourceRange BracketsRange,
+                                      llvm::Optional<PointerInterpretationKind> PIK);
 
   /// Build a new variable-length array type given the element type,
   /// size modifier, size expression, and index type qualifiers.
@@ -849,7 +854,8 @@ public:
                                     ArrayType::ArraySizeModifier SizeMod,
                                     Expr *SizeExpr,
                                     unsigned IndexTypeQuals,
-                                    SourceRange BracketsRange);
+                                    SourceRange BracketsRange,
+                                    llvm::Optional<PointerInterpretationKind> PIK);
 
   /// Build a new dependent-sized array type given the element type,
   /// size modifier, size expression, and index type qualifiers.
@@ -860,7 +866,8 @@ public:
                                           ArrayType::ArraySizeModifier SizeMod,
                                           Expr *SizeExpr,
                                           unsigned IndexTypeQuals,
-                                          SourceRange BracketsRange);
+                                          SourceRange BracketsRange,
+                                          llvm::Optional<PointerInterpretationKind> PIK);
 
   /// Build a new vector type given the element type and
   /// number of elements.
@@ -917,6 +924,15 @@ public:
   QualType RebuildDependentAddressSpaceType(QualType PointeeType,
                                             Expr *AddrSpaceExpr,
                                             SourceLocation AttributeLoc);
+
+  /// Build a new potentially dependently-typed pointer type with the given
+  /// pointer interpretation.
+  ///
+  /// By default, performs semantic analysis when building the pointer type.
+  /// Subclasses may override this routine to provide different behavior.
+  QualType RebuildDependentPointerType(QualType PointerType,
+                                       PointerInterpretationKind PIK,
+                                       SourceLocation QualifierLoc);
 
   /// Build a new function type.
   ///
@@ -2519,6 +2535,11 @@ public:
     return getSema().ActOnParenExpr(LParen, RParen, SubExpr);
   }
 
+  ExprResult RebuildNoChangeBoundsExpr(Expr *SubExpr, SourceLocation Start,
+                                       SourceLocation End) {
+    return getSema().ActOnNoChangeBoundsExpr(Start, End, SubExpr);
+  }
+
   /// Build a new pseudo-destructor expression.
   ///
   /// By default, performs semantic analysis to build the new expression.
@@ -2760,9 +2781,26 @@ public:
   /// By default, performs semantic analysis to build the new expression.
   /// Subclasses may override this routine to provide different behavior.
   ExprResult RebuildCStyleCastExpr(SourceLocation LParenLoc,
-                                         TypeSourceInfo *TInfo,
-                                         SourceLocation RParenLoc,
-                                         Expr *SubExpr) {
+                                   TypeSourceInfo *TInfo,
+                                   SourceLocation RParenLoc, Expr *SubExpr,
+                                   CastKind CK) {
+    /*
+     * For __cheri_* casts we look at the DependentCastKind field of
+     * CStyleCastExpr to allow rebuilding as the correct kind of cast.
+     */
+    if (CK == CK_CHERICapabilityToAddress) {
+      return getSema().BuildCheriOffsetOrAddress(
+          LParenLoc, /*IsOffsetCast=*/false, TInfo, RParenLoc, SubExpr);
+    } else if (CK == CK_CHERICapabilityToOffset) {
+      return getSema().BuildCheriOffsetOrAddress(
+          LParenLoc, /*IsOffsetCast=*/true, TInfo, RParenLoc, SubExpr);
+    } else if (CK == CK_CHERICapabilityToPointer) {
+      return getSema().BuildCheriToOrFromCap(LParenLoc, /*IsToCap=*/false,
+                                             TInfo, RParenLoc, SubExpr);
+    } else if (CK == CK_PointerToCHERICapability) {
+      return getSema().BuildCheriToOrFromCap(LParenLoc, /*IsToCap=*/true,
+                                             TInfo, RParenLoc, SubExpr);
+    }
     return getSema().BuildCStyleCastExpr(LParenLoc, TInfo, RParenLoc,
                                          SubExpr);
   }
@@ -5014,6 +5052,8 @@ QualType TreeTransform<Derived>::TransformDecayedType(TypeLocBuilder &TLB,
 template<typename Derived>
 QualType TreeTransform<Derived>::TransformPointerType(TypeLocBuilder &TLB,
                                                       PointerTypeLoc TL) {
+  const PointerType *T = TL.getTypePtr();
+
   QualType PointeeType
     = getDerived().TransformType(TLB, TL.getPointeeLoc());
   if (PointeeType.isNull())
@@ -5034,7 +5074,8 @@ QualType TreeTransform<Derived>::TransformPointerType(TypeLocBuilder &TLB,
 
   if (getDerived().AlwaysRebuild() ||
       PointeeType != TL.getPointeeLoc().getType()) {
-    Result = getDerived().RebuildPointerType(PointeeType, TL.getSigilLoc());
+    Result = getDerived().RebuildPointerType(
+        PointeeType, T->getPointerInterpretation(), TL.getSigilLoc());
     if (Result.isNull())
       return QualType();
   }
@@ -5207,7 +5248,8 @@ TreeTransform<Derived>::TransformConstantArrayType(TypeLocBuilder &TLB,
                                                    T->getSizeModifier(),
                                                    T->getSize(), NewSize,
                                              T->getIndexTypeCVRQualifiers(),
-                                                   TL.getBracketsRange());
+                                                   TL.getBracketsRange(),
+                                             T->getPointerInterpretation());
     if (Result.isNull())
       return QualType();
   }
@@ -5239,7 +5281,8 @@ QualType TreeTransform<Derived>::TransformIncompleteArrayType(
     Result = getDerived().RebuildIncompleteArrayType(ElementType,
                                                      T->getSizeModifier(),
                                            T->getIndexTypeCVRQualifiers(),
-                                                     TL.getBracketsRange());
+                                                     TL.getBracketsRange(),
+                                             T->getPointerInterpretation());
     if (Result.isNull())
       return QualType();
   }
@@ -5284,7 +5327,8 @@ TreeTransform<Derived>::TransformVariableArrayType(TypeLocBuilder &TLB,
                                                    T->getSizeModifier(),
                                                    Size,
                                              T->getIndexTypeCVRQualifiers(),
-                                                   TL.getBracketsRange());
+                                                   TL.getBracketsRange(),
+                                             T->getPointerInterpretation());
     if (Result.isNull())
       return QualType();
   }
@@ -5332,7 +5376,8 @@ TreeTransform<Derived>::TransformDependentSizedArrayType(TypeLocBuilder &TLB,
                                                          T->getSizeModifier(),
                                                          size,
                                                 T->getIndexTypeCVRQualifiers(),
-                                                        TL.getBracketsRange());
+                                                        TL.getBracketsRange(),
+                                                T->getPointerInterpretation());
     if (Result.isNull())
       return QualType();
   }
@@ -5546,6 +5591,38 @@ QualType TreeTransform<Derived>::TransformDependentAddressSpaceType(
     NewTL.setAttrExprOperand(TL.getAttrExprOperand());
     NewTL.setAttrNameLoc(TL.getAttrNameLoc());
 
+  } else {
+    TypeSourceInfo *DI = getSema().Context.getTrivialTypeSourceInfo(
+        Result, getDerived().getBaseLocation());
+    TransformType(TLB, DI->getTypeLoc());
+  }
+
+  return Result;
+}
+
+template <typename Derived>
+QualType TreeTransform<Derived>::TransformDependentPointerType(
+    TypeLocBuilder &TLB, DependentPointerTypeLoc TL) {
+  const DependentPointerType *T = TL.getTypePtr();
+
+  QualType PointerType = getDerived().TransformType(T->getPointerType());
+
+  if (PointerType.isNull())
+    return QualType();
+
+  QualType Result = TL.getType();
+  if (getDerived().AlwaysRebuild() || PointerType != T->getPointerType()) {
+    Result = getDerived().RebuildDependentPointerType(
+        PointerType, T->getPointerInterpretation(), T->getQualifierLoc());
+    if (Result.isNull())
+      return QualType();
+  }
+
+  // Result might be dependent or not.
+  if (isa<DependentPointerType>(Result)) {
+    DependentPointerTypeLoc NewTL =
+        TLB.push<DependentPointerTypeLoc>(Result);
+    NewTL.setQualifierLoc(TL.getQualifierLoc());
   } else {
     TypeSourceInfo *DI = getSema().Context.getTrivialTypeSourceInfo(
         Result, getDerived().getBaseLocation());
@@ -10674,6 +10751,20 @@ TreeTransform<Derived>::TransformParenExpr(ParenExpr *E) {
                                        E->getRParen());
 }
 
+template <typename Derived>
+ExprResult
+TreeTransform<Derived>::TransformNoChangeBoundsExpr(NoChangeBoundsExpr *E) {
+  ExprResult SubExpr = getDerived().TransformExpr(E->getSubExpr());
+  if (SubExpr.isInvalid())
+    return ExprError();
+
+  if (!getDerived().AlwaysRebuild() && SubExpr.get() == E->getSubExpr())
+    return E;
+
+  return getDerived().RebuildNoChangeBoundsExpr(SubExpr.get(), E->getBeginLoc(),
+                                                E->getEndLoc());
+}
+
 /// The operand of a unary address-of operator has special rules: it's
 /// allowed to refer to a non-static member of a class even if there's no 'this'
 /// object available.
@@ -11343,10 +11434,10 @@ TreeTransform<Derived>::TransformCStyleCastExpr(CStyleCastExpr *E) {
       SubExpr.get() == E->getSubExpr())
     return E;
 
-  return getDerived().RebuildCStyleCastExpr(E->getLParenLoc(),
-                                            Type,
-                                            E->getRParenLoc(),
-                                            SubExpr.get());
+  return getDerived().RebuildCStyleCastExpr(
+      E->getLParenLoc(), Type, E->getRParenLoc(), SubExpr.get(),
+      E->getCastKind() == CK_Dependent ? E->getDependentCastKind()
+                                       : CK_Dependent);
 }
 
 template<typename Derived>
@@ -14451,10 +14542,10 @@ TreeTransform<Derived>::TransformAtomicExpr(AtomicExpr *E) {
 //===----------------------------------------------------------------------===//
 
 template<typename Derived>
-QualType TreeTransform<Derived>::RebuildPointerType(QualType PointeeType,
-                                                    SourceLocation Star) {
-  return SemaRef.BuildPointerType(PointeeType, Star,
-                                  getDerived().getBaseEntity());
+QualType TreeTransform<Derived>::RebuildPointerType(
+    QualType PointeeType, PointerInterpretationKind PIK, SourceLocation Star) {
+  return SemaRef.BuildPointerType(PointeeType, PIK, Star,
+                                  getDerived().getBaseEntity(), nullptr);
 }
 
 template<typename Derived>
@@ -14527,11 +14618,12 @@ TreeTransform<Derived>::RebuildArrayType(QualType ElementType,
                                          const llvm::APInt *Size,
                                          Expr *SizeExpr,
                                          unsigned IndexTypeQuals,
-                                         SourceRange BracketsRange) {
+                                         SourceRange BracketsRange,
+                               llvm::Optional<PointerInterpretationKind> PIK) {
   if (SizeExpr || !Size)
     return SemaRef.BuildArrayType(ElementType, SizeMod, SizeExpr,
                                   IndexTypeQuals, BracketsRange,
-                                  getDerived().getBaseEntity());
+                                  getDerived().getBaseEntity(), PIK);
 
   QualType Types[] = {
     SemaRef.Context.UnsignedCharTy, SemaRef.Context.UnsignedShortTy,
@@ -14553,7 +14645,7 @@ TreeTransform<Derived>::RebuildArrayType(QualType ElementType,
                                /*FIXME*/BracketsRange.getBegin());
   return SemaRef.BuildArrayType(ElementType, SizeMod, ArraySize,
                                 IndexTypeQuals, BracketsRange,
-                                getDerived().getBaseEntity());
+                                getDerived().getBaseEntity(), PIK);
 }
 
 template<typename Derived>
@@ -14563,9 +14655,10 @@ TreeTransform<Derived>::RebuildConstantArrayType(QualType ElementType,
                                                  const llvm::APInt &Size,
                                                  Expr *SizeExpr,
                                                  unsigned IndexTypeQuals,
-                                                 SourceRange BracketsRange) {
+                                                 SourceRange BracketsRange,
+                               llvm::Optional<PointerInterpretationKind> PIK) {
   return getDerived().RebuildArrayType(ElementType, SizeMod, &Size, SizeExpr,
-                                        IndexTypeQuals, BracketsRange);
+                                        IndexTypeQuals, BracketsRange, PIK);
 }
 
 template<typename Derived>
@@ -14573,9 +14666,10 @@ QualType
 TreeTransform<Derived>::RebuildIncompleteArrayType(QualType ElementType,
                                           ArrayType::ArraySizeModifier SizeMod,
                                                  unsigned IndexTypeQuals,
-                                                   SourceRange BracketsRange) {
+                                                   SourceRange BracketsRange,
+                               llvm::Optional<PointerInterpretationKind> PIK) {
   return getDerived().RebuildArrayType(ElementType, SizeMod, nullptr, nullptr,
-                                       IndexTypeQuals, BracketsRange);
+                                       IndexTypeQuals, BracketsRange, PIK);
 }
 
 template<typename Derived>
@@ -14584,10 +14678,11 @@ TreeTransform<Derived>::RebuildVariableArrayType(QualType ElementType,
                                           ArrayType::ArraySizeModifier SizeMod,
                                                  Expr *SizeExpr,
                                                  unsigned IndexTypeQuals,
-                                                 SourceRange BracketsRange) {
+                                                 SourceRange BracketsRange,
+                               llvm::Optional<PointerInterpretationKind> PIK) {
   return getDerived().RebuildArrayType(ElementType, SizeMod, nullptr,
                                        SizeExpr,
-                                       IndexTypeQuals, BracketsRange);
+                                       IndexTypeQuals, BracketsRange, PIK);
 }
 
 template<typename Derived>
@@ -14596,10 +14691,11 @@ TreeTransform<Derived>::RebuildDependentSizedArrayType(QualType ElementType,
                                           ArrayType::ArraySizeModifier SizeMod,
                                                        Expr *SizeExpr,
                                                        unsigned IndexTypeQuals,
-                                                   SourceRange BracketsRange) {
+                                                   SourceRange BracketsRange,
+                               llvm::Optional<PointerInterpretationKind> PIK) {
   return getDerived().RebuildArrayType(ElementType, SizeMod, nullptr,
                                        SizeExpr,
-                                       IndexTypeQuals, BracketsRange);
+                                       IndexTypeQuals, BracketsRange, PIK);
 }
 
 template <typename Derived>
@@ -14607,6 +14703,14 @@ QualType TreeTransform<Derived>::RebuildDependentAddressSpaceType(
     QualType PointeeType, Expr *AddrSpaceExpr, SourceLocation AttributeLoc) {
   return SemaRef.BuildAddressSpaceAttr(PointeeType, AddrSpaceExpr,
                                           AttributeLoc);
+}
+
+template <typename Derived>
+QualType TreeTransform<Derived>::RebuildDependentPointerType(
+    QualType PointerType, PointerInterpretationKind PIK,
+    SourceLocation QualifierLoc) {
+  return SemaRef.BuildPointerInterpretationAttr(PointerType, PIK,
+                                                QualifierLoc);
 }
 
 template <typename Derived>

@@ -9,6 +9,7 @@
 #include "llvm/CodeGen/ValueTypes.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/IR/DerivedTypes.h"
+#include "llvm/IR/Cheri.h"
 #include "llvm/IR/Type.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/TypeSize.h"
@@ -161,6 +162,11 @@ std::string EVT::getEVTString() const {
     if (isFloatingPoint())
       return "f" + utostr(getSizeInBits());
     llvm_unreachable("Invalid EVT!");
+  case MVT::iFATPTR64: return "iFATPTR64";
+  case MVT::iFATPTR128: return "iFATPTR128";
+  case MVT::iFATPTR256: return "iFATPTR256";
+  case MVT::iFATPTR512: return "iFATPTR512";
+  case MVT::iFATPTRAny: return "iFATPTRAny";
   case MVT::bf16:      return "bf16";
   case MVT::ppcf128:   return "ppcf128";
   case MVT::isVoid:    return "isVoid";
@@ -531,6 +537,12 @@ Type *EVT::getTypeForEVT(LLVMContext &Context) const {
   case MVT::nxv8f64:
     return ScalableVectorType::get(Type::getDoubleTy(Context), 8);
   case MVT::Metadata: return Type::getMetadataTy(Context);
+  case MVT::iFATPTR64:
+  case MVT::iFATPTR128:
+  case MVT::iFATPTR256:
+  case MVT::iFATPTR512:
+  case MVT::iFATPTRAny:
+    return PointerType::get(Type::getInt8Ty(Context), 200);
   }
   // clang-format on
 }
@@ -556,7 +568,12 @@ MVT MVT::getVT(Type *Ty, bool HandleUnknown){
   case Type::X86_AMXTyID:   return MVT(MVT::x86amx);
   case Type::FP128TyID:     return MVT(MVT::f128);
   case Type::PPC_FP128TyID: return MVT(MVT::ppcf128);
-  case Type::PointerTyID:   return MVT(MVT::iPTR);
+  case Type::PointerTyID: {
+    // FIXME: require a DataLayout here!
+    if (isCheriPointer(Ty, nullptr))
+      return MVT(MVT::iFATPTRAny);
+    return MVT(MVT::iPTR);
+  }
   case Type::FixedVectorTyID:
   case Type::ScalableVectorTyID: {
     VectorType *VTy = cast<VectorType>(Ty);

@@ -176,6 +176,63 @@ static bool SemaBuiltinAnnotation(Sema &S, CallExpr *TheCall) {
   return false;
 }
 
+static bool SemaBuiltinCHERICapCreate(Sema &S, CallExpr *TheCall) {
+  if (checkArgCount(S, TheCall, 3))
+    return true;
+
+  QualType FnType = TheCall->getArg(2)->getType();
+  auto FnAttrType = FnType->getAs<AttributedType>();
+
+  // FIXME: Proper error
+  if (FnAttrType->getAttrKind() != attr::CHERICCallee) {
+    fprintf(stderr, "Argument must be a cheri_ccallee thingy\n");
+    return true;
+  }
+  // FIXME: Typecheck args 0 and 1
+  ASTContext &C = S.Context;
+  // FIXME: Error on null
+  auto BaseFnTy = cast<FunctionProtoType>(FnAttrType->getModifiedType());
+  auto ReturnFnTy = C.adjustFunctionType(BaseFnTy,
+      BaseFnTy->getExtInfo().withCallingConv(CC_CHERICCallback));
+  auto ReturnTy = C.getPointerType(QualType(ReturnFnTy, 0));
+
+  TheCall->setType(ReturnTy);
+  return false;
+}
+
+/// Check that argument \p ArgIndex is a capability type (or an array/function
+/// that decays to a capability type.
+static bool checkCapArg(Sema &S, CallExpr *TheCall, unsigned ArgIndex,
+                        QualType *ResultingSrcTy = nullptr) {
+  clang::Expr *Source = TheCall->getArg(ArgIndex);
+  ASTContext &Ctx = S.Context;
+  QualType SrcTy = Source->getType();
+  // We should also be able to use it with arrays/functions
+  if (SrcTy->canDecayToPointerType())
+    SrcTy = Ctx.getDecayedType(SrcTy);
+
+  // Treat NULL/nullptr/__null/literal 0 as void * __capability.
+  if (!SrcTy->isCapabilityPointerType() &&
+      Source->isNullPointerConstant(Ctx, Expr::NPC_ValueDependentIsNull))
+    SrcTy = Ctx.getPointerType(SrcTy->isPointerType() ? SrcTy->getPointeeType()
+                                                      : Ctx.VoidTy,
+                               PIK_Capability);
+  if (ResultingSrcTy)
+    *ResultingSrcTy = SrcTy;
+  if (!SrcTy->isCapabilityPointerType() && !SrcTy->isIntCapType()) {
+    S.Diag(Source->getExprLoc(), diag::err_typecheck_expect_capability_operand)
+        << SrcTy;
+    return true;
+  }
+  ExprResult SrcArg = S.PerformCopyInitialization(
+      InitializedEntity::InitializeParameter(Ctx, SrcTy, false),
+      SourceLocation(), Source);
+  if (SrcArg.isInvalid())
+    return true;
+  TheCall->setArg(ArgIndex, SrcArg.get());
+  return false;
+}
+
 static bool SemaBuiltinMSVCAnnotation(Sema &S, CallExpr *TheCall) {
   // We need at least one argument.
   if (TheCall->getNumArgs() < 1) {
@@ -1984,6 +2041,8 @@ bool Sema::CheckTSBuiltinFunctionCall(const TargetInfo &TI, unsigned BuiltinID,
   }
 }
 
+static bool checkBuiltinArgument(Sema &S, CallExpr *E, unsigned ArgIndex);
+
 ExprResult
 Sema::CheckBuiltinFunctionCall(FunctionDecl *FDecl, unsigned BuiltinID,
                                CallExpr *TheCall) {
@@ -2124,6 +2183,7 @@ Sema::CheckBuiltinFunctionCall(FunctionDecl *FDecl, unsigned BuiltinID,
       return ExprError();
     break;
   case Builtin::BI__builtin_assume_aligned:
+  case Builtin::BI__builtin_assume_aligned_cap:
     if (SemaBuiltinAssumeAligned(TheCall))
       return ExprError();
     break;
@@ -2164,102 +2224,119 @@ Sema::CheckBuiltinFunctionCall(FunctionDecl *FDecl, unsigned BuiltinID,
   case Builtin::BI__sync_fetch_and_add_4:
   case Builtin::BI__sync_fetch_and_add_8:
   case Builtin::BI__sync_fetch_and_add_16:
+  case Builtin::BI__sync_fetch_and_add_cap:
   case Builtin::BI__sync_fetch_and_sub:
   case Builtin::BI__sync_fetch_and_sub_1:
   case Builtin::BI__sync_fetch_and_sub_2:
   case Builtin::BI__sync_fetch_and_sub_4:
   case Builtin::BI__sync_fetch_and_sub_8:
   case Builtin::BI__sync_fetch_and_sub_16:
+  case Builtin::BI__sync_fetch_and_sub_cap:
   case Builtin::BI__sync_fetch_and_or:
   case Builtin::BI__sync_fetch_and_or_1:
   case Builtin::BI__sync_fetch_and_or_2:
   case Builtin::BI__sync_fetch_and_or_4:
   case Builtin::BI__sync_fetch_and_or_8:
   case Builtin::BI__sync_fetch_and_or_16:
+  case Builtin::BI__sync_fetch_and_or_cap:
   case Builtin::BI__sync_fetch_and_and:
   case Builtin::BI__sync_fetch_and_and_1:
   case Builtin::BI__sync_fetch_and_and_2:
   case Builtin::BI__sync_fetch_and_and_4:
   case Builtin::BI__sync_fetch_and_and_8:
   case Builtin::BI__sync_fetch_and_and_16:
+  case Builtin::BI__sync_fetch_and_and_cap:
   case Builtin::BI__sync_fetch_and_xor:
   case Builtin::BI__sync_fetch_and_xor_1:
   case Builtin::BI__sync_fetch_and_xor_2:
   case Builtin::BI__sync_fetch_and_xor_4:
   case Builtin::BI__sync_fetch_and_xor_8:
   case Builtin::BI__sync_fetch_and_xor_16:
+  case Builtin::BI__sync_fetch_and_xor_cap:
   case Builtin::BI__sync_fetch_and_nand:
   case Builtin::BI__sync_fetch_and_nand_1:
   case Builtin::BI__sync_fetch_and_nand_2:
   case Builtin::BI__sync_fetch_and_nand_4:
   case Builtin::BI__sync_fetch_and_nand_8:
   case Builtin::BI__sync_fetch_and_nand_16:
+  case Builtin::BI__sync_fetch_and_nand_cap:
   case Builtin::BI__sync_add_and_fetch:
   case Builtin::BI__sync_add_and_fetch_1:
   case Builtin::BI__sync_add_and_fetch_2:
   case Builtin::BI__sync_add_and_fetch_4:
   case Builtin::BI__sync_add_and_fetch_8:
   case Builtin::BI__sync_add_and_fetch_16:
+  case Builtin::BI__sync_add_and_fetch_cap:
   case Builtin::BI__sync_sub_and_fetch:
   case Builtin::BI__sync_sub_and_fetch_1:
   case Builtin::BI__sync_sub_and_fetch_2:
   case Builtin::BI__sync_sub_and_fetch_4:
   case Builtin::BI__sync_sub_and_fetch_8:
   case Builtin::BI__sync_sub_and_fetch_16:
+  case Builtin::BI__sync_sub_and_fetch_cap:
   case Builtin::BI__sync_and_and_fetch:
   case Builtin::BI__sync_and_and_fetch_1:
   case Builtin::BI__sync_and_and_fetch_2:
   case Builtin::BI__sync_and_and_fetch_4:
   case Builtin::BI__sync_and_and_fetch_8:
   case Builtin::BI__sync_and_and_fetch_16:
+  case Builtin::BI__sync_and_and_fetch_cap:
   case Builtin::BI__sync_or_and_fetch:
   case Builtin::BI__sync_or_and_fetch_1:
   case Builtin::BI__sync_or_and_fetch_2:
   case Builtin::BI__sync_or_and_fetch_4:
   case Builtin::BI__sync_or_and_fetch_8:
   case Builtin::BI__sync_or_and_fetch_16:
+  case Builtin::BI__sync_or_and_fetch_cap:
   case Builtin::BI__sync_xor_and_fetch:
   case Builtin::BI__sync_xor_and_fetch_1:
   case Builtin::BI__sync_xor_and_fetch_2:
   case Builtin::BI__sync_xor_and_fetch_4:
   case Builtin::BI__sync_xor_and_fetch_8:
   case Builtin::BI__sync_xor_and_fetch_16:
+  case Builtin::BI__sync_xor_and_fetch_cap:
   case Builtin::BI__sync_nand_and_fetch:
   case Builtin::BI__sync_nand_and_fetch_1:
   case Builtin::BI__sync_nand_and_fetch_2:
   case Builtin::BI__sync_nand_and_fetch_4:
   case Builtin::BI__sync_nand_and_fetch_8:
   case Builtin::BI__sync_nand_and_fetch_16:
+  case Builtin::BI__sync_nand_and_fetch_cap:
   case Builtin::BI__sync_val_compare_and_swap:
   case Builtin::BI__sync_val_compare_and_swap_1:
   case Builtin::BI__sync_val_compare_and_swap_2:
   case Builtin::BI__sync_val_compare_and_swap_4:
   case Builtin::BI__sync_val_compare_and_swap_8:
   case Builtin::BI__sync_val_compare_and_swap_16:
+  case Builtin::BI__sync_val_compare_and_swap_cap:
   case Builtin::BI__sync_bool_compare_and_swap:
   case Builtin::BI__sync_bool_compare_and_swap_1:
   case Builtin::BI__sync_bool_compare_and_swap_2:
   case Builtin::BI__sync_bool_compare_and_swap_4:
   case Builtin::BI__sync_bool_compare_and_swap_8:
   case Builtin::BI__sync_bool_compare_and_swap_16:
+  case Builtin::BI__sync_bool_compare_and_swap_cap:
   case Builtin::BI__sync_lock_test_and_set:
   case Builtin::BI__sync_lock_test_and_set_1:
   case Builtin::BI__sync_lock_test_and_set_2:
   case Builtin::BI__sync_lock_test_and_set_4:
   case Builtin::BI__sync_lock_test_and_set_8:
   case Builtin::BI__sync_lock_test_and_set_16:
+  case Builtin::BI__sync_lock_test_and_set_cap:
   case Builtin::BI__sync_lock_release:
   case Builtin::BI__sync_lock_release_1:
   case Builtin::BI__sync_lock_release_2:
   case Builtin::BI__sync_lock_release_4:
   case Builtin::BI__sync_lock_release_8:
   case Builtin::BI__sync_lock_release_16:
+  case Builtin::BI__sync_lock_release_cap:
   case Builtin::BI__sync_swap:
   case Builtin::BI__sync_swap_1:
   case Builtin::BI__sync_swap_2:
   case Builtin::BI__sync_swap_4:
   case Builtin::BI__sync_swap_8:
   case Builtin::BI__sync_swap_16:
+  case Builtin::BI__sync_swap_cap:
     return SemaBuiltinAtomicOverloaded(TheCallResult);
   case Builtin::BI__sync_synchronize:
     Diag(TheCall->getBeginLoc(), diag::warn_atomic_implicit_seq_cst)
@@ -2423,6 +2500,185 @@ Sema::CheckBuiltinFunctionCall(FunctionDecl *FDecl, unsigned BuiltinID,
     }
     break;
   }
+  // Memory capability functions
+  case Builtin::BI__builtin_cheri_callback_create:
+    return SemaBuiltinCHERICapCreate(*this, TheCall);
+  case Builtin::BI__builtin_cheri_bounds_set:
+  case Builtin::BI__builtin_cheri_bounds_set_exact:
+  case Builtin::BI__builtin_cheri_perms_and:
+  case Builtin::BI__builtin_cheri_flags_set: {
+    // The CHERI mutators should accept capability pointer types and
+    // uintcap_t and have the same (const-preserving) result type.
+    // First argument must be a capability, type-check second argument normally.
+    QualType SrcTy;
+    if (checkArgCount(*this, TheCall, 2) ||
+        checkCapArg(*this, TheCall, 0, &SrcTy) ||
+        checkBuiltinArgument(*this, TheCall, 1))
+      return ExprError();
+    TheCall->setType(SrcTy);
+    break;
+  }
+  case Builtin::BI__builtin_cheri_offset_set:
+  case Builtin::BI__builtin_cheri_address_set:
+  case Builtin::BI__builtin_cheri_offset_increment: {
+    // For the address-mutating builtins we can't preserve the type of the
+    // input argument since the resulting value could be less aligned than the
+    // natural alignment of the input argument pointee type.
+    QualType SrcTy;
+    if (checkArgCount(*this, TheCall, 2) ||
+        checkCapArg(*this, TheCall, 0, &SrcTy) ||
+        checkBuiltinArgument(*this, TheCall, 1))
+      return ExprError();
+
+    if (SrcTy->isIntCapType()) {
+      TheCall->setType(SrcTy);
+    } else {
+      assert(SrcTy->isCapabilityPointerType());
+      // For pointer types the result is always void* (so that we don't end up
+      // with underaligned types), but we copy the const and volatile qualifier.
+      // TODO: should we also copy restrict+extended qualifiers?
+      QualType ResultPointeeTy = Context.VoidTy;
+      if (SrcTy->getPointeeType().isVolatileQualified())
+        ResultPointeeTy.addVolatile();
+      if (SrcTy->getPointeeType().isConstQualified())
+        ResultPointeeTy.addConst();
+      TheCall->setType(
+          Context.getPointerType(ResultPointeeTy, PIK_Capability));
+    }
+    break;
+  }
+  case Builtin::BI__builtin_cheri_seal:
+  case Builtin::BI__builtin_cheri_unseal:
+  case Builtin::BI__builtin_cheri_conditional_seal:
+  case Builtin::BI__builtin_cheri_cap_type_copy: {
+    // Seal/unseal work in almost same way as the setters: value to be
+    // unsealed/sealed comes first and should therefore be the result type,
+    // second argument is overloaded to be any capability type.
+    QualType SrcTy;
+    if (checkArgCount(*this, TheCall, 2) ||
+        checkCapArg(*this, TheCall, 0, &SrcTy) ||
+        checkCapArg(*this, TheCall, 1))
+      return ExprError();
+    TheCall->setType(SrcTy);
+    break;
+  }
+  case Builtin::BI__builtin_cheri_cap_build: {
+    // CBuildCap takes the authorizing capability as the first argument and
+    // the raw bits (a __uintcap_t) that should become tagged second.
+    // The result is always void * __capability.
+    // XXX: If this restriction turns out to be annoying we can always relax
+    //  this and use the type of the second argument as the return type.
+    QualType BitsTy;
+    if (checkArgCount(*this, TheCall, 2) || checkCapArg(*this, TheCall, 0) ||
+        checkCapArg(*this, TheCall, 1, &BitsTy))
+      return ExprError();
+    // Restrict the second argument to __(u)intcap_t
+    if (!BitsTy->isIntCapType()) {
+      Diag(TheCall->getArg(1)->getExprLoc(), diag::err_typecheck_expect_int)
+          << BitsTy;
+      return ExprError();
+    }
+    // Result is always void * __capability
+    TheCall->setType(
+        Context.getPointerType(Context.VoidTy, PIK_Capability));
+    break;
+  }
+  case Builtin::BI__builtin_cheri_tag_clear:
+  case Builtin::BI__builtin_cheri_seal_entry: {
+    // Tag-clear and seal-entry behave like the mutator functions but don't have
+    // a second argument.
+    QualType SrcTy;
+    if (checkArgCount(*this, TheCall, 1) ||
+        checkCapArg(*this, TheCall, 0, &SrcTy))
+      return ExprError();
+    TheCall->setType(SrcTy);
+    break;
+  }
+  case Builtin::BI__builtin_cheri_equal_exact:
+  case Builtin::BI__builtin_cheri_subset_test:
+  case Builtin::BI__builtin_cheri_type_check: {
+    // For subset testing and type checking we allow any capability type for
+    // both arguments.
+    if (checkArgCount(*this, TheCall, 2) || checkCapArg(*this, TheCall, 0) ||
+        checkCapArg(*this, TheCall, 1))
+      return ExprError();
+    break;
+  }
+  case Builtin::BI__builtin_cheri_address_get:
+  case Builtin::BI__builtin_cheri_base_get:
+  case Builtin::BI__builtin_cheri_flags_get:
+  case Builtin::BI__builtin_cheri_length_get:
+  case Builtin::BI__builtin_cheri_offset_get:
+  case Builtin::BI__builtin_cheri_perms_get:
+  case Builtin::BI__builtin_cheri_sealed_get:
+  case Builtin::BI__builtin_cheri_tag_get:
+  case Builtin::BI__builtin_cheri_type_get: {
+    // The CHERI accessors should accept both capability pointer types and
+    // (u)intcap_t arguments.
+    if (checkArgCount(*this, TheCall, 1) || checkCapArg(*this, TheCall, 0))
+      return ExprError();
+    break;
+  }
+  case Builtin::BI__builtin_cheri_cap_to_pointer: {
+    if (Context.getTargetInfo().areAllPointersCapabilities()) {
+      Diag(TheCall->getBeginLoc(), diag::err_builtin_target_unsupported)
+          << TheCall->getSourceRange();
+      return ExprError();
+    }
+    // First argument is the authorizing capability, the second is the
+    // capability to be converted to a relative integer pointer.
+    // If the argument is a __(u)intcap_t, we return a (u)intptr_t.
+    QualType SrcTy;
+    if (checkArgCount(*this, TheCall, 2) || checkCapArg(*this, TheCall, 0) ||
+        checkCapArg(*this, TheCall, 1, &SrcTy))
+      return ExprError();
+    if (SrcTy->isPointerType()) {
+      TheCall->setType(Context.getPointerType(SrcTy->getPointeeType(),
+                                              PIK_Integer));
+    } else {
+      assert(SrcTy->isIntCapType());
+      TheCall->setType(SrcTy->isSignedIntegerType() ? Context.getIntPtrType()
+                                                    : Context.getUIntPtrType());
+    }
+    break;
+  }
+  case Builtin::BI__builtin_cheri_cap_from_pointer: {
+    // First argument is the authorizing capability, the second is the
+    // integer to be converted to a capability.
+    // For purecap the second argument must be a (non-capability) integer type
+    // and in hybrid mode we also permit (non-capability) pointer types.
+    // If the non-capability argument is a pointer, the return type will be the
+    // the capability equivalent of that pointer, if it's an integer the return
+    // type is void * __capability.
+    if (checkArgCount(*this, TheCall, 2) || checkCapArg(*this, TheCall, 0))
+      return ExprError();
+    auto PtrArg = TheCall->getArg(1);
+    auto PtrTy = PtrArg->getType();
+    QualType ResultPointee = Context.VoidTy;
+    if (!PtrTy->isIntegerType() || PtrTy->isIntCapType()) {
+      if (Context.getTargetInfo().areAllPointersCapabilities()) {
+        Diag(PtrArg->getExprLoc(), diag::err_typecheck_expect_int) << PtrTy;
+        return ExprError();
+      } else if (PtrTy->isPointerType() &&
+                 !PtrTy->isCHERICapabilityType(Context)) {
+        ResultPointee = PtrTy->getPointeeType();
+      } else {
+        Diag(PtrArg->getExprLoc(), diag::err_typecheck_expect_scalar_operand)
+            << PtrTy;
+        return ExprError();
+      }
+    }
+    TheCall->setType(
+        Context.getPointerType(ResultPointee, PIK_Capability));
+    break;
+  }
+  case Builtin::BI__builtin_cheri_perms_check:
+    // Overloaded to allow any capability type as the first argument.
+    if (checkArgCount(*this, TheCall, 2) || checkCapArg(*this, TheCall, 0) ||
+        checkBuiltinArgument(*this, TheCall, 1))
+      return ExprError();
+    break;
+
   // OpenCL v2.0, s6.13.16 - Pipe functions
   case Builtin::BIread_pipe:
   case Builtin::BIwrite_pipe:
@@ -6611,9 +6867,9 @@ Sema::SemaBuiltinAtomicOverloaded(ExprResult TheCallResult) {
   // __sync_fetch_and_add_2.
 #define BUILTIN_ROW(x) \
   { Builtin::BI##x##_1, Builtin::BI##x##_2, Builtin::BI##x##_4, \
-    Builtin::BI##x##_8, Builtin::BI##x##_16 }
+    Builtin::BI##x##_8, Builtin::BI##x##_16, Builtin::BI##x##_cap }
 
-  static const unsigned BuiltinIndices[][5] = {
+  static const unsigned BuiltinIndices[][6] = {
     BUILTIN_ROW(__sync_fetch_and_add),
     BUILTIN_ROW(__sync_fetch_and_sub),
     BUILTIN_ROW(__sync_fetch_and_or),
@@ -6636,18 +6892,22 @@ Sema::SemaBuiltinAtomicOverloaded(ExprResult TheCallResult) {
   };
 #undef BUILTIN_ROW
 
-  // Determine the index of the size.
-  unsigned SizeIndex;
-  switch (Context.getTypeSizeInChars(ValType).getQuantity()) {
-  case 1: SizeIndex = 0; break;
-  case 2: SizeIndex = 1; break;
-  case 4: SizeIndex = 2; break;
-  case 8: SizeIndex = 3; break;
-  case 16: SizeIndex = 4; break;
-  default:
-    Diag(DRE->getBeginLoc(), diag::err_atomic_builtin_pointer_size)
-        << FirstArg->getType() << FirstArg->getSourceRange();
-    return ExprError();
+  // Determine the index of the type.
+  unsigned TypeIndex;
+  if (ValType->isCHERICapabilityType(Context)) {
+    TypeIndex = 5;
+  } else {
+    switch (Context.getTypeSizeInChars(ValType).getQuantity()) {
+    case 1: TypeIndex = 0; break;
+    case 2: TypeIndex = 1; break;
+    case 4: TypeIndex = 2; break;
+    case 8: TypeIndex = 3; break;
+    case 16: TypeIndex = 4; break;
+    default:
+      Diag(DRE->getBeginLoc(), diag::err_atomic_builtin_pointer_size)
+          << FirstArg->getType() << FirstArg->getSourceRange();
+      return ExprError();
+    }
   }
 
   // Each of these builtins has one pointer argument, followed by some number of
@@ -6665,6 +6925,7 @@ Sema::SemaBuiltinAtomicOverloaded(ExprResult TheCallResult) {
   case Builtin::BI__sync_fetch_and_add_4:
   case Builtin::BI__sync_fetch_and_add_8:
   case Builtin::BI__sync_fetch_and_add_16:
+  case Builtin::BI__sync_fetch_and_add_cap:
     BuiltinIndex = 0;
     break;
 
@@ -6674,6 +6935,7 @@ Sema::SemaBuiltinAtomicOverloaded(ExprResult TheCallResult) {
   case Builtin::BI__sync_fetch_and_sub_4:
   case Builtin::BI__sync_fetch_and_sub_8:
   case Builtin::BI__sync_fetch_and_sub_16:
+  case Builtin::BI__sync_fetch_and_sub_cap:
     BuiltinIndex = 1;
     break;
 
@@ -6683,6 +6945,7 @@ Sema::SemaBuiltinAtomicOverloaded(ExprResult TheCallResult) {
   case Builtin::BI__sync_fetch_and_or_4:
   case Builtin::BI__sync_fetch_and_or_8:
   case Builtin::BI__sync_fetch_and_or_16:
+  case Builtin::BI__sync_fetch_and_or_cap:
     BuiltinIndex = 2;
     break;
 
@@ -6692,6 +6955,7 @@ Sema::SemaBuiltinAtomicOverloaded(ExprResult TheCallResult) {
   case Builtin::BI__sync_fetch_and_and_4:
   case Builtin::BI__sync_fetch_and_and_8:
   case Builtin::BI__sync_fetch_and_and_16:
+  case Builtin::BI__sync_fetch_and_and_cap:
     BuiltinIndex = 3;
     break;
 
@@ -6701,6 +6965,7 @@ Sema::SemaBuiltinAtomicOverloaded(ExprResult TheCallResult) {
   case Builtin::BI__sync_fetch_and_xor_4:
   case Builtin::BI__sync_fetch_and_xor_8:
   case Builtin::BI__sync_fetch_and_xor_16:
+  case Builtin::BI__sync_fetch_and_xor_cap:
     BuiltinIndex = 4;
     break;
 
@@ -6710,6 +6975,7 @@ Sema::SemaBuiltinAtomicOverloaded(ExprResult TheCallResult) {
   case Builtin::BI__sync_fetch_and_nand_4:
   case Builtin::BI__sync_fetch_and_nand_8:
   case Builtin::BI__sync_fetch_and_nand_16:
+  case Builtin::BI__sync_fetch_and_nand_cap:
     BuiltinIndex = 5;
     WarnAboutSemanticsChange = true;
     break;
@@ -6720,6 +6986,7 @@ Sema::SemaBuiltinAtomicOverloaded(ExprResult TheCallResult) {
   case Builtin::BI__sync_add_and_fetch_4:
   case Builtin::BI__sync_add_and_fetch_8:
   case Builtin::BI__sync_add_and_fetch_16:
+  case Builtin::BI__sync_add_and_fetch_cap:
     BuiltinIndex = 6;
     break;
 
@@ -6729,6 +6996,7 @@ Sema::SemaBuiltinAtomicOverloaded(ExprResult TheCallResult) {
   case Builtin::BI__sync_sub_and_fetch_4:
   case Builtin::BI__sync_sub_and_fetch_8:
   case Builtin::BI__sync_sub_and_fetch_16:
+  case Builtin::BI__sync_sub_and_fetch_cap:
     BuiltinIndex = 7;
     break;
 
@@ -6738,6 +7006,7 @@ Sema::SemaBuiltinAtomicOverloaded(ExprResult TheCallResult) {
   case Builtin::BI__sync_and_and_fetch_4:
   case Builtin::BI__sync_and_and_fetch_8:
   case Builtin::BI__sync_and_and_fetch_16:
+  case Builtin::BI__sync_and_and_fetch_cap:
     BuiltinIndex = 8;
     break;
 
@@ -6747,6 +7016,7 @@ Sema::SemaBuiltinAtomicOverloaded(ExprResult TheCallResult) {
   case Builtin::BI__sync_or_and_fetch_4:
   case Builtin::BI__sync_or_and_fetch_8:
   case Builtin::BI__sync_or_and_fetch_16:
+  case Builtin::BI__sync_or_and_fetch_cap:
     BuiltinIndex = 9;
     break;
 
@@ -6756,6 +7026,7 @@ Sema::SemaBuiltinAtomicOverloaded(ExprResult TheCallResult) {
   case Builtin::BI__sync_xor_and_fetch_4:
   case Builtin::BI__sync_xor_and_fetch_8:
   case Builtin::BI__sync_xor_and_fetch_16:
+  case Builtin::BI__sync_xor_and_fetch_cap:
     BuiltinIndex = 10;
     break;
 
@@ -6765,6 +7036,7 @@ Sema::SemaBuiltinAtomicOverloaded(ExprResult TheCallResult) {
   case Builtin::BI__sync_nand_and_fetch_4:
   case Builtin::BI__sync_nand_and_fetch_8:
   case Builtin::BI__sync_nand_and_fetch_16:
+  case Builtin::BI__sync_nand_and_fetch_cap:
     BuiltinIndex = 11;
     WarnAboutSemanticsChange = true;
     break;
@@ -6775,6 +7047,7 @@ Sema::SemaBuiltinAtomicOverloaded(ExprResult TheCallResult) {
   case Builtin::BI__sync_val_compare_and_swap_4:
   case Builtin::BI__sync_val_compare_and_swap_8:
   case Builtin::BI__sync_val_compare_and_swap_16:
+  case Builtin::BI__sync_val_compare_and_swap_cap:
     BuiltinIndex = 12;
     NumFixed = 2;
     break;
@@ -6785,6 +7058,7 @@ Sema::SemaBuiltinAtomicOverloaded(ExprResult TheCallResult) {
   case Builtin::BI__sync_bool_compare_and_swap_4:
   case Builtin::BI__sync_bool_compare_and_swap_8:
   case Builtin::BI__sync_bool_compare_and_swap_16:
+  case Builtin::BI__sync_bool_compare_and_swap_cap:
     BuiltinIndex = 13;
     NumFixed = 2;
     ResultType = Context.BoolTy;
@@ -6796,6 +7070,7 @@ Sema::SemaBuiltinAtomicOverloaded(ExprResult TheCallResult) {
   case Builtin::BI__sync_lock_test_and_set_4:
   case Builtin::BI__sync_lock_test_and_set_8:
   case Builtin::BI__sync_lock_test_and_set_16:
+  case Builtin::BI__sync_lock_test_and_set_cap:
     BuiltinIndex = 14;
     break;
 
@@ -6805,6 +7080,7 @@ Sema::SemaBuiltinAtomicOverloaded(ExprResult TheCallResult) {
   case Builtin::BI__sync_lock_release_4:
   case Builtin::BI__sync_lock_release_8:
   case Builtin::BI__sync_lock_release_16:
+  case Builtin::BI__sync_lock_release_cap:
     BuiltinIndex = 15;
     NumFixed = 0;
     ResultType = Context.VoidTy;
@@ -6816,6 +7092,7 @@ Sema::SemaBuiltinAtomicOverloaded(ExprResult TheCallResult) {
   case Builtin::BI__sync_swap_4:
   case Builtin::BI__sync_swap_8:
   case Builtin::BI__sync_swap_16:
+  case Builtin::BI__sync_swap_cap:
     BuiltinIndex = 16;
     break;
   }
@@ -6839,7 +7116,7 @@ Sema::SemaBuiltinAtomicOverloaded(ExprResult TheCallResult) {
 
   // Get the decl for the concrete builtin from this, we can tell what the
   // concrete integer type we should convert to is.
-  unsigned NewBuiltinID = BuiltinIndices[BuiltinIndex][SizeIndex];
+  unsigned NewBuiltinID = BuiltinIndices[BuiltinIndex][TypeIndex];
   const char *NewBuiltinName = Context.BuiltinInfo.getName(NewBuiltinID);
   FunctionDecl *NewBuiltinDecl;
   if (NewBuiltinID == BuiltinID)
@@ -8071,6 +8348,12 @@ bool Sema::SemaBuiltinARMMemoryTaggingCall(unsigned BuiltinID, CallExpr *TheCall
           << ArgTypeA <<  ArgTypeB << ArgA->getSourceRange()
           << ArgB->getSourceRange();
       }
+      if (ArgTypeA->isCHERICapabilityType(Context) !=
+          ArgTypeB->isCHERICapabilityType(Context))
+        return Diag(TheCall->getBeginLoc(),
+                    diag::err_typecheck_sub_pointer_capability)
+            << ArgTypeA << ArgTypeB << ArgA->getSourceRange()
+            << ArgB->getSourceRange();
     }
 
     // at least one argument should be pointer type
@@ -12186,8 +12469,14 @@ static IntRange GetExprRange(ASTContext &C, const Expr *E, unsigned MaxWidth,
 
   // Try a full evaluation first.
   Expr::EvalResult result;
-  if (E->EvaluateAsRValue(result, C, InConstantContext))
+  if (E->EvaluateAsRValue(result, C, InConstantContext)) {
+    // [u]intcap_t values produce LValues that can be used as pointers
+    if (result.Val.isLValue() && result.Val.getLValueBase().isNull()) {
+      result.Val =
+        APValue(llvm::APSInt(result.Val.getLValueOffset().getQuantity()));
+    }
     return GetValueRange(C, result.Val, GetExprType(E), MaxWidth);
+  }
 
   // I think we only want to look through implicit casts here; if the
   // user has an explicit widening cast, we should treat the value as
@@ -12431,7 +12720,7 @@ static IntRange GetExprRange(ASTContext &C, const Expr *E, unsigned MaxWidth,
 
 static IntRange GetExprRange(ASTContext &C, const Expr *E,
                              bool InConstantContext, bool Approximate) {
-  return GetExprRange(C, E, C.getIntWidth(GetExprType(E)), InConstantContext,
+  return GetExprRange(C, E, C.getIntRange(GetExprType(E)), InConstantContext,
                       Approximate);
 }
 
@@ -12817,6 +13106,7 @@ static void AnalyzeImpConvsInComparison(Sema &S, BinaryOperator *E) {
 ///
 /// \param E the binary operator to check for warnings
 static void AnalyzeComparison(Sema &S, BinaryOperator *E) {
+  // FIXME: handle CHERI low-bit checks here
   // The type the comparison is being performed in.
   QualType T = E->getLHS()->getType();
 
@@ -13891,6 +14181,18 @@ static void CheckImplicitConversion(Sema &S, Expr *E, QualType T,
             << E->getType());
   }
 
+  // Check for implicit casts that drop the capability metadata. Such code could
+  // can result in crashes later on, but the warning probably too noisy to be
+  // turned on by default (or -Wall/-Wextra). To match -Wshorten-64-to-32, we
+  // currently only enable it with -Wconversion.
+  // TODO: do we need a S.SourceMgr.isInSystemMacro(CC) check?
+  // TODO: should probably add a Expr::canCarryProvenance() function.
+  if (Source->isIntCapType() && !Target->isIntCapType() &&
+      E->getType()->canCarryProvenance(S.Context)) {
+    return DiagnoseImpCast(S, E, T, CC, diag::warn_impcast_capability_integer,
+                           /* pruneControlFlow */ true);
+  }
+
   IntRange SourceTypeRange =
       IntRange::forTargetOfCanonicalType(S.Context, Source);
   IntRange LikelySourceRange =
@@ -14088,6 +14390,7 @@ struct AnalyzeImplicitConversionsWorkItem {
 
 /// Data recursive variant of AnalyzeImplicitConversions. Subexpressions
 /// that should be visited are added to WorkList.
+/// Note: Also handles CHERI multi-provenance analysis
 static void AnalyzeImplicitConversions(
     Sema &S, AnalyzeImplicitConversionsWorkItem Item,
     llvm::SmallVectorImpl<AnalyzeImplicitConversionsWorkItem> &WorkList) {
@@ -15936,7 +16239,7 @@ void Sema::CheckArrayAccess(const Expr *BaseExpr, const Expr *IndexExpr,
       const auto &ASTC = getASTContext();
       unsigned AddrBits =
           ASTC.getTargetInfo().getPointerWidth(ASTC.getTargetAddressSpace(
-              EffectiveType->getCanonicalTypeInternal()));
+              EffectiveType->getCanonicalTypeInternal().getQualifiers()));
       if (index.getBitWidth() < AddrBits)
         index = index.zext(AddrBits);
       Optional<CharUnits> ElemCharUnits =

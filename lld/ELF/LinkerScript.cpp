@@ -711,6 +711,9 @@ static OutputSection *findByName(ArrayRef<SectionCommand *> vec,
 
 static OutputDesc *createSection(InputSectionBase *isec, StringRef outsecName) {
   OutputDesc *osd = script->createOutputSection(outsecName, "<internal>");
+  if (outsecName == "__cap_relocs" && !config->relativeCapRelocsOnly) {
+    osd->flags |= SHF_WRITE;
+  }
   osd->osec.recordSection(isec);
   return osd;
 }

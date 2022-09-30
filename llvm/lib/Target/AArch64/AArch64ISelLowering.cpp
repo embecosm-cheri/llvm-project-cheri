@@ -4089,8 +4089,7 @@ SDValue AArch64TargetLowering::LowerFSINCOS(SDValue Op,
   RTLIB::Libcall LC = ArgVT == MVT::f64 ? RTLIB::SINCOS_STRET_F64
                                         : RTLIB::SINCOS_STRET_F32;
   const char *LibcallName = getLibcallName(LC);
-  SDValue Callee =
-      DAG.getExternalSymbol(LibcallName, getPointerTy(DAG.getDataLayout()));
+  SDValue Callee = DAG.getExternalFunctionSymbol(LibcallName);
 
   StructType *RetTy = StructType::get(ArgTy, ArgTy);
   TargetLowering::CallLoweringInfo CLI(DAG);
@@ -6808,7 +6807,8 @@ AArch64TargetLowering::LowerCall(CallLoweringInfo &CLI,
             Chain, DL, DstAddr, Arg, SizeNode,
             Outs[i].Flags.getNonZeroByValAlign(),
             /*isVol = */ false, /*AlwaysInline = */ false,
-            /*isTailCall = */ false, DstInfo, MachinePointerInfo());
+            /*isTailCall = */ false, /*MustPreserveCheriCapabilities = */ false,
+            DstInfo, MachinePointerInfo());
 
         MemOpChains.push_back(Cpy);
       } else {
@@ -6855,11 +6855,11 @@ AArch64TargetLowering::LowerCall(CallLoweringInfo &CLI,
     if (getTargetMachine().getCodeModel() == CodeModel::Large &&
         Subtarget->isTargetMachO()) {
       const char *Sym = S->getSymbol();
-      Callee = DAG.getTargetExternalSymbol(Sym, PtrVT, AArch64II::MO_GOT);
+      Callee = DAG.getTargetExternalFunctionSymbol(Sym, AArch64II::MO_GOT);
       Callee = DAG.getNode(AArch64ISD::LOADgot, DL, PtrVT, Callee);
     } else {
       const char *Sym = S->getSymbol();
-      Callee = DAG.getTargetExternalSymbol(Sym, PtrVT, 0);
+      Callee = DAG.getTargetExternalFunctionSymbol(Sym, 0);
     }
   }
 
@@ -8588,9 +8588,9 @@ SDValue AArch64TargetLowering::LowerVACOPY(SDValue Op,
   const Value *SrcSV = cast<SrcValueSDNode>(Op.getOperand(4))->getValue();
 
   return DAG.getMemcpy(Op.getOperand(0), DL, Op.getOperand(1), Op.getOperand(2),
-                       DAG.getConstant(VaListSize, DL, MVT::i32),
-                       Align(PtrSize), false, false, false,
-                       MachinePointerInfo(DestSV), MachinePointerInfo(SrcSV));
+                       DAG.getConstant(VaListSize, DL, MVT::i32), Align(PtrSize),
+                       false, false, false, false, MachinePointerInfo(DestSV),
+                       MachinePointerInfo(SrcSV));
 }
 
 SDValue AArch64TargetLowering::LowerVAARG(SDValue Op, SelectionDAG &DAG) const {
@@ -12275,8 +12275,7 @@ SDValue AArch64TargetLowering::LowerATOMIC_LOAD_AND(SDValue Op,
 SDValue AArch64TargetLowering::LowerWindowsDYNAMIC_STACKALLOC(
     SDValue Op, SDValue Chain, SDValue &Size, SelectionDAG &DAG) const {
   SDLoc dl(Op);
-  EVT PtrVT = getPointerTy(DAG.getDataLayout());
-  SDValue Callee = DAG.getTargetExternalSymbol("__chkstk", PtrVT, 0);
+  SDValue Callee = DAG.getTargetExternalFunctionSymbol("__chkstk", 0);
 
   const AArch64RegisterInfo *TRI = Subtarget->getRegisterInfo();
   const uint32_t *Mask = TRI->getWindowsStackProbePreservedMask();
@@ -20530,17 +20529,26 @@ Value *AArch64TargetLowering::emitLoadLinked(IRBuilderBase &Builder,
         Lo, Builder.CreateShl(Hi, ConstantInt::get(ValueTy, 64)), "val64");
   }
 
-  Type *Tys[] = { Addr->getType() };
+
+  const DataLayout &DL = M->getDataLayout();
+  IntegerType *IntEltTy = Builder.getIntNTy(DL.getTypeSizeInBits(ValueTy));
+  if (ValueTy->isPointerTy())
+    Addr = Builder.CreatePointerCast(
+        Addr,
+        IntEltTy->getPointerTo(Addr->getType()->getPointerAddressSpace()));
+  Type *Tys[] = {Addr->getType()};
   Intrinsic::ID Int =
       IsAcquire ? Intrinsic::aarch64_ldaxr : Intrinsic::aarch64_ldxr;
   Function *Ldxr = Intrinsic::getDeclaration(M, Int, Tys);
 
-  const DataLayout &DL = M->getDataLayout();
-  IntegerType *IntEltTy = Builder.getIntNTy(DL.getTypeSizeInBits(ValueTy));
   CallInst *CI = Builder.CreateCall(Ldxr, Addr);
   CI->addParamAttr(
       0, Attribute::get(Builder.getContext(), Attribute::ElementType, ValueTy));
   Value *Trunc = Builder.CreateTrunc(CI, IntEltTy);
+  // For atomicrmw xchg it's possible that Addr is a pointer not an integer
+  assert(!DL.isFatPointer(ValueTy) && "Should not be handled here!");
+  if (ValueTy->isPointerTy())
+    return Builder.CreateIntToPtr(Trunc, ValueTy);
 
   return Builder.CreateBitCast(Trunc, ValueTy);
 }
@@ -20574,12 +20582,22 @@ Value *AArch64TargetLowering::emitStoreConditional(IRBuilderBase &Builder,
 
   Intrinsic::ID Int =
       IsRelease ? Intrinsic::aarch64_stlxr : Intrinsic::aarch64_stxr;
-  Type *Tys[] = { Addr->getType() };
+  const DataLayout &DL = M->getDataLayout();
+  IntegerType *IntValTy =
+      Builder.getIntNTy(DL.getTypeSizeInBits(Val->getType()));
+  if (Val->getType()->isPointerTy())
+    Addr = Builder.CreatePointerCast(
+        Addr,
+        IntValTy->getPointerTo(Addr->getType()->getPointerAddressSpace()));
+  Type *Tys[] = {Addr->getType()};
   Function *Stxr = Intrinsic::getDeclaration(M, Int, Tys);
 
-  const DataLayout &DL = M->getDataLayout();
-  IntegerType *IntValTy = Builder.getIntNTy(DL.getTypeSizeInBits(Val->getType()));
-  Val = Builder.CreateBitCast(Val, IntValTy);
+  // For atomicrmw xchg it's possible that Addr is a pointer not an integer
+  assert(!DL.isFatPointer(Val->getType()) && "Should not be handled here!");
+  if (Val->getType()->isPointerTy())
+    Val = Builder.CreatePtrToInt(Val, IntValTy);
+  else
+    Val = Builder.CreateBitCast(Val, IntValTy);
 
   CallInst *CI = Builder.CreateCall(
       Stxr, {Builder.CreateZExtOrBitCast(
@@ -20796,11 +20814,11 @@ bool AArch64TargetLowering::enableAggressiveFMAFusion(EVT VT) const {
 }
 
 unsigned
-AArch64TargetLowering::getVaListSizeInBits(const DataLayout &DL) const {
+AArch64TargetLowering::getVaListSizeInBits(const DataLayout &DL, unsigned AS) const {
   if (Subtarget->isTargetDarwin() || Subtarget->isTargetWindows())
-    return getPointerTy(DL).getSizeInBits();
+    return getPointerTy(DL, AS).getSizeInBits();
 
-  return 3 * getPointerTy(DL).getSizeInBits() + 2 * 32;
+  return 3 * getPointerTy(DL, AS).getSizeInBits() + 2 * 32;
 }
 
 void AArch64TargetLowering::finalizeLowering(MachineFunction &MF) const {

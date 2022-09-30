@@ -49,19 +49,22 @@ public:
   void emitWeakReference(MCSymbol *Alias, const MCSymbol *Symbol) override;
   bool emitSymbolAttribute(MCSymbol *Symbol, MCSymbolAttr Attribute) override;
   void emitSymbolDesc(MCSymbol *Symbol, unsigned DescValue) override;
-  void emitCommonSymbol(MCSymbol *Symbol, uint64_t Size,
-                        unsigned ByteAlignment) override;
+  void emitCommonSymbol(MCSymbol *Symbol, uint64_t Size, unsigned ByteAlignment,
+                        TailPaddingAmount TailPadding) override;
 
   void emitELFSize(MCSymbol *Symbol, const MCExpr *Value) override;
 
   void emitLocalCommonSymbol(MCSymbol *Symbol, uint64_t Size,
-                             unsigned ByteAlignment) override;
+                             unsigned ByteAlignment,
+                             TailPaddingAmount TailPadding) override;
 
   void emitZerofill(MCSection *Section, MCSymbol *Symbol = nullptr,
                     uint64_t Size = 0, unsigned ByteAlignment = 0,
+                    TailPaddingAmount TailPadding = TailPaddingAmount::None,
                     SMLoc Loc = SMLoc()) override;
   void emitTBSSSymbol(MCSection *Section, MCSymbol *Symbol, uint64_t Size,
-                      unsigned ByteAlignment = 0) override;
+                      unsigned ByteAlignment,
+                      TailPaddingAmount TailPadding) override;
 
   void emitIdent(StringRef IdentString) override;
 

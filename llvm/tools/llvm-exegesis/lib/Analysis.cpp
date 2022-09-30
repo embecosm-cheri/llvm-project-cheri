@@ -169,8 +169,8 @@ Analysis::Analysis(const Target &Target,
   const InstructionBenchmark &FirstPoint = Clustering.getPoints().front();
   const std::string CpuName =
       ForceCpuName.empty() ? FirstPoint.CpuName : ForceCpuName;
-  RegInfo_.reset(Target.createMCRegInfo(FirstPoint.LLVMTriple));
   MCTargetOptions MCOptions;
+  RegInfo_.reset(Target.createMCRegInfo(FirstPoint.LLVMTriple, MCOptions));
   AsmInfo_.reset(
       Target.createMCAsmInfo(*RegInfo_, FirstPoint.LLVMTriple, MCOptions));
   SubtargetInfo_.reset(

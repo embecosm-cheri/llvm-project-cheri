@@ -647,8 +647,9 @@ SDValue LanaiTargetLowering::LowerCCCCallTo(
     Chain = DAG.getMemcpy(Chain, DL, FIPtr, Arg, SizeNode, Alignment,
                           /*IsVolatile=*/false,
                           /*AlwaysInline=*/false,
-                          /*isTailCall=*/false, MachinePointerInfo(),
-                          MachinePointerInfo());
+                          /*isTailCall=*/false,
+                          /*MustPreserveCheriCapabilities=*/false,
+                          MachinePointerInfo(), MachinePointerInfo());
     ByValArgs.push_back(FIPtr);
   }
 
@@ -730,8 +731,7 @@ SDValue LanaiTargetLowering::LowerCCCCallTo(
     Callee = DAG.getTargetGlobalAddress(
         G->getGlobal(), DL, getPointerTy(DAG.getDataLayout()), 0, OpFlag);
   } else if (ExternalSymbolSDNode *E = dyn_cast<ExternalSymbolSDNode>(Callee)) {
-    Callee = DAG.getTargetExternalSymbol(
-        E->getSymbol(), getPointerTy(DAG.getDataLayout()), OpFlag);
+    Callee = DAG.getTargetExternalFunctionSymbol(E->getSymbol(), OpFlag);
   }
 
   // Returns a chain & a flag for retval copy to use.

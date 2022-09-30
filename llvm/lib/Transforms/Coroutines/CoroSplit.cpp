@@ -501,7 +501,7 @@ static Function *createCloneDeclaration(Function &OrigF, coro::Shape &Shape,
 
   Function *NewF =
       Function::Create(FnTy, GlobalValue::LinkageTypes::InternalLinkage,
-                       OrigF.getName() + Suffix);
+                       OrigF.getAddressSpace(), OrigF.getName() + Suffix);
   if (Shape.ABI != coro::ABI::Async)
     NewF->addParamAttr(0, Attribute::NonNull);
 

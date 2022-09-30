@@ -11,6 +11,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvm/Transforms/Utils/ModuleUtils.h"
+#include "llvm/ADT/Triple.h"
 #include "llvm/Analysis/VectorUtils.h"
 #include "llvm/IR/DerivedTypes.h"
 #include "llvm/IR/Function.h"
@@ -26,11 +27,15 @@ static void appendToGlobalArray(const char *Array, Module &M, Function *F,
   IRBuilder<> IRB(M.getContext());
   FunctionType *FnTy = FunctionType::get(IRB.getVoidTy(), false);
 
+  unsigned CtorPtrAS = M.getDataLayout().getProgramAddressSpace();
+  llvm::Type *CtorPFTy = llvm::PointerType::get(FnTy, CtorPtrAS);
+  llvm::Type *ArgTy =
+      IRB.getInt8PtrTy(M.getDataLayout().getGlobalsAddressSpace());
+
   // Get the current set of static global constructors and add the new ctor
   // to the list.
   SmallVector<Constant *, 16> CurrentCtors;
-  StructType *EltTy = StructType::get(
-      IRB.getInt32Ty(), PointerType::getUnqual(FnTy), IRB.getInt8PtrTy());
+  StructType *EltTy = StructType::get(IRB.getInt32Ty(), CtorPFTy, ArgTy);
   if (GlobalVariable *GVCtor = M.getNamedGlobal(Array)) {
     if (Constant *Init = GVCtor->getInitializer()) {
       unsigned n = Init->getNumOperands();
@@ -44,9 +49,9 @@ static void appendToGlobalArray(const char *Array, Module &M, Function *F,
   // Build a 3 field global_ctor entry.  We don't take a comdat key.
   Constant *CSVals[3];
   CSVals[0] = IRB.getInt32(Priority);
-  CSVals[1] = F;
-  CSVals[2] = Data ? ConstantExpr::getPointerCast(Data, IRB.getInt8PtrTy())
-                   : Constant::getNullValue(IRB.getInt8PtrTy());
+  CSVals[1] = ConstantExpr::getPointerBitCastOrAddrSpaceCast(F, CtorPFTy);
+  CSVals[2] = Data ? ConstantExpr::getPointerCast(Data, ArgTy)
+                   : Constant::getNullValue(ArgTy);
   Constant *RuntimeCtorInit =
       ConstantStruct::get(EltTy, makeArrayRef(CSVals, EltTy->getNumElements()));
 
@@ -86,7 +91,7 @@ static void appendToUsedList(Module &M, StringRef Name, ArrayRef<GlobalValue *> 
     GV->eraseFromParent();
   }
 
-  Type *Int8PtrTy = llvm::Type::getInt8PtrTy(M.getContext());
+  Type *Int8PtrTy = llvm::Type::getInt8PtrTy(M.getContext(), 0);
   for (auto *V : Values) {
     Constant *C = ConstantExpr::getPointerBitCastOrAddrSpaceCast(V, Int8PtrTy);
     if (InitAsSet.insert(C).second)
@@ -123,7 +128,8 @@ llvm::declareSanitizerInitFunction(Module &M, StringRef InitName,
 Function *llvm::createSanitizerCtor(Module &M, StringRef CtorName) {
   Function *Ctor = Function::createWithDefaultAttr(
       FunctionType::get(Type::getVoidTy(M.getContext()), false),
-      GlobalValue::InternalLinkage, 0, CtorName, &M);
+      GlobalValue::InternalLinkage, M.getDataLayout().getProgramAddressSpace(),
+      CtorName, &M);
   Ctor->addFnAttr(Attribute::NoUnwind);
   BasicBlock *CtorBB = BasicBlock::Create(M.getContext(), "", Ctor);
   ReturnInst::Create(M.getContext(), CtorBB);

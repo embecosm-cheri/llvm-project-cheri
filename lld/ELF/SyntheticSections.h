@@ -491,6 +491,7 @@ private:
   // The kind of expression used to calculate the added (required e.g. for
   // relative GOT relocations).
   RelExpr expr;
+  friend class RelocationBaseSection;
 };
 
 template <class ELFT> class DynamicSection final : public SyntheticSection {
@@ -981,6 +982,7 @@ public:
   MipsAbiFlagsSection(Elf_Mips_ABIFlags flags);
   size_t getSize() const override { return sizeof(Elf_Mips_ABIFlags); }
   void writeTo(uint8_t *buf) override;
+  llvm::Optional<unsigned> getCheriAbiVariant() const;
 
 private:
   Elf_Mips_ABIFlags flags;
@@ -1163,6 +1165,11 @@ private:
   bool finalized = false;
 };
 
+// Can only be forward declared here since it depends on SyntheticSection
+template <class ELFT> class CheriCapRelocsSection;
+class CheriCapTableSection;
+class CheriCapTableMappingSection;
+
 template <typename ELFT>
 class PartitionElfHeaderSection : public SyntheticSection {
 public:
@@ -1265,6 +1272,9 @@ struct InStruct {
   std::unique_ptr<GotSection> got;
   std::unique_ptr<GotPltSection> gotPlt;
   std::unique_ptr<IgotPltSection> igotPlt;
+  std::unique_ptr<CheriCapTableSection> cheriCapTable;
+  // For per-file/per-function tables:
+  std::unique_ptr<CheriCapTableMappingSection> cheriCapTableMapping;
   std::unique_ptr<PPC64LongBranchTargetSection> ppc64LongBranchTarget;
   std::unique_ptr<SyntheticSection> mipsAbiFlags;
   std::unique_ptr<MipsGotSection> mipsGot;
@@ -1289,6 +1299,15 @@ struct InStruct {
 
 extern InStruct in;
 
+template <class ELFT> struct InX {
+  // XXXAR: needs to be templated because writing depends on endianess
+  // TODO: use the non-templated version
+  static CheriCapRelocsSection<ELFT> *capRelocs;
+  static MipsAbiFlagsSection<ELFT> *mipsAbiFlags;
+};
+
+template <class ELFT> CheriCapRelocsSection<ELFT> *InX<ELFT>::capRelocs;
+template <class ELFT> MipsAbiFlagsSection<ELFT> *InX<ELFT>::mipsAbiFlags;
 } // namespace elf
 } // namespace lld
 

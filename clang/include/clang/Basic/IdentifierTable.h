@@ -147,7 +147,7 @@ class alignas(IdentifierInfoAlignment) IdentifierInfo {
   // True if this macro is final.
   unsigned IsFinal : 1;
 
-  // 22 bits left in a 64-bit word.
+  // 20 bits left in a 64-bit word.
 
   // Managed by the language front-end.
   void *FETokenInfo = nullptr;

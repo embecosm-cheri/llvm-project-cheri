@@ -31,6 +31,8 @@
 #include "llvm/Support/FormattedStream.h"
 #include "llvm/Target/TargetMachine.h"
 #include "llvm/Target/TargetOptions.h"
+#include "llvm/Transforms/Utils/CheriSetBounds.h"
+
 using namespace llvm;
 
 static cl::opt<bool>
@@ -38,7 +40,8 @@ static cl::opt<bool>
                           cl::desc("Enable generating trap for unreachable"));
 
 void LLVMTargetMachine::initAsmInfo() {
-  MRI.reset(TheTarget.createMCRegInfo(getTargetTriple().str()));
+  MRI.reset(TheTarget.createMCRegInfo(
+      getTargetTriple().str(), Options.MCOptions));
   assert(MRI && "Unable to create reg info");
   MII.reset(TheTarget.createMCInstrInfo());
   assert(MII && "Unable to create instruction info");
@@ -294,6 +297,9 @@ bool LLVMTargetMachine::addPassesToEmitMC(PassManagerBase &PM, MCContext *&Ctx,
     return true;
 
   PM.add(Printer);
+  if (cheri::ShouldCollectCSetBoundsStats) {
+    PM.add(createLogCheriSetBoundsPass());
+  }
   PM.add(createFreeMachineFunctionPass());
 
   return false; // success!

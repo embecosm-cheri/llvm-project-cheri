@@ -1857,6 +1857,8 @@ static Attribute::AttrKind getAttrFromCode(uint64_t Code) {
     return Attribute::ElementType;
   case bitc::ATTR_KIND_FNRETTHUNK_EXTERN:
     return Attribute::FnRetThunkExtern;
+  case bitc::ATTR_KIND_HAS_SIDE_EFFECTS:
+    return Attribute::HasSideEffects;
   case bitc::ATTR_KIND_INACCESSIBLEMEM_ONLY:
     return Attribute::InaccessibleMemOnly;
   case bitc::ATTR_KIND_INACCESSIBLEMEM_OR_ARGMEMONLY:
@@ -1869,6 +1871,8 @@ static Attribute::AttrKind getAttrFromCode(uint64_t Code) {
     return Attribute::JumpTable;
   case bitc::ATTR_KIND_MIN_SIZE:
     return Attribute::MinSize;
+  case bitc::ATTR_KIND_MUST_PRESERVE_CHERI_TAGS:
+    return Attribute::MustPreserveCheriTags;
   case bitc::ATTR_KIND_NAKED:
     return Attribute::Naked;
   case bitc::ATTR_KIND_NEST:

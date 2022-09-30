@@ -9,7 +9,7 @@
 ; pack. Doing a normal call will clobber all argument registers, and we will
 ; spill around it. A simple adjustment should not require any XMM spills.
 
-declare void @llvm.va_start(ptr) nounwind
+declare void @llvm.va_start.p0(ptr) nounwind
 
 declare ptr @get_f(ptr %this)
 
@@ -280,7 +280,7 @@ define void @f_thunk(ptr %this, ...) {
 ; X86-SSE-NEXT:    popl %ebp
 ; X86-SSE-NEXT:    jmpl *%eax # TAILCALL
   %ap = alloca [4 x ptr], align 16
-  call void @llvm.va_start(ptr %ap)
+  call void @llvm.va_start.p0(ptr %ap)
 
   %fptr = call ptr(ptr) @get_f(ptr %this)
   musttail call void (ptr, ...) %fptr(ptr %this, ...)

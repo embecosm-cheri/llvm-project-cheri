@@ -81,6 +81,8 @@
 #include "llvm/Transforms/Scalar/LowerMatrixIntrinsics.h"
 #include "llvm/Transforms/Utils.h"
 #include "llvm/Transforms/Utils/CanonicalizeAliases.h"
+#include "llvm/Transforms/Utils/CheriLogSetBounds.h"
+#include "llvm/Transforms/Utils/CheriSetBounds.h"
 #include "llvm/Transforms/Utils/Debugify.h"
 #include "llvm/Transforms/Utils/EntryExitInstrumenter.h"
 #include "llvm/Transforms/Utils/ModuleUtils.h"
@@ -910,6 +912,15 @@ void EmitAssemblyHelper::RunOptimizationPipeline(
           [Options](ModulePassManager &MPM, OptimizationLevel Level) {
             MPM.addPass(InstrProfiling(*Options, false));
           });
+    // Run the CSetBounds logging past after all IR-level optimization have run.
+    if (cheri::ShouldCollectCSetBoundsStats) {
+      PB.registerOptimizerLastEPCallback(
+          [](ModulePassManager &MPM, OptimizationLevel Level) {
+            FunctionPassManager FPM;
+            FPM.addPass(CheriLogSetBoundsPass());
+            MPM.addPass(createModuleToFunctionPassAdaptor(std::move(FPM)));
+          });
+    }
 
     if (CodeGenOpts.OptimizationLevel == 0) {
       MPM = PB.buildO0DefaultPipeline(Level, IsLTO || IsThinLTO);

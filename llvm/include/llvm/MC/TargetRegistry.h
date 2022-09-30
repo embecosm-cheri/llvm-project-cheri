@@ -156,7 +156,8 @@ public:
                                                          bool LargeCodeModel);
   using MCInstrInfoCtorFnTy = MCInstrInfo *(*)();
   using MCInstrAnalysisCtorFnTy = MCInstrAnalysis *(*)(const MCInstrInfo *Info);
-  using MCRegInfoCtorFnTy = MCRegisterInfo *(*)(const Triple &TT);
+  using MCRegInfoCtorFnTy = MCRegisterInfo *(*)(const Triple &TT,
+                                                const MCTargetOptions &Options);
   using MCSubtargetInfoCtorFnTy = MCSubtargetInfo *(*)(const Triple &TT,
                                                        StringRef CPU,
                                                        StringRef Features);
@@ -216,7 +217,7 @@ public:
                       std::unique_ptr<MCAsmBackend> &&TAB,
                       std::unique_ptr<MCObjectWriter> &&OW,
                       std::unique_ptr<MCCodeEmitter> &&Emitter, bool RelaxAll);
-  
+
   using DXContainerStreamerCtorTy =
       MCStreamer *(*)(const Triple &T, MCContext &Ctx,
                       std::unique_ptr<MCAsmBackend> &&TAB,
@@ -437,10 +438,11 @@ public:
 
   /// createMCRegInfo - Create a MCRegisterInfo implementation.
   ///
-  MCRegisterInfo *createMCRegInfo(StringRef TT) const {
+  MCRegisterInfo *createMCRegInfo(StringRef TT,
+                                  const MCTargetOptions &Options) const {
     if (!MCRegInfoCtorFn)
       return nullptr;
-    return MCRegInfoCtorFn(Triple(TT));
+    return MCRegInfoCtorFn(Triple(TT), Options);
   }
 
   /// createMCSubtargetInfo - Create a MCSubtargetInfo implementation.
@@ -1254,7 +1256,8 @@ template <class MCRegisterInfoImpl> struct RegisterMCRegInfo {
   }
 
 private:
-  static MCRegisterInfo *Allocator(const Triple & /*TT*/) {
+  static MCRegisterInfo *Allocator(const Triple & /*TT*/,
+                                   const MCTargetOptions & /*Options*/) {
     return new MCRegisterInfoImpl();
   }
 };

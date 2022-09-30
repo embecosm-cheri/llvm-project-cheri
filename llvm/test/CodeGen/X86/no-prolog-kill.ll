@@ -10,7 +10,7 @@ target triple = "x86_64--"
 define void @test(i64 %a, ptr %b, ...)  {
 entry:
   %bar = alloca i8
-  call void @llvm.va_start(ptr %bar)
+  call void @llvm.va_start.p0(ptr %bar)
   call void @llvm.eh.unwind.init()
   call void @llvm.eh.return.i64(i64 %a, ptr %b)
   unreachable
@@ -18,4 +18,4 @@ entry:
 
 declare void @llvm.eh.return.i64(i64, ptr)
 declare void @llvm.eh.unwind.init()
-declare void @llvm.va_start(ptr)
+declare void @llvm.va_start.p0(ptr)

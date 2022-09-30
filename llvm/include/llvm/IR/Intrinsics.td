@@ -187,6 +187,11 @@ class LLVMAnyPointerType<LLVMType elty>
   let isAny = true;
 }
 
+class LLVMFatPointerType<LLVMType elty>
+  : LLVMType<iFATPTRAny>{
+  LLVMType ElTy = elty;
+}
+
 // Match the type of another intrinsic parameter.  Number is an index into the
 // list of overloaded types for the intrinsic, excluding all the fixed types.
 // The Number value must refer to a previously listed type.  For example:
@@ -256,6 +261,8 @@ def llvm_ppcf128_ty    : LLVMType<ppcf128>;
 def llvm_ptr_ty        : LLVMPointerType<llvm_i8_ty>;             // i8*
 def llvm_ptrptr_ty     : LLVMPointerType<llvm_ptr_ty>;            // i8**
 def llvm_anyptr_ty     : LLVMAnyPointerType<llvm_i8_ty>;          // (space)i8*
+def llvm_fatptr_ty     : LLVMFatPointerType<llvm_i8_ty>;          // (space)i8*
+def llvm_anyptrptr_ty  : LLVMAnyPointerType<llvm_ptr_ty>;         // i8*(space)*
 def llvm_empty_ty      : LLVMType<OtherVT>;                       // { }
 def llvm_descriptor_ty : LLVMPointerType<llvm_empty_ty>;          // { }*
 def llvm_metadata_ty   : LLVMType<MetadataVT>;                    // !{...}
@@ -392,6 +399,11 @@ class ClangBuiltin<string name> {
   string ClangBuiltinName = name;
 }
 
+class GCCBuiltinAlias<string name> {
+  string GCCBuiltinAliasName = name;
+}
+
+
 class MSBuiltin<string name> {
   string MSBuiltinName = name;
 }
@@ -400,10 +412,10 @@ class MSBuiltin<string name> {
 //===--------------- Variable Argument Handling Intrinsics ----------------===//
 //
 
-def int_vastart : DefaultAttrsIntrinsic<[], [llvm_ptr_ty], [], "llvm.va_start">;
-def int_vacopy  : DefaultAttrsIntrinsic<[], [llvm_ptr_ty, llvm_ptr_ty], [],
+def int_vastart : DefaultAttrsIntrinsic<[], [llvm_anyptr_ty], [], "llvm.va_start">;
+def int_vacopy  : DefaultAttrsIntrinsic<[], [llvm_anyptr_ty, llvm_anyptr_ty], [],
                             "llvm.va_copy">;
-def int_vaend   : DefaultAttrsIntrinsic<[], [llvm_ptr_ty], [], "llvm.va_end">;
+def int_vaend   : DefaultAttrsIntrinsic<[], [llvm_anyptr_ty], [], "llvm.va_end">;
 
 //===------------------- Garbage Collection Intrinsics --------------------===//
 //
@@ -499,17 +511,17 @@ def int_swift_async_context_addr : Intrinsic<[llvm_ptrptr_ty], [], []>;
 
 //===--------------------- Code Generator Intrinsics ----------------------===//
 //
-def int_returnaddress : DefaultAttrsIntrinsic<[llvm_ptr_ty], [llvm_i32_ty],
+def int_returnaddress : DefaultAttrsIntrinsic<[llvm_anyptr_ty], [llvm_i32_ty],
                                   [IntrNoMem, ImmArg<ArgIndex<0>>]>;
 def int_addressofreturnaddress : DefaultAttrsIntrinsic<[llvm_anyptr_ty], [], [IntrNoMem]>;
 def int_frameaddress : DefaultAttrsIntrinsic<[llvm_anyptr_ty], [llvm_i32_ty],
                                  [IntrNoMem, ImmArg<ArgIndex<0>>]>;
 def int_sponentry  : DefaultAttrsIntrinsic<[llvm_anyptr_ty], [], [IntrNoMem]>;
-def int_read_register  : Intrinsic<[llvm_anyint_ty], [llvm_metadata_ty],
+def int_read_register  : Intrinsic<[llvm_any_ty], [llvm_metadata_ty],
                                    [IntrReadMem], "llvm.read_register">;
-def int_write_register : Intrinsic<[], [llvm_metadata_ty, llvm_anyint_ty],
+def int_write_register : Intrinsic<[], [llvm_metadata_ty, llvm_any_ty],
                                    [], "llvm.write_register">;
-def int_read_volatile_register  : Intrinsic<[llvm_anyint_ty], [llvm_metadata_ty],
+def int_read_volatile_register  : Intrinsic<[llvm_any_ty], [llvm_metadata_ty],
                                             [IntrHasSideEffects],
                                              "llvm.read_volatile_register">;
 
@@ -544,9 +556,9 @@ def int_seh_scope_end : Intrinsic<[], [], [IntrNoMem]>;
 
 // Note: we treat stacksave/stackrestore as writemem because we don't otherwise
 // model their dependencies on allocas.
-def int_stacksave     : DefaultAttrsIntrinsic<[llvm_ptr_ty]>,
+def int_stacksave     : DefaultAttrsIntrinsic<[llvm_anyptr_ty]>,
                         ClangBuiltin<"__builtin_stack_save">;
-def int_stackrestore  : DefaultAttrsIntrinsic<[], [llvm_ptr_ty]>,
+def int_stackrestore  : DefaultAttrsIntrinsic<[], [llvm_anyptr_ty]>,
                         ClangBuiltin<"__builtin_stack_restore">;
 
 def int_get_dynamic_area_offset : DefaultAttrsIntrinsic<[llvm_anyint_ty]>;
@@ -584,7 +596,7 @@ def int_experimental_noalias_scope_decl
 
 // Stack Protector Intrinsic - The stackprotector intrinsic writes the stack
 // guard to the correct place on the stack frame.
-def int_stackprotector : DefaultAttrsIntrinsic<[], [llvm_ptr_ty, llvm_ptrptr_ty], []>;
+def int_stackprotector : DefaultAttrsIntrinsic<[], [llvm_ptr_ty, llvm_anyptrptr_ty], []>;
 def int_stackguard : DefaultAttrsIntrinsic<[llvm_ptr_ty], [], []>;
 
 // A cover for instrumentation based profiling.
@@ -662,7 +674,7 @@ def int_memset_inline
     : Intrinsic<[],
       [llvm_anyptr_ty, llvm_i8_ty, llvm_anyint_ty, llvm_i1_ty],
       [IntrWriteMem, IntrArgMemOnly, IntrWillReturn, IntrNoFree, IntrNoCallback,
-       NoCapture<ArgIndex<0>>, WriteOnly<ArgIndex<0>>, 
+       NoCapture<ArgIndex<0>>, WriteOnly<ArgIndex<0>>,
        ImmArg<ArgIndex<2>>, ImmArg<ArgIndex<3>>]>;
 
 // FIXME: Add version of these floating point intrinsics which allow non-default
@@ -1030,19 +1042,18 @@ def int_eh_sjlj_setup_dispatch  : Intrinsic<[], []>;
 
 //===---------------- Generic Variable Attribute Intrinsics----------------===//
 //
-def int_var_annotation : DefaultAttrsIntrinsic<
-    [], [llvm_ptr_ty, llvm_ptr_ty, llvm_ptr_ty, llvm_i32_ty, llvm_ptr_ty],
-    [IntrInaccessibleMemOnly], "llvm.var.annotation">;
-
-def int_ptr_annotation : DefaultAttrsIntrinsic<
-    [LLVMAnyPointerType<llvm_anyint_ty>],
-    [LLVMMatchType<0>, llvm_ptr_ty, llvm_ptr_ty, llvm_i32_ty, llvm_ptr_ty],
-    [IntrInaccessibleMemOnly], "llvm.ptr.annotation">;
-
-def int_annotation : DefaultAttrsIntrinsic<
-    [llvm_anyint_ty],
-    [LLVMMatchType<0>, llvm_ptr_ty, llvm_ptr_ty, llvm_i32_ty],
-    [IntrInaccessibleMemOnly], "llvm.annotation">;
+def int_var_annotation : DefaultAttrsIntrinsic<[],
+                                   [llvm_anyptr_ty, LLVMMatchType<0>,
+                                    LLVMMatchType<0>, llvm_i32_ty, LLVMMatchType<0>],
+                                   [IntrInaccessibleMemOnly], "llvm.var.annotation">;
+def int_ptr_annotation : DefaultAttrsIntrinsic<[LLVMAnyPointerType<llvm_anyint_ty>],
+                                   [LLVMMatchType<0>, llvm_anyptr_ty, LLVMMatchType<1>,
+                                    llvm_i32_ty, LLVMMatchType<1>],
+                                   [IntrInaccessibleMemOnly], "llvm.ptr.annotation">;
+def int_annotation : DefaultAttrsIntrinsic<[llvm_anyint_ty],
+                               [LLVMMatchType<0>, llvm_anyptr_ty,
+                                LLVMMatchType<1>, llvm_i32_ty],
+                               [IntrInaccessibleMemOnly], "llvm.annotation">;
 
 // Annotates the current program point with metadata strings which are emitted
 // as CodeView debug info records. This is expensive, as it disables inlining
@@ -1392,7 +1403,7 @@ def int_fptosi_sat : DefaultAttrsIntrinsic<[llvm_anyint_ty], [llvm_anyfloat_ty]>
 
 // Clear cache intrinsic, default to ignore (ie. emit nothing)
 // maps to void __clear_cache() on supporting platforms
-def int_clear_cache : Intrinsic<[], [llvm_ptr_ty, llvm_ptr_ty],
+def int_clear_cache : Intrinsic<[], [llvm_anyptr_ty, LLVMMatchType<0>],
                                 [], "llvm.clear_cache">;
 
 // Intrinsic to detect whether its argument is a constant.
@@ -2049,6 +2060,7 @@ include "llvm/IR/IntrinsicsAMDGPU.td"
 include "llvm/IR/IntrinsicsBPF.td"
 include "llvm/IR/IntrinsicsSystemZ.td"
 include "llvm/IR/IntrinsicsWebAssembly.td"
+include "llvm/IR/IntrinsicsCHERICap.td"
 include "llvm/IR/IntrinsicsRISCV.td"
 include "llvm/IR/IntrinsicsSPIRV.td"
 include "llvm/IR/IntrinsicsVE.td"

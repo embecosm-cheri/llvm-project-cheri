@@ -8,7 +8,7 @@
 define void @bar(ptr byval(%struct.Baz) nocapture readnone align 8 %x, ...) {
 entry:
   %va = alloca [1 x %struct.__va_list_tag], align 16
-  call void @llvm.va_start(ptr %va)
+  call void @llvm.va_start.p0(ptr %va)
   %overflow_arg_area_p = getelementptr inbounds [1 x %struct.__va_list_tag], ptr %va, i64 0, i64 0, i32 2
   %overflow_arg_area = load ptr, ptr %overflow_arg_area_p, align 8
   %overflow_arg_area.next = getelementptr i8, ptr %overflow_arg_area, i64 24
@@ -23,6 +23,6 @@ entry:
 }
 
 ; Function Attrs: nounwind
-declare void @llvm.va_start(ptr)
+declare void @llvm.va_start.p0(ptr)
 
 declare void @qux(ptr)

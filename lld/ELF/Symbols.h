@@ -26,6 +26,7 @@ class Symbol;
 }
 // Returns a string representation for a symbol for diagnostics.
 std::string toString(const elf::Symbol &);
+std::string verboseToString(const elf::Symbol *b, uint64_t symOffset = 0);
 
 namespace elf {
 class CommonSymbol;
@@ -203,6 +204,9 @@ public:
   uint64_t getGotPltOffset() const;
   uint64_t getGotPltVA() const;
   uint64_t getPltVA() const;
+  uint64_t getCapTableVA(const InputSectionBase *isec, uint64_t offset) const;
+  uint64_t getCapTableOffset(const InputSectionBase *isec,
+                             uint64_t offset) const;
   uint64_t getSize() const;
   OutputSection *getOutputSection() const;
 
@@ -246,7 +250,8 @@ protected:
       : file(file), nameData(name.data()), nameSize(name.size()), type(type),
         binding(binding), stOther(stOther), symbolKind(k),
         visibility(stOther & 3), isPreemptible(false),
-        isUsedInRegularObj(false), used(false), exportDynamic(false),
+        isUsedInRegularObj(false), used(false), usedByDynReloc(false),
+        isSectionStartSymbol(false), exportDynamic(false),
         inDynamicList(false), referenced(false), referencedAfterWrap(false),
         traced(false), hasVersionSuffix(false), isInIplt(false),
         gotInIgot(false), folded(false), needsTocRestore(false),
@@ -266,6 +271,15 @@ public:
 
   // True if defined relative to a section discarded by ICF.
   uint8_t folded : 1;
+
+  // True if a symbol is referenced by a dynamic relocation and therefore needs
+  // to be included in the dynamic symbol table.
+  unsigned usedByDynReloc : 1;
+
+  // True if the linker should set the size of this symbol to be the size of the
+  // section it references. For compatibility reason this is only used when
+  // building for CHERI
+  unsigned isSectionStartSymbol : 1;
 
   // True if a call to this symbol needs to be followed by a restore of the
   // PPC64 toc pointer.
@@ -468,6 +482,10 @@ struct ElfSym {
   static Defined *mipsGp;
   static Defined *mipsGpDisp;
   static Defined *mipsLocalGp;
+
+  // The _CHERI_CAPABILITY_TABLE_ symbol points to the beginning of the
+  // .captable section
+  static Defined *cheriCapabilityTable;
 
   // __rel{,a}_iplt_{start,end} symbols.
   static Defined *relaIpltStart;

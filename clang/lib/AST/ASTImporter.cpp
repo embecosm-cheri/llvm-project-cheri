@@ -636,6 +636,7 @@ namespace clang {
     ExpectedStmt VisitAddrLabelExpr(AddrLabelExpr *E);
     ExpectedStmt VisitConstantExpr(ConstantExpr *E);
     ExpectedStmt VisitParenExpr(ParenExpr *E);
+    ExpectedStmt VisitNoChangeBoundsExpr(NoChangeBoundsExpr *E);
     ExpectedStmt VisitParenListExpr(ParenListExpr *E);
     ExpectedStmt VisitStmtExpr(StmtExpr *E);
     ExpectedStmt VisitUnaryOperator(UnaryOperator *E);
@@ -1159,7 +1160,7 @@ ExpectedType ASTNodeImporter::VisitPointerType(const PointerType *T) {
   if (!ToPointeeTypeOrErr)
     return ToPointeeTypeOrErr.takeError();
 
-  return Importer.getToContext().getPointerType(*ToPointeeTypeOrErr);
+  return Importer.getToContext().getPointerType(*ToPointeeTypeOrErr, T->getPointerInterpretation());
 }
 
 ExpectedType ASTNodeImporter::VisitBlockPointerType(const BlockPointerType *T) {
@@ -1178,7 +1179,7 @@ ASTNodeImporter::VisitLValueReferenceType(const LValueReferenceType *T) {
   if (!ToPointeeTypeOrErr)
     return ToPointeeTypeOrErr.takeError();
 
-  return Importer.getToContext().getLValueReferenceType(*ToPointeeTypeOrErr);
+  return Importer.getToContext().getLValueReferenceType(*ToPointeeTypeOrErr, T->isSpelledAsLValue(), T->getPointerInterpretation());
 }
 
 ExpectedType
@@ -1188,7 +1189,7 @@ ASTNodeImporter::VisitRValueReferenceType(const RValueReferenceType *T) {
   if (!ToPointeeTypeOrErr)
     return ToPointeeTypeOrErr.takeError();
 
-  return Importer.getToContext().getRValueReferenceType(*ToPointeeTypeOrErr);
+  return Importer.getToContext().getRValueReferenceType(*ToPointeeTypeOrErr, T->getPointerInterpretation());
 }
 
 ExpectedType
@@ -7138,6 +7139,18 @@ ExpectedStmt ASTNodeImporter::VisitParenExpr(ParenExpr *E) {
       ParenExpr(ToLParen, ToRParen, ToSubExpr);
 }
 
+ExpectedStmt ASTNodeImporter::VisitNoChangeBoundsExpr(NoChangeBoundsExpr *E) {
+  Error Err = Error::success();
+  auto ToBuiltinLoc = importChecked(Err, E->getBuiltinLoc());
+  auto ToRParen = importChecked(Err, E->getRParen());
+  auto ToSubExpr = importChecked(Err, E->getSubExpr());
+  if (Err)
+    return std::move(Err);
+
+  return NoChangeBoundsExpr::Create(Importer.getToContext(), ToBuiltinLoc,
+                                    ToRParen, ToSubExpr);
+}
+
 ExpectedStmt ASTNodeImporter::VisitParenListExpr(ParenListExpr *E) {
   SmallVector<Expr *, 4> ToExprs(E->getNumExprs());
   if (Error Err = ImportContainerChecked(E->exprs(), ToExprs))
@@ -7421,7 +7434,8 @@ ExpectedStmt ASTNodeImporter::VisitExplicitCastExpr(ExplicitCastExpr *E) {
       return ToBridgeKeywordLocOrErr.takeError();
     return new (Importer.getToContext()) ObjCBridgedCastExpr(
         *ToLParenLocOrErr, OCE->getBridgeKind(), E->getCastKind(),
-        *ToBridgeKeywordLocOrErr, ToTypeInfoAsWritten, ToSubExpr);
+        *ToBridgeKeywordLocOrErr, ToTypeInfoAsWritten, ToSubExpr,
+        Importer.getToContext());
   }
   default:
     llvm_unreachable("Cast expression of unsupported type!");
@@ -8282,7 +8296,7 @@ ExpectedStmt ASTNodeImporter::VisitCXXNamedCastExpr(CXXNamedCastExpr *E) {
         ToTypeInfoAsWritten, ToOperatorLoc, ToRParenLoc, ToAngleBrackets);
   } else if (isa<CXXConstCastExpr>(E)) {
     return CXXConstCastExpr::Create(
-        Importer.getToContext(), ToType, VK, ToSubExpr, ToTypeInfoAsWritten,
+        Importer.getToContext(), ToType, VK, CK, ToSubExpr, ToTypeInfoAsWritten,
         ToOperatorLoc, ToRParenLoc, ToAngleBrackets);
   } else {
     llvm_unreachable("Unknown cast type");

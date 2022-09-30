@@ -46,6 +46,7 @@ public:
                                     std::vector<SDValue> &OutOps) override;
 
   bool SelectAddrFrameIndex(SDValue Addr, SDValue &Base, SDValue &Offset);
+  bool SelectCapFI(SDValue Cap, SDValue &Base);
   bool SelectFrameAddrRegImm(SDValue Addr, SDValue &Base, SDValue &Offset);
   bool SelectAddrRegImm(SDValue Addr, SDValue &Base, SDValue &Offset);
 
@@ -129,6 +130,7 @@ public:
 
 private:
   bool doPeepholeSExtW(SDNode *Node);
+  bool doPeepholeLoadStoreOffset(SDNode *Node);
   bool doPeepholeMaskedRVV(SDNode *Node);
 };
 

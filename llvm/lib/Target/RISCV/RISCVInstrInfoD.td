@@ -92,14 +92,14 @@ defvar XDIN64X = [XD_64, XD_INX];
 // Instructions
 //===----------------------------------------------------------------------===//
 
-let Predicates = [HasStdExtD] in {
+let Predicates = [HasStdExtD, NotCapMode] in {
 def FLD : FPLoad_r<0b011, "fld", FPR64, WriteFLD64>;
 
 // Operands for stores are in the order srcreg, base, offset rather than
 // reflecting the order these fields are specified in the instruction
 // encoding.
 def FSD : FPStore_r<0b011, "fsd", FPR64, WriteFST64>;
-} // Predicates = [HasStdExtD]
+} // Predicates = [HasStdExtD, NotCapMode]
 
 let SchedRW = [WriteFMA64, ReadFMA64, ReadFMA64, ReadFMA64] in {
 defm FMADD_D  : FPFMA_rrr_frm_m<OPC_MADD,  0b01, "fmadd.d",  DINX>;
@@ -202,10 +202,12 @@ def FMV_D_X : FPUnaryOp_r<0b1111001, 0b00000, 0b000, FPR64, GPR, "fmv.d.x">,
 // Assembler Pseudo Instructions (User-Level ISA, Version 2.2, Chapter 20)
 //===----------------------------------------------------------------------===//
 
-let Predicates = [HasStdExtD] in {
+let Predicates = [HasStdExtD, NotCapMode] in {
 def : InstAlias<"fld $rd, (${rs1})",  (FLD FPR64:$rd,  GPR:$rs1, 0), 0>;
 def : InstAlias<"fsd $rs2, (${rs1})", (FSD FPR64:$rs2, GPR:$rs1, 0), 0>;
+} // Predicates = [HasStdExtD, NotCapMode]
 
+let Predicates = [HasStdExtD] in {
 def : InstAlias<"fmv.d $rd, $rs",  (FSGNJ_D  FPR64:$rd, FPR64:$rs, FPR64:$rs)>;
 def : InstAlias<"fabs.d $rd, $rs", (FSGNJX_D FPR64:$rd, FPR64:$rs, FPR64:$rs)>;
 def : InstAlias<"fneg.d $rd, $rs", (FSGNJN_D FPR64:$rd, FPR64:$rs, FPR64:$rs)>;
@@ -216,14 +218,16 @@ def : InstAlias<"fgt.d $rd, $rs, $rt",
                 (FLT_D GPR:$rd, FPR64:$rt, FPR64:$rs), 0>;
 def : InstAlias<"fge.d $rd, $rs, $rt",
                 (FLE_D GPR:$rd, FPR64:$rt, FPR64:$rs), 0>;
+} // Predicates = [HasStdExtD]
 
+let Predicates = [HasStdExtD, NotCapMode] in {
 def PseudoFLD  : PseudoFloatLoad<"fld", FPR64>;
 def PseudoFSD  : PseudoStore<"fsd", FPR64>;
 let usesCustomInserter = 1 in {
 def PseudoQuietFLE_D : PseudoQuietFCMP<FPR64>;
 def PseudoQuietFLT_D : PseudoQuietFCMP<FPR64>;
 }
-} // Predicates = [HasStdExtD]
+} // Predicates = [HasStdExtD, NotCapMode]
 
 let Predicates = [HasStdExtZdinx, IsRV64] in {
 def : InstAlias<"fabs.d $rd, $rs", (FSGNJX_D_INX FPR64INX:$rd, FPR64INX:$rs, FPR64INX:$rs)>;
@@ -336,6 +340,10 @@ def : PatSetCC<FPR64, any_fsetccs, SETOLE, FLE_D>;
 
 def Select_FPR64_Using_CC_GPR : SelectCC_rrirr<FPR64, GPR>;
 
+} // Predicates = [HasStdExtD]
+
+let Predicates = [HasStdExtD, NotCapMode] in {
+
 /// Loads
 
 defm : LdPat<load, FLD, f64>;
@@ -343,6 +351,10 @@ defm : LdPat<load, FLD, f64>;
 /// Stores
 
 defm : StPat<store, FSD, FPR64, f64>;
+
+} // Predicates = [HasStdExtD, NotCapMode]
+
+let Predicates = [HasStdExtD] in {
 
 /// Pseudo-instructions needed for the soft-float ABI with RV32D
 

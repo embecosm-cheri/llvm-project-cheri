@@ -2036,6 +2036,12 @@ Instruction *InstCombinerImpl::visitIntToPtr(IntToPtrInst &CI) {
   // trunc or zext to the intptr_t type, then inttoptr of it.  This allows the
   // cast to be exposed to other transforms.
   unsigned AS = CI.getAddressSpace();
+  if (DL.isFatPointer(AS)) {
+    if (Instruction *I = commonCastTransforms(CI))
+      return I;
+    return nullptr;
+  }
+
   if (CI.getOperand(0)->getType()->getScalarSizeInBits() !=
       DL.getPointerSizeInBits(AS)) {
     Type *Ty = CI.getOperand(0)->getType()->getWithNewType(
@@ -2081,6 +2087,10 @@ Instruction *InstCombinerImpl::visitPtrToInt(PtrToIntInst &CI) {
   Type *SrcTy = SrcOp->getType();
   Type *Ty = CI.getType();
   unsigned AS = CI.getPointerAddressSpace();
+
+  if (DL.isFatPointer(AS))
+    return commonPointerCastTransforms(CI);
+
   unsigned TySize = Ty->getScalarSizeInBits();
   unsigned PtrSize = DL.getPointerSizeInBits(AS);
   if (TySize != PtrSize) {

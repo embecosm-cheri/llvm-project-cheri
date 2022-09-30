@@ -279,9 +279,17 @@ namespace llvm {
       externref      = 182,    // WebAssembly's externref type
       x86amx         = 183,    // This is an X86 AMX value
       i64x8          = 184,    // 8 Consecutive GPRs (AArch64)
+      iFATPTR64      = i64x8 + 1,     // 64-bit fat pointer type
+      iFATPTR128     = iFATPTR64 + 1,  // 128-bit fat pointer type
+      iFATPTR256     = iFATPTR128 + 1, // 256-bit fat pointer type
+      iFATPTR512     = iFATPTR256 + 1, // 512-bit fat pointer type
+      iFATPTRAny     = iFATPTR512 + 1, // Generic fat pointer type (must be
+      // legalised to a sized  version)
+      FIRST_FAT_POINTER = iFATPTR64,
+      LAST_FAT_POINTER = iFATPTRAny,
 
-      FIRST_VALUETYPE =  1,    // This is always the beginning of the list.
-      LAST_VALUETYPE = i64x8,  // This always remains at the end of the list.
+      FIRST_VALUETYPE = 1, // This is always the beginning of the list.
+      LAST_VALUETYPE = iFATPTRAny, // This always remains at the end of the list.
       VALUETYPE_SIZE = LAST_VALUETYPE + 1,
 
       // This is the current maximum for LAST_VALUETYPE.
@@ -362,6 +370,12 @@ namespace llvm {
                SimpleTy <= MVT::LAST_INTEGER_FIXEDLEN_VECTOR_VALUETYPE) ||
               (SimpleTy >= MVT::FIRST_INTEGER_SCALABLE_VECTOR_VALUETYPE &&
                SimpleTy <= MVT::LAST_INTEGER_SCALABLE_VECTOR_VALUETYPE));
+    }
+
+    /// Return true if this is a fat pointer type.
+    bool isFatPointer() const {
+      return (SimpleTy >= MVT::FIRST_FAT_POINTER) &&
+             (SimpleTy <= MVT::LAST_FAT_POINTER);
     }
 
     /// Return true if this is an integer, not including vectors.
@@ -460,7 +474,7 @@ namespace llvm {
     bool isOverloaded() const {
       return (SimpleTy == MVT::Any || SimpleTy == MVT::iAny ||
               SimpleTy == MVT::fAny || SimpleTy == MVT::vAny ||
-              SimpleTy == MVT::iPTRAny);
+              SimpleTy == MVT::iPTRAny || SimpleTy == MVT::iFATPTRAny);
     }
 
     /// Return a vector with the same number of elements as this vector, but
@@ -888,6 +902,11 @@ namespace llvm {
         llvm_unreachable("Value type is non-standard value, Other.");
       case iPTR:
         llvm_unreachable("Value type size is target-dependent. Ask TLI.");
+      case iFATPTR64: return TypeSize::Fixed(64);
+      case iFATPTR128: return TypeSize::Fixed(128);
+      case iFATPTR256: return TypeSize::Fixed(256);
+      case iFATPTR512: return TypeSize::Fixed(512);
+      case iFATPTRAny:
       case iPTRAny:
       case iAny:
       case fAny:
@@ -1210,6 +1229,21 @@ namespace llvm {
         return MVT::i64;
       case 128:
         return MVT::i128;
+      }
+    }
+
+    static MVT getFatPointerVT(unsigned BitWidth) {
+      switch (BitWidth) {
+      default:
+        return (MVT::SimpleValueType)(MVT::INVALID_SIMPLE_VALUE_TYPE);
+      case 64:
+        return MVT::iFATPTR64;
+      case 128:
+        return MVT::iFATPTR128;
+      case 256:
+        return MVT::iFATPTR256;
+      case 512:
+        return MVT::iFATPTR512;
       }
     }
 

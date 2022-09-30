@@ -22,7 +22,7 @@ bb1:
 ; CHECK: pushl %eax
 ; CHECK: subl $1020, %esp
 
-  %saved_stack = tail call ptr @llvm.stacksave()
+  %saved_stack = tail call ptr @llvm.stacksave.p0i8()
 
   %p1 = alloca %struct.S
 ; We know the %esp offset from above, so there is no need to touch the stack
@@ -50,7 +50,7 @@ bb1:
 ; The stack probing above touched the tip of the stack, so there's room for a T.
 ; CHECK: subl $3000, %esp
 
-  call void @llvm.stackrestore(ptr %saved_stack)
+  call void @llvm.stackrestore.p0i8(ptr %saved_stack)
   %p6 = alloca %struct.S
 ; The stack restore means we lose track of the stack pointer and must probe.
 ; CHECK: pushl %eax
@@ -152,5 +152,5 @@ declare void @f(ptr)
 declare void @g(ptr)
 declare void @h(ptr)
 
-declare ptr @llvm.stacksave()
-declare void @llvm.stackrestore(ptr)
+declare ptr @llvm.stacksave.p0i8()
+declare void @llvm.stackrestore.p0i8(ptr)

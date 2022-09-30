@@ -10,6 +10,17 @@
 #ifndef _LIBCPP_REGEX
 #define _LIBCPP_REGEX
 
+// CHERI CHANGES START
+// {
+//   "updated": 20190509,
+//   "target_type": "header",
+//   "changes": [
+//     "subobject_bounds"
+//   ],
+//   "change_comment": "address of std::string::operator[]: `std::string __s; &__s[0] -> __s.begin().base()`"
+// }
+// CHERI CHANGES END
+
 /*
     regex synopsis
 
@@ -1293,7 +1304,7 @@ regex_traits<_CharT>::__lookup_classname(_ForwardIterator __f,
                                          bool __icase, char) const
 {
     string_type __s(__f, __l);
-    __ct_->tolower(&__s[0], &__s[0] + __s.size());
+    __ct_->tolower(__s.begin().base(), __s.begin().base() + __s.size());
     return __get_classname(__s.c_str(), __icase);
 }
 
@@ -1306,7 +1317,7 @@ regex_traits<_CharT>::__lookup_classname(_ForwardIterator __f,
                                          bool __icase, wchar_t) const
 {
     string_type __s(__f, __l);
-    __ct_->tolower(&__s[0], &__s[0] + __s.size());
+    __ct_->tolower(__s.begin().base(), __s.begin().base() + __s.size());
     string __n;
     __n.reserve(__s.size());
     for (typename string_type::const_iterator __i = __s.begin(), __e = __s.end();
@@ -6556,9 +6567,13 @@ private:
     void __establish_result () {
         if (__subs_[__n_] == -1)
             __result_ = &__position_->prefix();
-        else
-            __result_ = &(*__position_)[__subs_[__n_]];
+        else {
+            // XXXAR: this appears to be fine for sub-object purposes.
+            // Use std::addressof to silence the warning
+            // __result_ = &(*__position_)[__subs_[__n_]];
+            __result_ = std::addressof((*__position_)[__subs_[__n_]]);
         }
+      }
 };
 
 template <class _BidirectionalIterator, class _CharT, class _Traits>

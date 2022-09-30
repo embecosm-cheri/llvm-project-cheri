@@ -8,6 +8,8 @@
 
 #include "clang/Driver/ToolChain.h"
 #include "ToolChains/Arch/ARM.h"
+#include "ToolChains/Arch/Mips.h"
+#include "ToolChains/Arch/RISCV.h"
 #include "ToolChains/Clang.h"
 #include "ToolChains/Flang.h"
 #include "ToolChains/InterfaceStubs.h"
@@ -86,6 +88,14 @@ ToolChain::ToolChain(const Driver &D, const llvm::Triple &T,
   for (const auto &Path : getStdlibPaths())
     addIfExists(getFilePaths(), Path);
   addIfExists(getFilePaths(), getArchSpecificLibPath());
+
+  IsCheriPurecap = Triple.getEnvironment() == llvm::Triple::CheriPurecap;
+  if (Triple.isMIPS() && tools::mips::hasMipsAbiArg(Args, "purecap"))
+    IsCheriPurecap = true;
+  if (Triple.isRISCV() && tools::riscv::isCheriPurecap(Args, Triple))
+    IsCheriPurecap = true;
+
+  // FIXME: Should we update triple enviroment to purecap? Or will that break RISCV?
 }
 
 void ToolChain::setTripleEnvironment(llvm::Triple::EnvironmentType Env) {
@@ -140,6 +150,11 @@ bool ToolChain::useRelaxRelocations() const {
 
 bool ToolChain::defaultToIEEELongDouble() const {
   return PPC_LINUX_DEFAULT_IEEELONGDOUBLE && getTriple().isOSLinux();
+}
+
+bool ToolChain::isCheriPurecap() const {
+  return IsCheriPurecap ||
+         EffectiveTriple.getEnvironment() == llvm::Triple::CheriPurecap;
 }
 
 SanitizerArgs
@@ -430,6 +445,11 @@ static StringRef getArchNameForCompilerRTLib(const ToolChain &TC,
   // For historic reasons, Android library is using i686 instead of i386.
   if (TC.getArch() == llvm::Triple::x86 && Triple.isAndroid())
     return "i686";
+
+  if (Triple.isMIPS() && Triple.getEnvironment() == llvm::Triple::CheriPurecap) {
+    assert(Triple.getSubArch() != llvm::Triple::NoSubArch && "purecap triple should have subarch");
+    return Triple.getArchName();
+  }
 
   if (TC.getArch() == llvm::Triple::x86_64 && Triple.isX32())
     return "x32";
@@ -1088,6 +1108,12 @@ SanitizerMask ToolChain::getSupportedSanitizers() const {
     Res |= SanitizerKind::ShadowCallStack;
   if (getTriple().isAArch64(64))
     Res |= SanitizerKind::MemTag;
+  // TODO: SanitizerKind::CHERI should depend on CHERI support being present
+  // and not whether we are compiling for CHERI purecap. We could either add a
+  // function to detect CHERI support or allow it on all architectures that
+  // might have CHERI available.
+  if (isCheriPurecap())
+    Res |= SanitizerKind::CHERI;
   return Res;
 }
 

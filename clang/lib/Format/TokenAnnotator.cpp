@@ -1973,6 +1973,7 @@ private:
   /// This is a heuristic based on whether \p Tok is an identifier following
   /// something that is likely a type.
   bool isStartOfName(const FormatToken &Tok) {
+    assert(Tok.is(TT_Unknown));
     if (Tok.isNot(tok::identifier) || !Tok.Previous)
       return false;
 
@@ -2230,7 +2231,8 @@ private:
     // Search for unexpected tokens.
     for (FormatToken *Prev = Tok.Previous; Prev != Tok.MatchingParen;
          Prev = Prev->Previous) {
-      if (!Prev->isOneOf(tok::kw_const, tok::identifier, tok::coloncolon))
+      if (!Prev->isOneOf(tok::kw_const, tok::identifier, tok::coloncolon) &&
+          !Keywords.isCHERICastKeyword(*Prev))
         return false;
     }
     return true;

@@ -529,6 +529,11 @@ class Sema;
       BadConversion
     };
 
+    enum SetKindAction {
+        MemsetToZero,
+        KeepState,
+    };
+
   private:
     enum {
       Uninitialized = BadConversion + 1
@@ -664,7 +669,15 @@ class Sema;
       Bad.init(Failure, FromType, ToType);
     }
 
-    void setStandard() { setKind(StandardConversion); }
+    void setStandard(SetKindAction Action) {
+      setKind(StandardConversion);
+      if (Action == MemsetToZero)
+        memset(&Standard, 0, sizeof(Standard));
+    }
+    void setStandard(const StandardConversionSequence& NewSeq) {
+      setKind(StandardConversion);
+      Standard = NewSeq;
+    }
     void setEllipsis() { setKind(EllipsisConversion); }
     void setUserDefined() { setKind(UserDefinedConversion); }
 
@@ -675,7 +688,7 @@ class Sema;
     }
 
     void setAsIdentityConversion(QualType T) {
-      setStandard();
+      setStandard(MemsetToZero);  // XXXAR: not sure this is correct
       Standard.setAsIdentityConversion();
       Standard.setFromType(T);
       Standard.setAllToTypes(T);
@@ -705,7 +718,7 @@ class Sema;
                                                        QualType DestType,
                                                        bool NeedLValToRVal) {
       ImplicitConversionSequence ICS;
-      ICS.setStandard();
+      ICS.setStandard(MemsetToZero);
       ICS.Standard.setAsIdentityConversion();
       ICS.Standard.setFromType(SourceType);
       if (NeedLValToRVal)

@@ -636,6 +636,8 @@ static uint64_t getAttrKindEncoding(Attribute::AttrKind Kind) {
     return bitc::ATTR_KIND_DISABLE_SANITIZER_INSTRUMENTATION;
   case Attribute::FnRetThunkExtern:
     return bitc::ATTR_KIND_FNRETTHUNK_EXTERN;
+  case Attribute::HasSideEffects:
+    return bitc::ATTR_KIND_HAS_SIDE_EFFECTS;
   case Attribute::Hot:
     return bitc::ATTR_KIND_HOT;
   case Attribute::ElementType:
@@ -652,6 +654,8 @@ static uint64_t getAttrKindEncoding(Attribute::AttrKind Kind) {
     return bitc::ATTR_KIND_JUMP_TABLE;
   case Attribute::MinSize:
     return bitc::ATTR_KIND_MIN_SIZE;
+  case Attribute::MustPreserveCheriTags:
+    return bitc::ATTR_KIND_MUST_PRESERVE_CHERI_TAGS;
   case Attribute::AllocatedPointer:
     return bitc::ATTR_KIND_ALLOCATED_POINTER;
   case Attribute::AllocKind:

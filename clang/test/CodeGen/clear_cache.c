@@ -15,5 +15,6 @@ char buffer[32] = "This is a largely unused buffer";
 //
 int main(void) {
   __builtin___clear_cache(buffer, buffer+32);
+// CHECK: @llvm.clear_cache.p0i8(i8* getelementptr inbounds ({{.*}}, i8* getelementptr inbounds (i8, i8* getelementptr inbounds ({{.*}} 32))
   return 0;
 }

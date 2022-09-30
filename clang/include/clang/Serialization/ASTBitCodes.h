@@ -1077,6 +1077,12 @@ enum PredefinedTypeIDs {
   /// \brief The '__ibm128' type
   PREDEF_TYPE_IBM128_ID = 74,
 
+  /// The '__uintcap_t' type.
+  PREDEF_TYPE_UINTCAP_ID = 75,
+
+  /// The '__intcap_t' type.
+  PREDEF_TYPE_INTCAP_ID = 76,
+
 /// OpenCL image types with auto numeration
 #define IMAGE_TYPE(ImgType, Id, SingletonId, Access, Suffix)                   \
   PREDEF_TYPE_##Id##_ID,
@@ -1618,6 +1624,9 @@ enum StmtCode {
 
   /// A ParenExpr record.
   EXPR_PAREN,
+
+  /// A NoChangeBoundsExpr record.
+  EXPR_NO_CHANGE_BOUNDS,
 
   /// A ParenListExpr record.
   EXPR_PAREN_LIST,

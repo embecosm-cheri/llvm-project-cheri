@@ -37,6 +37,7 @@
 #include "llvm/IR/BasicBlock.h"
 #include "llvm/IR/CFG.h"
 #include "llvm/IR/CallingConv.h"
+#include "llvm/IR/Cheri.h"
 #include "llvm/IR/Comdat.h"
 #include "llvm/IR/Constant.h"
 #include "llvm/IR/Constants.h"
@@ -320,6 +321,8 @@ static void PrintCallingConv(unsigned cc, raw_ostream &Out) {
   case CallingConv::Win64:         Out << "win64cc"; break;
   case CallingConv::SPIR_FUNC:     Out << "spir_func"; break;
   case CallingConv::SPIR_KERNEL:   Out << "spir_kernel"; break;
+  case CallingConv::CHERI_CCall:   Out << "chericcallcc"; break;
+  case CallingConv::CHERI_CCallee: Out << "chericcallcce"; break;
   case CallingConv::Swift:         Out << "swiftcc"; break;
   case CallingConv::SwiftTail:     Out << "swifttailcc"; break;
   case CallingConv::X86_INTR:      Out << "x86_intrcc"; break;
@@ -3912,6 +3915,7 @@ static void maybePrintCallAddrSpace(const Value *Operand, const Instruction *I,
   // We print the address space of the call if it is non-zero.
   unsigned CallAddrSpace = Operand->getType()->getPointerAddressSpace();
   bool PrintAddrSpace = CallAddrSpace != 0;
+
   if (!PrintAddrSpace) {
     const Module *Mod = getModuleFromVal(I);
     // We also print it if it is zero but not equal to the program address space
@@ -3919,6 +3923,22 @@ static void maybePrintCallAddrSpace(const Value *Operand, const Instruction *I,
     // the resulting file even without a datalayout string.
     if (!Mod || Mod->getDataLayout().getProgramAddressSpace() != 0)
       PrintAddrSpace = true;
+  }
+
+  // Hack for CHERI: don't print the addrspace() attribute for capability calls
+  // FIXME: this hack should be removed once all testcases have been updated
+  if (PrintAddrSpace) {
+    // if it is a CHERI cap call, don't print the AS
+    if (isCheriPointer(CallAddrSpace, getDataLayoutOrNull(I)))
+      PrintAddrSpace = false;
+    if (CallAddrSpace == 0) {
+      // Also don't print an address space for legacy ABI:
+      // FIXME: remove once we drop legacy ABI completely
+      const DataLayout* DL = getDataLayoutOrNull(I);
+      assert(DL && "Should only reach this branch if DL != null");
+      if (isCheriPointer(DL->getProgramAddressSpace(), DL))
+        PrintAddrSpace = false;
+    }
   }
   if (PrintAddrSpace)
     Out << " addrspace(" << CallAddrSpace << ")";

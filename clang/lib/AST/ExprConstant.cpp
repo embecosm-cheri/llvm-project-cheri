@@ -1548,6 +1548,7 @@ namespace {
     SubobjectDesignator Designator;
     bool IsNullPtr : 1;
     bool InvalidBase : 1;
+    bool MustBeNullDerivedCap : 1;
 
     const APValue::LValueBase getLValueBase() const { return Base; }
     CharUnits &getLValueOffset() { return Offset; }
@@ -1567,6 +1568,7 @@ namespace {
         V = APValue(Base, Offset, Designator.Entries,
                     Designator.IsOnePastTheEnd, IsNullPtr);
       }
+      V.setMustBeNullDerivedCap(MustBeNullDerivedCap);
     }
     void setFrom(ASTContext &Ctx, const APValue &V) {
       assert(V.isLValue() && "Setting LValue from a non-LValue?");
@@ -1575,6 +1577,7 @@ namespace {
       InvalidBase = false;
       Designator = SubobjectDesignator(Ctx, V);
       IsNullPtr = V.isNullPointer();
+      MustBeNullDerivedCap = V.mustBeNullDerivedCap();
     }
 
     void set(APValue::LValueBase B, bool BInvalid = false) {
@@ -1592,6 +1595,7 @@ namespace {
       InvalidBase = BInvalid;
       Designator = SubobjectDesignator(getType(B));
       IsNullPtr = false;
+      MustBeNullDerivedCap = false;
     }
 
     void setNull(ASTContext &Ctx, QualType PointerTy) {
@@ -1601,6 +1605,7 @@ namespace {
       InvalidBase = false;
       Designator = SubobjectDesignator(PointerTy->getPointeeType());
       IsNullPtr = true;
+      MustBeNullDerivedCap = true;
     }
 
     void setInvalid(APValue::LValueBase B, unsigned I = 0) {
@@ -2540,7 +2545,7 @@ static bool HandleOverflow(EvalInfo &Info, const Expr *E,
 static bool HandleFloatToIntCast(EvalInfo &Info, const Expr *E,
                                  QualType SrcType, const APFloat &Value,
                                  QualType DestType, APSInt &Result) {
-  unsigned DestWidth = Info.Ctx.getIntWidth(DestType);
+  unsigned DestWidth = Info.Ctx.getIntRange(DestType);
   // Determine whether we are converting to unsigned or signed.
   bool DestSigned = DestType->isSignedIntegerOrEnumerationType();
 
@@ -2621,7 +2626,7 @@ static bool HandleFloatToFloatCast(EvalInfo &Info, const Expr *E,
 static APSInt HandleIntToIntCast(EvalInfo &Info, const Expr *E,
                                  QualType DestType, QualType SrcType,
                                  const APSInt &Value) {
-  unsigned DestWidth = Info.Ctx.getIntWidth(DestType);
+  unsigned DestWidth = Info.Ctx.getIntRange(DestType);
   // Figure out if this is a truncate, extend or noop cast.
   // If the input is signed, do a sign extend, noop, or truncate.
   APSInt Result = Value.extOrTrunc(DestWidth);
@@ -7892,14 +7897,16 @@ public:
       return StmtVisitorTy::Visit(E->getSubExpr());
 
     case CK_LValueToRValue: {
+      const Expr *SubExpr = E->getSubExpr();
       LValue LVal;
-      if (!EvaluateLValue(E->getSubExpr(), LVal, Info))
+      if (!EvaluateLValue(SubExpr, LVal, Info))
         return false;
       APValue RVal;
       // Note, we use the subexpression's type in order to retain cv-qualifiers.
-      if (!handleLValueToRValueConversion(Info, E, E->getSubExpr()->getType(),
+      if (!handleLValueToRValueConversion(Info, E, SubExpr->getType(),
                                           LVal, RVal))
         return false;
+
       return DerivedSuccess(RVal, E);
     }
     case CK_LValueToRValueBitCast: {
@@ -8802,7 +8809,9 @@ public:
 static bool EvaluatePointer(const Expr* E, LValue& Result, EvalInfo &Info,
                             bool InvalidBaseOK) {
   assert(!E->isValueDependent());
-  assert(E->isPRValue() && E->getType()->hasPointerRepresentation());
+  assert(E->isPRValue() && (E->getType()->hasPointerRepresentation() ||
+                            E->getType()->isCHERICapabilityType(
+                                Info.Ctx, /*IncludeIntCap=*/true)));
   return PointerExprEvaluator(Info, Result, InvalidBaseOK).Visit(E);
 }
 
@@ -8857,6 +8866,15 @@ bool PointerExprEvaluator::VisitCastExpr(const CastExpr *E) {
   switch (E->getCastKind()) {
   default:
     break;
+  case CK_CHERICapabilityToAddress:
+  case CK_CHERICapabilityToOffset:
+    llvm_unreachable("Should not be evaluated here");
+    break;
+  case CK_PointerToCHERICapability:
+  case CK_CHERICapabilityToPointer:
+    assert(!Info.Ctx.getTargetInfo().areAllPointersCapabilities() &&
+           "Should not be generated in purecap mode!");
+    LLVM_FALLTHROUGH;
   case CK_BitCast:
   case CK_CPointerToObjCPointerCast:
   case CK_BlockPointerToObjCPointerCast:
@@ -8890,13 +8908,17 @@ bool PointerExprEvaluator::VisitCastExpr(const CastExpr *E) {
         Result.Designator.setInvalid();
         if (SubExpr->getType()->isVoidPointerType())
           CCEDiag(E, diag::note_constexpr_invalid_cast)
-            << 3 << SubExpr->getType();
+              << 3 << SubExpr->getType();
         else
           CCEDiag(E, diag::note_constexpr_invalid_cast) << 2;
       }
     }
     if (E->getCastKind() == CK_AddressSpaceConversion && Result.IsNullPtr)
       ZeroInitialization(E);
+    if (E->getCastKind() == CK_PointerToCHERICapability) {
+      // An explicit __cheri_tocap means this value might be tagged.
+      Result.MustBeNullDerivedCap = false;
+    }
     return true;
 
   case CK_DerivedToBase:
@@ -8928,6 +8950,10 @@ bool PointerExprEvaluator::VisitCastExpr(const CastExpr *E) {
     VisitIgnoredValue(E->getSubExpr());
     return ZeroInitialization(E);
 
+  case CK_IntegralCast:
+    if (!E->getType()->isCHERICapabilityType(Info.Ctx))
+      return false;
+  LLVM_FALLTHROUGH;
   case CK_IntegralToPointer: {
     CCEDiag(E, diag::note_constexpr_invalid_cast) << 2;
 
@@ -8935,8 +8961,20 @@ bool PointerExprEvaluator::VisitCastExpr(const CastExpr *E) {
     if (!EvaluateIntegerOrLValue(SubExpr, Value, Info))
       break;
 
+    if (SubExpr->getType()->isIntCapType()) {
+      // Casts from __(u)intcap_t propagate the null-derived status
+      Result.MustBeNullDerivedCap = Value.mustBeNullDerivedCap();
+    } else {
+      assert(SubExpr->getType()->isIntegerType());
+      // In purecap mode this expression can only be provenance-carrying if
+      // it came from a valid __(u)_intcap_t. In hybrid mode casting from
+      // integer to pointer can result in a valid tagged capability.
+      Result.MustBeNullDerivedCap =
+          Info.Ctx.getTargetInfo().areAllPointersCapabilities();
+    }
+
     if (Value.isInt()) {
-      unsigned Size = Info.Ctx.getTypeSize(E->getType());
+      unsigned Size = Info.Ctx.getIntRange(E->getType());
       uint64_t N = Value.getInt().extOrTrunc(Size).getZExtValue();
       Result.Base = (Expr*)nullptr;
       Result.InvalidBase = false;
@@ -8946,6 +8984,7 @@ bool PointerExprEvaluator::VisitCastExpr(const CastExpr *E) {
       return true;
     } else {
       // Cast is of an lvalue, no need to change value.
+      Value.setMustBeNullDerivedCap(Result.MustBeNullDerivedCap);
       Result.setFrom(Info.Ctx, Value);
       return true;
     }
@@ -9112,6 +9151,7 @@ bool PointerExprEvaluator::VisitBuiltinCallExpr(const CallExpr *E,
   case Builtin::BI__addressof:
   case Builtin::BI__builtin_addressof:
     return evaluateLValue(E->getArg(0), Result);
+  case Builtin::BI__builtin_assume_aligned_cap:
   case Builtin::BI__builtin_assume_aligned: {
     // We need to be very careful here because: if the pointer does not have the
     // asserted alignment, then the behavior is undefined, and undefined
@@ -9149,6 +9189,7 @@ bool PointerExprEvaluator::VisitBuiltinCallExpr(const CallExpr *E,
         return false;
       }
     }
+    // TODO: can we handle __builtin_/align_down/aligned_up/is_aligned here?
 
     // The offset must also have the correct alignment.
     if (OffsetResult.Offset.alignTo(Align) != OffsetResult.Offset) {
@@ -10903,7 +10944,7 @@ public:
            "Invalid evaluation result.");
     assert(SI.isSigned() == E->getType()->isSignedIntegerOrEnumerationType() &&
            "Invalid evaluation result.");
-    assert(SI.getBitWidth() == Info.Ctx.getIntWidth(E->getType()) &&
+    assert(SI.getBitWidth() == Info.Ctx.getIntRange(E->getType()) &&
            "Invalid evaluation result.");
     Result = APValue(SI);
     return true;
@@ -10915,7 +10956,7 @@ public:
   bool Success(const llvm::APInt &I, const Expr *E, APValue &Result) {
     assert(E->getType()->isIntegralOrEnumerationType() &&
            "Invalid evaluation result.");
-    assert(I.getBitWidth() == Info.Ctx.getIntWidth(E->getType()) &&
+    assert(I.getBitWidth() == Info.Ctx.getIntRange(E->getType()) &&
            "Invalid evaluation result.");
     Result = APValue(APSInt(I));
     Result.getInt().setIsUnsigned(
@@ -11056,7 +11097,7 @@ class FixedPointExprEvaluator
 
   bool Success(const APFixedPoint &V, const Expr *E) {
     assert(E->getType()->isFixedPointType() && "Invalid evaluation result.");
-    assert(V.getWidth() == Info.Ctx.getIntWidth(E->getType()) &&
+    assert(V.getWidth() == Info.Ctx.getIntRange(E->getType()) &&
            "Invalid evaluation result.");
     Result = APValue(V);
     return true;
@@ -11154,7 +11195,7 @@ bool IntExprEvaluator::CheckReferencedDecl(const Expr* E, const Decl* D) {
     bool SameSign = (ECD->getInitVal().isSigned()
                      == E->getType()->isSignedIntegerOrEnumerationType());
     bool SameWidth = (ECD->getInitVal().getBitWidth()
-                      == Info.Ctx.getIntWidth(E->getType()));
+                      == Info.Ctx.getIntRange(E->getType()));
     if (SameSign && SameWidth)
       return Success(ECD->getInitVal(), E);
     else {
@@ -11164,7 +11205,7 @@ bool IntExprEvaluator::CheckReferencedDecl(const Expr* E, const Decl* D) {
       if (!SameSign)
         Val.setIsSigned(!ECD->getInitVal().isSigned());
       if (!SameWidth)
-        Val = Val.extOrTrunc(Info.Ctx.getIntWidth(E->getType()));
+        Val = Val.extOrTrunc(Info.Ctx.getIntRange(E->getType()));
       return Success(Val, E);
     }
   }
@@ -11247,6 +11288,7 @@ EvaluateBuiltinClassifyType(QualType T, const LangOptions &LangOpts) {
     case BuiltinType::ULong:
     case BuiltinType::ULongLong:
     case BuiltinType::UInt128:
+    case BuiltinType::UIntCap:
       return GCCTypeClass::Integer;
 
     case BuiltinType::UShortAccum:
@@ -12680,7 +12722,7 @@ bool DataRecursiveIntBinOpEvaluator::
   // Set up the width and signedness manually, in case it can't be deduced
   // from the operation we're performing.
   // FIXME: Don't do this in the cases where we can deduce it.
-  APSInt Value(Info.Ctx.getIntWidth(E->getType()),
+  APSInt Value(Info.Ctx.getIntRange(E->getType()),
                E->getType()->isUnsignedIntegerOrEnumerationType());
   if (!handleIntIntBinOp(Info, E, LHSVal.getInt(), E->getOpcode(),
                          RHSVal.getInt(), Value))
@@ -12982,8 +13024,14 @@ EvaluateComparisonBinaryOperator(EvalInfo &Info, const BinaryOperator *E,
     }
 
     // The comparison here must be unsigned, and performed with the same
-    // width as the pointer.
-    unsigned PtrSize = Info.Ctx.getTypeSize(LHSTy);
+    // width as the pointer offset.
+#if 0 // Old code, should be equivalent to getIntRange
+    auto &TI = Info.Ctx.getTargetInfo();
+    unsigned AS = Info.Ctx.getTargetAddressSpace(
+        LHSTy->getPointeeType().getAddressSpace());
+    unsigned PtrSize = TI.getTypeWidth(TI.getPtrDiffType(AS));
+#endif
+    unsigned PtrSize = Info.Ctx.getIntRange(LHSTy);
     uint64_t CompareLHS = LHSOffset.getQuantity();
     uint64_t CompareRHS = RHSOffset.getQuantity();
     assert(PtrSize <= 64 && "Unexpected pointer width");
@@ -13226,7 +13274,7 @@ bool IntExprEvaluator::VisitBinaryOperator(const BinaryOperator *E) {
     APSInt ElemSize(llvm::APInt(65, (int64_t)ElementSize.getQuantity(), true),
                     false);
     APSInt TrueResult = (LHS - RHS) / ElemSize;
-    APSInt Result = TrueResult.trunc(Info.Ctx.getIntWidth(E->getType()));
+    APSInt Result = TrueResult.trunc(Info.Ctx.getIntRange(E->getType()));
 
     if (Result.extend(65) != TrueResult &&
         !HandleOverflow(Info, E, TrueResult, E->getType()))
@@ -13441,6 +13489,7 @@ bool IntExprEvaluator::VisitCastExpr(const CastExpr *E) {
   case CK_ZeroToOCLOpaqueType:
   case CK_NonAtomicToAtomic:
   case CK_AddressSpaceConversion:
+  case CK_CHERICapabilityToPointer:
   case CK_IntToOCLSampler:
   case CK_FloatingToFixedPoint:
   case CK_FixedPointToFloating:
@@ -13488,7 +13537,7 @@ bool IntExprEvaluator::VisitCastExpr(const CastExpr *E) {
       return false;
     bool Overflowed;
     llvm::APSInt Result = Src.convertToInt(
-        Info.Ctx.getIntWidth(DestType),
+        Info.Ctx.getIntRange(DestType),
         DestType->isSignedIntegerOrEnumerationType(), &Overflowed);
     if (Overflowed && !HandleOverflow(Info, E, Result, DestType))
       return false;
@@ -13507,6 +13556,16 @@ bool IntExprEvaluator::VisitCastExpr(const CastExpr *E) {
     if (!Visit(SubExpr))
       return false;
 
+    // CHERI: If we are doing an integer cast from a capability, then extract
+    // the int value
+    if (SrcType->isIntCapType()) {
+      APSInt IntValue;
+      if (!EvaluateInteger(SubExpr, IntValue, Info))
+        return false;
+      IntValue.setIsUnsigned(SrcType->isUnsignedIntegerOrEnumerationType());
+      Result = APValue(IntValue);
+    }
+
     if (!Result.isInt()) {
       // Allow casts of address-of-label differences if they are no-ops
       // or narrowing.  (The narrowing case isn't actually guaranteed to
@@ -13514,15 +13573,29 @@ bool IntExprEvaluator::VisitCastExpr(const CastExpr *E) {
       // to detect here.  We let it through on the assumption the user knows
       // what they are doing.)
       if (Result.isAddrLabelDiff())
-        return Info.Ctx.getTypeSize(DestType) <= Info.Ctx.getTypeSize(SrcType);
+        return Info.Ctx.getIntRange(DestType) <= Info.Ctx.getIntRange(SrcType);
+
       // Only allow casts of lvalues if they are lossless.
-      return Info.Ctx.getTypeSize(DestType) == Info.Ctx.getTypeSize(SrcType);
+      return Info.Ctx.getIntRange(DestType) == Info.Ctx.getIntRange(SrcType);
     }
 
     return Success(HandleIntToIntCast(Info, E, DestType, SrcType,
                                       Result.getInt()), E);
   }
 
+    // We only seem to get here if we are casting the result of the
+    // __cheri_{offset, addr} cast to an integer type different to what was
+    // specified as part of the CHERI cast.
+  case CK_CHERICapabilityToOffset:
+    // __cheri_offset cannot be constant evaluated (yet).
+    // This would be possible for values known to be derived from integer
+    // constants but that can be done in the future.
+    return Error(E);
+  case CK_CHERICapabilityToAddress:
+    // Do the same checks as CK_PointerToIntegral since this is effectively
+    // what __cheri_addr does.
+    LLVM_FALLTHROUGH;
+  case CK_PointerToCHERICapability:
   case CK_PointerToIntegral: {
     CCEDiag(E, diag::note_constexpr_invalid_cast) << 2;
 
@@ -13530,12 +13603,56 @@ bool IntExprEvaluator::VisitCastExpr(const CastExpr *E) {
     if (!EvaluatePointer(SubExpr, LV, Info))
       return false;
 
+    // Check if the resulting value must be an untagged __intcap_t constant.
+    // This is important for global expressions that should be untagged such as
+    // `__intcap_t x = (__cheri_addr __intcap_t)&foo;` that previously would be
+    // emitted as a tagged capability pointing to foo.
+    bool MustBeNullDerived = true; // can only be false for __(u)intcap_t
+    if (E->getType()->isIntCapType()) {
+      bool IsPurecap = Info.Ctx.getTargetInfo().areAllPointersCapabilities();
+      if (E->getCastKind() == CK_PointerToCHERICapability) {
+        // T* -> __(u)intcap_t
+        assert(E->getType()->isIntCapType());
+        assert(!IsPurecap && "Should not be generated for purecap");
+        // The result can be a valid capability in hybrid mode capability if we
+        // default to deriving from DDC/PCC.
+        MustBeNullDerived = false;
+      } else if (E->getCastKind() == CK_PointerToIntegral) {
+        if (IsPurecap) {
+          // In purecap mode PointerToIntegral can only result in a tagged value
+          // if the resulting type is __(u)intcap_t and the original expression
+          // was a capability.
+          if (SubExpr->getType()->isCHERICapabilityType(Info.Ctx))
+            MustBeNullDerived = LV.MustBeNullDerivedCap;
+        } else {
+          // In hybrid mode PointerToIntegral can result in a tagged value
+          // as long as the source was not marked as null-derived
+          MustBeNullDerived = LV.MustBeNullDerivedCap;
+        }
+      }
+    }
+    LV.MustBeNullDerivedCap = MustBeNullDerived;
+
     if (LV.getLValueBase()) {
       // Only allow based lvalue casts if they are lossless.
       // FIXME: Allow a larger integer size than the pointer size, and allow
       // narrowing back down to pointer width in subsequent integral casts.
       // FIXME: Check integer type's active bits, not its type size.
-      if (Info.Ctx.getTypeSize(DestType) != Info.Ctx.getTypeSize(SrcType))
+      uint64_t DestUsableBits = Info.Ctx.getTypeSize(DestType);
+      uint64_t SrcBits = Info.Ctx.getTypeSize(SrcType);
+
+
+      // XXXAR: In C the only way to silence -Wcast-qual is by casting via a uintptr_t
+      // This happens e.g. in the FreeBSD __DECONST/__DEVOLATILE macros so we need to
+      // allow that case
+      if (DestType->isCHERICapabilityType(Info.Ctx)) {
+        DestUsableBits = Info.Ctx.getTargetInfo().getPointerRangeForCHERICapability();
+      }
+      if (SrcType->isCHERICapabilityType(Info.Ctx)) {
+        SrcBits = Info.Ctx.getTargetInfo().getPointerRangeForCHERICapability();
+      }
+      // XXXAR: There should be a more useful diagnostic here
+      if (DestUsableBits != SrcBits)
         return Error(E);
 
       LV.Designator.setInvalid();
@@ -14187,6 +14304,10 @@ bool ComplexExprEvaluator::VisitCastExpr(const CastExpr *E) {
   case CK_ZeroToOCLOpaqueType:
   case CK_NonAtomicToAtomic:
   case CK_AddressSpaceConversion:
+  case CK_CHERICapabilityToPointer:
+  case CK_PointerToCHERICapability:
+  case CK_CHERICapabilityToOffset:
+  case CK_CHERICapabilityToAddress:
   case CK_IntToOCLSampler:
   case CK_FloatingToFixedPoint:
   case CK_FixedPointToFloating:
@@ -14951,10 +15072,23 @@ static bool EvaluateAsInt(const Expr *E, Expr::EvalResult &ExprResult,
   if (!E->getType()->isIntegralOrEnumerationType())
     return false;
 
-  if (!::EvaluateAsRValue(E, ExprResult, Ctx, Info) ||
-      !ExprResult.Val.isInt() ||
-      hasUnacceptableSideEffect(ExprResult, AllowSideEffects))
+  bool DidEvaluate = ::EvaluateAsRValue(E, ExprResult, Ctx, Info);
+  if (!DidEvaluate || !ExprResult.Val.isInt() ||
+      hasUnacceptableSideEffect(ExprResult, AllowSideEffects)) {
+    // For intcap_t, pass through the result even if it isn't actually an
+    // int.
+    if (DidEvaluate &&
+        E->getType()->isCHERICapabilityType(const_cast<ASTContext&>(Ctx)))
+      if (ExprResult.Val.isLValue() &&
+          ExprResult.Val.getLValueBase().isNull()) {
+        // FIXME: Ugly hack!
+        APSInt Val(64);
+        Val = ExprResult.Val.getLValueOffset().getQuantity();
+        ExprResult.Val = APValue(Val);
+        return true;
+      }
     return false;
+  }
 
   return true;
 }
@@ -15236,6 +15370,12 @@ APSInt Expr::EvaluateKnownConstInt(const ASTContext &Ctx,
   bool Result = ::EvaluateAsRValue(this, EVResult, Ctx, Info);
   (void)Result;
   assert(Result && "Could not evaluate expression");
+  if (EVResult.Val.isLValue() && EVResult.Val.getLValueBase().isNull()) {
+    // FIXME: Ugly hack!
+    APSInt Val(64);
+    Val = EVResult.Val.getLValueOffset().getQuantity();
+    EVResult.Val = APValue(Val);
+  }
   assert(EVResult.Val.isInt() && "Expression did not evaluate to integer");
 
   return EVResult.Val.getInt();
@@ -15451,6 +15591,7 @@ static ICEDiag CheckICE(const Expr* E, const ASTContext &Ctx) {
     return CheckICE(cast<ConstantExpr>(E)->getSubExpr(), Ctx);
 
   case Expr::ParenExprClass:
+  case Expr::NoChangeBoundsExprClass:
     return CheckICE(cast<ParenExpr>(E)->getSubExpr(), Ctx);
   case Expr::GenericSelectionExprClass:
     return CheckICE(cast<GenericSelectionExpr>(E)->getResultExpr(), Ctx);
@@ -15641,7 +15782,7 @@ static ICEDiag CheckICE(const Expr* E, const ASTContext &Ctx) {
     if (isa<ExplicitCastExpr>(E)) {
       if (const FloatingLiteral *FL
             = dyn_cast<FloatingLiteral>(SubExpr->IgnoreParenImpCasts())) {
-        unsigned DestWidth = Ctx.getIntWidth(E->getType());
+        unsigned DestWidth = Ctx.getIntRange(E->getType());
         bool DestSigned = E->getType()->isSignedIntegerOrEnumerationType();
         APSInt IgnoredVal(DestWidth, !DestSigned);
         bool Ignored;

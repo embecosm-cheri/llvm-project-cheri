@@ -244,6 +244,11 @@ StringRef llvm::getEnumName(MVT::SimpleValueType T) {
   case MVT::Metadata:  return "MVT::Metadata";
   case MVT::iPTR:      return "MVT::iPTR";
   case MVT::iPTRAny:   return "MVT::iPTRAny";
+  case MVT::iFATPTR64: return "MVT::iFATPTR64";
+  case MVT::iFATPTR128:return "MVT::iFATPTR128";
+  case MVT::iFATPTR256:return "MVT::iFATPTR256";
+  case MVT::iFATPTR512:return "MVT::iFATPTR512";
+  case MVT::iFATPTRAny:return "MVT::iFATPTRAny";
   case MVT::Untyped:   return "MVT::Untyped";
   case MVT::funcref:   return "MVT::funcref";
   case MVT::externref: return "MVT::externref";
@@ -690,6 +695,8 @@ CodeGenIntrinsic::CodeGenIntrinsic(Record *R,
 
   if (R->getValue("ClangBuiltinName"))  // Ignore a missing ClangBuiltinName field.
     ClangBuiltinName = std::string(R->getValueAsString("ClangBuiltinName"));
+  if (R->getValue("GCCBuiltinAliasName"))  // Ignore a missing GCCBuiltinAliasName field.
+    GCCBuiltinAliasName = std::string(R->getValueAsString("GCCBuiltinAliasName"));
   if (R->getValue("MSBuiltinName"))   // Ignore a missing MSBuiltinName field.
     MSBuiltinName = std::string(R->getValueAsString("MSBuiltinName"));
 
@@ -733,7 +740,11 @@ CodeGenIntrinsic::CodeGenIntrinsic(Record *R,
         continue;
 
       MVT::SimpleValueType VT = getValueType(TyEl->getValueAsDef("VT"));
-      if (MVT(VT).isOverloaded()) {
+      // iFATPTRAny is overloaded from the perspective of the back end (it
+      // becomes one of the fixed-sized iFATPTR types), but it is not overloaded
+      // from the perspective of the IR, where it is (currently, at least) always
+      // an address-space-200 pointer.
+      if (MVT(VT).isOverloaded() && (MVT(VT) != MVT::iFATPTRAny)) {
         OverloadedVTs.push_back(VT);
         isOverloaded = true;
       }

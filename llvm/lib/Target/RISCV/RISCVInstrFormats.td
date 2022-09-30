@@ -125,6 +125,7 @@ def lookupRISCVOpcodeByName : SearchIndex {
 }
 def OPC_LOAD      : RISCVOpcode<"LOAD",      0b0000011>;
 def OPC_LOAD_FP   : RISCVOpcode<"LOAD_FP",   0b0000111>;
+def OPC_CHERI_MEM : RISCVOpcode<"CHERI_MEM", 0b0001011>;
 def OPC_MISC_MEM  : RISCVOpcode<"MISC_MEM",  0b0001111>;
 def OPC_OP_IMM    : RISCVOpcode<"OP_IMM",    0b0010011>;
 def OPC_AUIPC     : RISCVOpcode<"AUIPC",     0b0010111>;
@@ -140,6 +141,7 @@ def OPC_MSUB      : RISCVOpcode<"MSUB",      0b1000111>;
 def OPC_NMSUB     : RISCVOpcode<"NMSUB",     0b1001011>;
 def OPC_NMADD     : RISCVOpcode<"NMADD",     0b1001111>;
 def OPC_OP_FP     : RISCVOpcode<"OP_FP",     0b1010011>;
+def OPC_CHERI     : RISCVOpcode<"CHERI",     0b1011011>;
 def OPC_OP_V      : RISCVOpcode<"OP_V",      0b1010111>;
 def OPC_BRANCH    : RISCVOpcode<"BRANCH",    0b1100011>;
 def OPC_JALR      : RISCVOpcode<"JALR",      0b1100111>;

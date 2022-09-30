@@ -70,6 +70,7 @@ public:
                              const MCValue &Target) override;
 
   bool isMicroMips(const MCSymbol *Sym) const override;
+
 }; // class MipsAsmBackend
 
 } // namespace

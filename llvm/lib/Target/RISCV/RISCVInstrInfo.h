@@ -54,9 +54,16 @@ public:
   unsigned isStoreToStackSlot(const MachineInstr &MI,
                               int &FrameIndex) const override;
 
+  // TODO: add MachineInstr::MIFlag to the base class function.
   void copyPhysReg(MachineBasicBlock &MBB, MachineBasicBlock::iterator MBBI,
                    const DebugLoc &DL, MCRegister DstReg, MCRegister SrcReg,
-                   bool KillSrc) const override;
+                   bool KillSrc, MachineInstr::MIFlag Flag) const;
+
+  void copyPhysReg(MachineBasicBlock &MBB, MachineBasicBlock::iterator MBBI,
+                   const DebugLoc &DL, MCRegister DstReg, MCRegister SrcReg,
+                   bool KillSrc) const override {
+    copyPhysReg(MBB, MBBI, DL, DstReg, SrcReg, KillSrc, MachineInstr::NoFlags);
+  }
 
   void storeRegToStackSlot(MachineBasicBlock &MBB,
                            MachineBasicBlock::iterator MBBI, Register SrcReg,
@@ -111,6 +118,19 @@ public:
                              int64_t BrOffset) const override;
 
   bool isAsCheapAsAMove(const MachineInstr &MI) const override;
+
+  bool isGuaranteedNotToTrap(const MachineInstr &MI) const override {
+    if (isGuaranteedValidSetBounds(MI))
+      return true;
+    return false;
+  }
+  bool isSetBoundsInstr(const MachineInstr &I, const MachineOperand *&Base,
+                        const MachineOperand *&Size) const override;
+  bool isPtrAddInstr(const MachineInstr &I, const MachineOperand *&Base,
+                     const MachineOperand *&Increment) const override;
+  Optional<int64_t>
+  getAsIntImmediate(const MachineOperand &Op,
+                    const MachineRegisterInfo &MRI) const override;
 
   Optional<DestSourcePair>
   isCopyInstrImpl(const MachineInstr &MI) const override;

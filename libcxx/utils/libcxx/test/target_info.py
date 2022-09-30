@@ -12,6 +12,7 @@ import os
 import platform
 import re
 import subprocess
+import shlex
 import sys
 
 from libcxx.util import executeCommand
@@ -34,6 +35,7 @@ class DefaultTargetInfo(object):
     def add_cxx_compile_flags(self, flags): pass
     def add_cxx_link_flags(self, flags): pass
     def allow_cxxabi_link(self): return True
+    def default_cxx_abi_library(self): raise NotImplementedError(self.__class__.__name__)
 
     def add_path(self, dest_env, new_path):
         if not new_path:
@@ -68,6 +70,9 @@ class DarwinLocalTI(DefaultTargetInfo):
         # should be available in libc++ directly.
         return False
 
+    def default_cxx_abi_library(self):
+        return "libcxxabi"
+
 
 class FreeBSDLocalTI(DefaultTargetInfo):
     def __init__(self, full_config):
@@ -76,6 +81,50 @@ class FreeBSDLocalTI(DefaultTargetInfo):
     def add_cxx_link_flags(self, flags):
         flags += ['-lc', '-lm', '-lpthread', '-lgcc_s', '-lcxxrt']
 
+    def default_cxx_abi_library(self):
+        return "libcxxrt"
+
+
+class CheriBSDRemoteTI(DefaultTargetInfo):
+    def __init__(self, full_config):
+        super(CheriBSDRemoteTI, self).__init__(full_config)
+        # TODO: support dynamically linked
+        self.static = True
+
+    def platform(self):
+        return 'freebsd'
+
+    def add_cxx_link_flags(self, flags):
+        explicit_flags = shlex.split(self.full_config.get_lit_conf('test_linker_flags'))
+        if self.full_config.link_shared is False:
+            # We also need to pull in compiler-rt and libunwind (gcc_eh) when building static tests
+            flags += ['-lcompiler_rt', '-lgcc_eh', '-static']
+            # FIXME: work around bug in libthr (or lld?) that doesn't pull in all symbols (if a weak symbol already exists)
+            #flags += ['-Wl,--whole-archive', '-lthr', '-Wl,--no-whole-archive']
+        # else:
+        flags += ['-lpthread']
+
+        flags += ['-lc', '-lm', '-fuse-ld=lld',
+                  '-B' + self.full_config.get_lit_conf('sysroot') + '/../bin']
+        if self.full_config.lit_config.run_with_debugger:
+            flags += ['-Wl,--gdb-index']
+        if self.full_config.get_lit_conf('target_triple').startswith("cheri-"):
+            assert '-mabi=purecap' in explicit_flags, explicit_flags
+
+    def add_cxx_compile_flags(self, flags):
+        explicit_flags = shlex.split(self.full_config.get_lit_conf('test_compiler_flags'))
+        if self.full_config.link_shared is False:
+            # we currently only support static linking so we need to add _LIBCPP_BUILD_STATIC
+            flags += ["-D_LIBCPP_BUILD_STATIC"]
+
+    # def configure_env(self, env): pass
+    def allow_cxxabi_link(self):
+        return False # should either be included or using libcxxrt
+    # def add_sanitizer_features(self, sanitizer_type, features): pass
+    # def use_lit_shell_default(self): return False
+
+    def default_cxx_abi_library(self):
+        return "libcxxrt"
 
 class NetBSDLocalTI(DefaultTargetInfo):
     def __init__(self, full_config):
@@ -127,6 +176,9 @@ class LinuxLocalTI(DefaultTargetInfo):
             # clang/lib/Driver/Tools.cpp
             flags += ['-lpthread', '-lrt', '-lm', '-ldl']
 
+    def default_cxx_abi_library(self):
+        return "libsupc++"
+
 class LinuxRemoteTI(LinuxLocalTI):
     def __init__(self, full_config):
         super(LinuxRemoteTI, self).__init__(full_config)
@@ -137,6 +189,42 @@ class WindowsLocalTI(DefaultTargetInfo):
 
     def is_windows(self):
         return True
+
+class BaremetalNewlibTI(DefaultTargetInfo):
+    def __init__(self, full_config):
+        super(BaremetalNewlibTI, self).__init__(full_config)
+
+    def platform(self):
+        return 'baremetal-' + self.full_config.config.target_triple
+
+    def add_locale_features(self, features):
+        add_common_locales(features, self.full_config.lit_config, unchecked_add=True)
+
+    def add_cxx_compile_flags(self, flags):
+        # I'm not sure the _LIBCPP_BUILD_STATIC should be passed when building
+        # against libcpp but it seems to be needed
+        flags += ['-D_GNU_SOURCE', '-D_LIBCPP_BUILD_STATIC']
+        # For now always build with debug info:
+        flags.append('-g')
+        pass
+
+    def add_cxx_link_flags(self, flags):
+        llvm_unwinder = self.full_config.get_lit_bool('llvm_unwinder', False)
+        use_exceptions = self.full_config.get_lit_bool('enable_exceptions', False)
+        # shared_libcxx = self.full_config.get_lit_bool('enable_shared', False)
+        flags += ['-static', '-lm', '-lc']
+        enable_threads = ('libcpp-has-no-threads' not in self.full_config.config.available_features)
+        if enable_threads:
+            pass
+            # flags += ['-lpthread']
+            # if not shared_libcxx:
+            #  flags += ['-lrt']
+        if use_exceptions:
+            flags += ['-lunwind', '-ldl'] if llvm_unwinder else ['-lgcc_s']
+        use_libatomic = self.full_config.get_lit_bool('use_libatomic', False)
+        if use_libatomic:
+            flags += ['-latomic']
+
 
 class ZOSLocalTI(DefaultTargetInfo):
     def __init__(self, full_config):

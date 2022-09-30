@@ -39,6 +39,7 @@
 #include "llvm/DebugInfo/DWARF/DWARFUnitIndex.h"
 #include "llvm/DebugInfo/DWARF/DWARFVerifier.h"
 #include "llvm/MC/MCRegisterInfo.h"
+#include "llvm/MC/MCTargetOptions.h"
 #include "llvm/MC/TargetRegistry.h"
 #include "llvm/Object/Decompressor.h"
 #include "llvm/Object/MachO.h"
@@ -1517,6 +1518,17 @@ static Expected<SymInfo> getSymbolInfo(const object::ObjectFile &Obj,
   return Ret;
 }
 
+static StringRef getSymbolName(const object::ObjectFile &Obj,
+                               const RelocationRef &Reloc) {
+  object::symbol_iterator Sym = Reloc.getSymbol();
+  if (Sym != Obj.symbol_end()) {
+    Expected<StringRef> SymNameOrErr = Sym->getName();
+    if (SymNameOrErr && !SymNameOrErr->empty())
+      return *SymNameOrErr;
+  }
+  return "<unknown symbol>";
+}
+
 static bool isRelocScattered(const object::ObjectFile &Obj,
                              const RelocationRef &Reloc) {
   const MachOObjectFile *MachObj = dyn_cast<MachOObjectFile>(&Obj);
@@ -1866,7 +1878,8 @@ public:
           Reloc.getTypeName(Type);
           // FIXME: Support more relocations & change this to an error
           HandleWarning(
-              createError("failed to compute relocation: " + Type + ", ",
+              createError("failed to compute relocation: " + Type + " in " + Name +
+                              " against " + getSymbolName(Obj, Reloc) + ", ",
                           errorCodeToError(object_error::parse_failed)));
         }
       }
@@ -2032,7 +2045,8 @@ Error DWARFContext::loadRegisterInfo(const object::ObjectFile &Obj) {
   if (!TargetLookupError.empty())
     return createStringError(errc::invalid_argument,
                              TargetLookupError.c_str());
-  RegInfo.reset(TheTarget->createMCRegInfo(TT.str()));
+  MCTargetOptions MCOptions;
+  RegInfo.reset(TheTarget->createMCRegInfo(TT.str(), MCOptions));
   return Error::success();
 }
 

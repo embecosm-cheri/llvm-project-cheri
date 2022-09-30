@@ -41,6 +41,18 @@ using namespace lld::elf;
 const TargetInfo *elf::target;
 
 std::string lld::toString(RelType type) {
+  auto machine = elf::config->emachine;
+  if (machine == EM_MIPS && type > 0xff) {
+    uint32_t type1 = type & 0xff;
+    llvm::Twine result = getELFRelocationTypeName(machine, type1);
+    uint32_t type2 = (type >> 8) & 0xff;
+    uint32_t type3 = (type >> 16) & 0xff;
+    if (type2 || type3) {
+      return (result + "/" + getELFRelocationTypeName(machine, type2) + "/" +
+          getELFRelocationTypeName(machine, type3)).str();
+    }
+    return result.str();
+  }
   StringRef s = getELFRelocationTypeName(elf::config->emachine, type);
   if (s == "Unknown")
     return ("Unknown (" + Twine(type) + ")").str();
@@ -119,6 +131,13 @@ ErrorPlace elf::getErrorPlace(const uint8_t *loc) {
 }
 
 TargetInfo::~TargetInfo() {}
+
+bool TargetInfo::calcIsCheriAbi() const {
+  if (config->isCheriAbi)
+    error("emulation forces CheriABI but not supported for the current target");
+
+  return false;
+}
 
 int64_t TargetInfo::getImplicitAddend(const uint8_t *buf, RelType type) const {
   internalLinkerError(getErrorLocation(buf),

@@ -922,7 +922,7 @@ void ARMAsmPrinter::emitMachineConstantPoolValue(
         EmittedPromotedGlobalLabels.insert(GV);
       }
     }
-    return emitGlobalConstant(DL, ACPC->getPromotedGlobalInit());
+    return emitGlobalConstant(DL, ACPC->getPromotedGlobalInit(), 0);
   }
 
   MCSymbol *MCSym;
@@ -1725,7 +1725,7 @@ void ARMAsmPrinter::emitInstruction(const MachineInstr *MI) {
     if (MCPE.isMachineConstantPoolEntry())
       emitMachineConstantPoolValue(MCPE.Val.MachineCPVal);
     else
-      emitGlobalConstant(DL, MCPE.Val.ConstVal);
+      emitGlobalConstant(DL, MCPE.Val.ConstVal, 0);
     return;
   }
   case ARM::JUMPTABLE_ADDRS:

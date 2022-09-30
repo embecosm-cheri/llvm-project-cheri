@@ -301,7 +301,13 @@ void RISCVFrameLowering::adjustReg(MachineBasicBlock &MBB,
     return;
 
   if (isInt<12>(Val)) {
-    BuildMI(MBB, MBBI, DL, TII->get(RISCV::ADDI), DestReg)
+    unsigned Opc;
+    if (RISCVABI::isCheriPureCapABI(STI.getTargetABI()))
+      Opc = RISCV::CIncOffsetImm;
+    else
+      Opc = RISCV::ADDI;
+
+    BuildMI(MBB, MBBI, DL, TII->get(Opc), DestReg)
         .addReg(SrcReg)
         .addImm(Val)
         .setMIFlag(Flag);
@@ -319,22 +325,33 @@ void RISCVFrameLowering::adjustReg(MachineBasicBlock &MBB,
   if (Val > -4096 && Val <= (2 * MaxPosAdjStep)) {
     int64_t FirstAdj = Val < 0 ? -2048 : MaxPosAdjStep;
     Val -= FirstAdj;
-    BuildMI(MBB, MBBI, DL, TII->get(RISCV::ADDI), DestReg)
+    unsigned Opc;
+    if (RISCVABI::isCheriPureCapABI(STI.getTargetABI()))
+      Opc = RISCV::CIncOffsetImm;
+    else
+      Opc = RISCV::ADDI;
+    BuildMI(MBB, MBBI, DL, TII->get(Opc), DestReg)
         .addReg(SrcReg)
         .addImm(FirstAdj)
         .setMIFlag(Flag);
-    BuildMI(MBB, MBBI, DL, TII->get(RISCV::ADDI), DestReg)
+    BuildMI(MBB, MBBI, DL, TII->get(Opc), DestReg)
         .addReg(DestReg, RegState::Kill)
         .addImm(Val)
         .setMIFlag(Flag);
     return;
   }
 
-  unsigned Opc = RISCV::ADD;
-  if (Val < 0) {
-    Val = -Val;
-    Opc = RISCV::SUB;
-  }
+  unsigned Opc;
+    if (RISCVABI::isCheriPureCapABI(STI.getTargetABI())) {
+      Opc = RISCV::CIncOffset;
+    } else {
+      Opc = RISCV::ADD;
+      bool isSub = Val < 0;
+      if (isSub) {
+        Val = -Val;
+        Opc = RISCV::SUB;
+      }
+    }
 
   Register ScratchReg = MRI.createVirtualRegister(&RISCV::GPRRegClass);
   TII->movImm(MBB, MBBI, DL, ScratchReg, Val, Flag);
@@ -345,10 +362,20 @@ void RISCVFrameLowering::adjustReg(MachineBasicBlock &MBB,
 }
 
 // Returns the register used to hold the frame pointer.
-static Register getFPReg(const RISCVSubtarget &STI) { return RISCV::X8; }
+Register RISCVFrameLowering::getFPReg() const {
+  if (RISCVABI::isCheriPureCapABI(STI.getTargetABI()))
+    return RISCV::C8;
+  else
+    return RISCV::X8;
+}
 
 // Returns the register used to hold the stack pointer.
-static Register getSPReg(const RISCVSubtarget &STI) { return RISCV::X2; }
+Register RISCVFrameLowering::getSPReg() const {
+  if (RISCVABI::isCheriPureCapABI(STI.getTargetABI()))
+    return RISCV::C2;
+  else
+    return RISCV::X2;
+}
 
 static SmallVector<CalleeSavedInfo, 8>
 getNonLibcallCSI(const MachineFunction &MF,
@@ -373,7 +400,7 @@ void RISCVFrameLowering::adjustStackForRVV(MachineFunction &MF,
   assert(Amount != 0 && "Did not need to adjust stack pointer for RVV.");
 
   const RISCVInstrInfo *TII = STI.getInstrInfo();
-  Register SPReg = getSPReg(STI);
+  Register SPReg = getSPReg();
   unsigned Opc = RISCV::ADD;
   if (Amount < 0) {
     Amount = -Amount;
@@ -397,9 +424,9 @@ void RISCVFrameLowering::emitPrologue(MachineFunction &MF,
   const RISCVInstrInfo *TII = STI.getInstrInfo();
   MachineBasicBlock::iterator MBBI = MBB.begin();
 
-  Register FPReg = getFPReg(STI);
-  Register SPReg = getSPReg(STI);
-  Register BPReg = RISCVABI::getBPReg();
+  Register FPReg = getFPReg();
+  Register SPReg = getSPReg();
+  Register BPReg = RISCVABI::getBPReg(STI.getTargetABI());
 
   // Debug location must be unknown since the first debug location is used
   // to determine the end of the prologue.
@@ -557,35 +584,51 @@ void RISCVFrameLowering::emitPrologue(MachineFunction &MF,
     const RISCVRegisterInfo *RI = STI.getRegisterInfo();
     if (RI->hasStackRealignment(MF)) {
       Align MaxAlignment = MFI.getMaxAlign();
+      unsigned SPAddrReg;
+      if (RISCVABI::isCheriPureCapABI(STI.getTargetABI())) {
+        SPAddrReg = MF.getRegInfo().createVirtualRegister(&RISCV::GPRRegClass);
+        BuildMI(MBB, MBBI, DL, TII->get(RISCV::CGetAddr), SPAddrReg)
+            .addReg(SPReg);
+      } else {
+        SPAddrReg = SPReg;
+      }
 
       const RISCVInstrInfo *TII = STI.getInstrInfo();
       if (isInt<12>(-(int)MaxAlignment.value())) {
-        BuildMI(MBB, MBBI, DL, TII->get(RISCV::ANDI), SPReg)
-            .addReg(SPReg)
+        BuildMI(MBB, MBBI, DL, TII->get(RISCV::ANDI), SPAddrReg)
+            .addReg(SPAddrReg)
             .addImm(-(int)MaxAlignment.value())
             .setMIFlag(MachineInstr::FrameSetup);
       } else {
         unsigned ShiftAmount = Log2(MaxAlignment);
-        Register VR =
-            MF.getRegInfo().createVirtualRegister(&RISCV::GPRRegClass);
+        Register VR;
+        if (RISCVABI::isCheriPureCapABI(STI.getTargetABI()))
+          VR = SPAddrReg;
+        else
+          VR = MF.getRegInfo().createVirtualRegister(&RISCV::GPRRegClass);
+
         BuildMI(MBB, MBBI, DL, TII->get(RISCV::SRLI), VR)
-            .addReg(SPReg)
+            .addReg(SPAddrReg)
             .addImm(ShiftAmount)
             .setMIFlag(MachineInstr::FrameSetup);
-        BuildMI(MBB, MBBI, DL, TII->get(RISCV::SLLI), SPReg)
+        BuildMI(MBB, MBBI, DL, TII->get(RISCV::SLLI), SPAddrReg)
             .addReg(VR)
             .addImm(ShiftAmount)
             .setMIFlag(MachineInstr::FrameSetup);
       }
+
+      if (RISCVABI::isCheriPureCapABI(STI.getTargetABI()))
+        BuildMI(MBB, MBBI, DL, TII->get(RISCV::CSetAddr), SPReg)
+            .addReg(SPReg)
+            .addReg(SPAddrReg);
+
       // FP will be used to restore the frame in the epilogue, so we need
       // another base register BP to record SP after re-alignment. SP will
       // track the current stack after allocating variable sized objects.
       if (hasBP(MF)) {
         // move BP, SP
-        BuildMI(MBB, MBBI, DL, TII->get(RISCV::ADDI), BPReg)
-            .addReg(SPReg)
-            .addImm(0)
-            .setMIFlag(MachineInstr::FrameSetup);
+        TII->copyPhysReg(MBB, MBBI, DL, BPReg, SPReg, false,
+                         MachineInstr::FrameSetup);
       }
     }
   }
@@ -596,8 +639,8 @@ void RISCVFrameLowering::emitEpilogue(MachineFunction &MF,
   const RISCVRegisterInfo *RI = STI.getRegisterInfo();
   MachineFrameInfo &MFI = MF.getFrameInfo();
   auto *RVFI = MF.getInfo<RISCVMachineFunctionInfo>();
-  Register FPReg = getFPReg(STI);
-  Register SPReg = getSPReg(STI);
+  Register FPReg = getFPReg();
+  Register SPReg = getSPReg();
 
   // All calls are tail calls in GHC calling conv, and functions have no
   // prologue/epilogue.
@@ -713,7 +756,7 @@ RISCVFrameLowering::getFrameIndexReference(const MachineFunction &MF, int FI,
   }
 
   if (FI >= MinCSFI && FI <= MaxCSFI) {
-    FrameReg = RISCV::X2;
+    FrameReg = getSPReg();
 
     if (FirstSPAdjustAmount)
       Offset += StackOffset::getFixed(FirstSPAdjustAmount);
@@ -756,17 +799,17 @@ RISCVFrameLowering::getFrameIndexReference(const MachineFunction &MF, int FI,
     // | VarSize objects          | |
     // |--------------------------| -- <-- SP
     if (hasBP(MF)) {
-      FrameReg = RISCVABI::getBPReg();
+      FrameReg = RISCVABI::getBPReg(STI.getTargetABI());
     } else {
       // VarSize objects must be empty in this case!
       assert(!MFI.hasVarSizedObjects());
-      FrameReg = RISCV::X2;
+      FrameReg = getSPReg();
     }
   } else {
     FrameReg = RI->getFrameRegister(MF);
   }
 
-  if (FrameReg == getFPReg(STI)) {
+  if (FrameReg == getFPReg()) {
     Offset += StackOffset::getFixed(RVFI->getVarArgsSaveSize());
     if (FI >= 0)
       Offset -= StackOffset::getFixed(RVFI->getLibCallStackSize());
@@ -800,7 +843,7 @@ RISCVFrameLowering::getFrameIndexReference(const MachineFunction &MF, int FI,
 
   // This case handles indexing off both SP and BP.
   // If indexing off SP, there must not be any var sized objects
-  assert(FrameReg == RISCVABI::getBPReg() || !MFI.hasVarSizedObjects());
+  assert(FrameReg == RISCVABI::getBPReg(STI.getTargetABI()) || !MFI.hasVarSizedObjects());
 
   // When using SP to access frame objects, we need to add RVV stack size.
   //
@@ -860,12 +903,17 @@ void RISCVFrameLowering::determineCalleeSaves(MachineFunction &MF,
   // Unconditionally spill RA and FP only if the function uses a frame
   // pointer.
   if (hasFP(MF)) {
-    SavedRegs.set(RISCV::X1);
-    SavedRegs.set(RISCV::X8);
+    if (RISCVABI::isCheriPureCapABI(STI.getTargetABI())) {
+      SavedRegs.set(RISCV::C1);
+      SavedRegs.set(RISCV::C8);
+    } else {
+      SavedRegs.set(RISCV::X1);
+      SavedRegs.set(RISCV::X8);
+    }
   }
   // Mark BP as used if function has dedicated base pointer.
   if (hasBP(MF))
-    SavedRegs.set(RISCVABI::getBPReg());
+    SavedRegs.set(RISCVABI::getBPReg(STI.getTargetABI()));
 
   // If interrupt is enabled and there are calls in the handler,
   // unconditionally save all Caller-saved registers and
@@ -874,12 +922,25 @@ void RISCVFrameLowering::determineCalleeSaves(MachineFunction &MF,
 
   if (MF.getFunction().hasFnAttribute("interrupt") && MFI.hasCalls()) {
 
-    static const MCPhysReg CSRegs[] = { RISCV::X1,      /* ra */
+    static const MCPhysReg CSGPRs[] = { RISCV::X1,      /* ra */
       RISCV::X5, RISCV::X6, RISCV::X7,                  /* t0-t2 */
       RISCV::X10, RISCV::X11,                           /* a0-a1, a2-a7 */
       RISCV::X12, RISCV::X13, RISCV::X14, RISCV::X15, RISCV::X16, RISCV::X17,
       RISCV::X28, RISCV::X29, RISCV::X30, RISCV::X31, 0 /* t3-t6 */
     };
+
+    static const MCPhysReg CSGPCRs[] = { RISCV::C1,     /* cra */
+      RISCV::C5, RISCV::C6, RISCV::C7,                  /* ct0-ct2 */
+      RISCV::C10, RISCV::C11,                           /* ca0-ca1, ca2-ca7 */
+      RISCV::C12, RISCV::C13, RISCV::C14, RISCV::C15, RISCV::C16, RISCV::C17,
+      RISCV::C28, RISCV::C29, RISCV::C30, RISCV::C31, 0 /* ct3-ct6 */
+    };
+
+    ArrayRef<MCPhysReg> CSRegs;
+    if (RISCVABI::isCheriPureCapABI(STI.getTargetABI()))
+      CSRegs = CSGPCRs;
+    else
+      CSRegs = CSGPRs;
 
     for (unsigned i = 0; CSRegs[i]; ++i)
       SavedRegs.set(CSRegs[i]);
@@ -1001,7 +1062,11 @@ void RISCVFrameLowering::processFunctionBeforeFrameFinalized(
   const RISCVRegisterInfo *RegInfo =
       MF.getSubtarget<RISCVSubtarget>().getRegisterInfo();
   MachineFrameInfo &MFI = MF.getFrameInfo();
-  const TargetRegisterClass *RC = &RISCV::GPRRegClass;
+  const TargetRegisterClass *RC;
+  if (RISCVABI::isCheriPureCapABI(STI.getTargetABI()))
+    RC = &RISCV::GPCRRegClass;
+  else
+    RC = &RISCV::GPRRegClass;
   auto *RVFI = MF.getInfo<RISCVMachineFunctionInfo>();
 
   int64_t RVVStackSize;
@@ -1083,8 +1148,14 @@ bool RISCVFrameLowering::hasReservedCallFrame(const MachineFunction &MF) const {
 MachineBasicBlock::iterator RISCVFrameLowering::eliminateCallFramePseudoInstr(
     MachineFunction &MF, MachineBasicBlock &MBB,
     MachineBasicBlock::iterator MI) const {
-  Register SPReg = RISCV::X2;
+  Register SPReg = getSPReg();
   DebugLoc DL = MI->getDebugLoc();
+  unsigned Opcode = MI->getOpcode();
+
+  assert((Opcode == RISCV::ADJCALLSTACKDOWNCAP ||
+          Opcode == RISCV::ADJCALLSTACKUPCAP) ==
+         RISCVABI::isCheriPureCapABI(STI.getTargetABI()) &&
+         "Should use capability adjustments if and only if ABI is purecap");
 
   if (!hasReservedCallFrame(MF)) {
     // If space has not been reserved for a call frame, ADJCALLSTACKDOWN and
@@ -1098,7 +1169,8 @@ MachineBasicBlock::iterator RISCVFrameLowering::eliminateCallFramePseudoInstr(
       // Ensure the stack remains aligned after adjustment.
       Amount = alignSPAdjust(Amount);
 
-      if (MI->getOpcode() == RISCV::ADJCALLSTACKDOWN)
+      if (Opcode == RISCV::ADJCALLSTACKDOWN ||
+          Opcode == RISCV::ADJCALLSTACKDOWNCAP)
         Amount = -Amount;
 
       adjustReg(MBB, MI, DL, SPReg, SPReg, Amount, MachineInstr::NoFlags);
@@ -1159,6 +1231,8 @@ bool RISCVFrameLowering::spillCalleeSavedRegisters(
 
   const char *SpillLibCall = getSpillLibCallName(*MF, CSI);
   if (SpillLibCall) {
+    assert(!RISCVABI::isCheriPureCapABI(STI.getTargetABI()) &&
+           "Save/restore libcall not implemented for purecap");
     // Add spill libcall via non-callee-saved register t0.
     BuildMI(MBB, MI, DL, TII.get(RISCV::PseudoCALLReg), RISCV::X5)
         .addExternalSymbol(SpillLibCall, RISCVII::MO_CALL)
@@ -1210,6 +1284,8 @@ bool RISCVFrameLowering::restoreCalleeSavedRegisters(
 
   const char *RestoreLibCall = getRestoreLibCallName(*MF, CSI);
   if (RestoreLibCall) {
+    assert(!RISCVABI::isCheriPureCapABI(STI.getTargetABI()) &&
+           "Save/restore libcall not implemented for purecap");
     // Add restore libcall via tail call.
     MachineBasicBlock::iterator NewMI =
         BuildMI(MBB, MI, DL, TII.get(RISCV::PseudoTAIL))

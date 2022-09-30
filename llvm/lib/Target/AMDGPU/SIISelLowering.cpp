@@ -3247,12 +3247,11 @@ SDValue SITargetLowering::LowerCall(CallLoweringInfo &CLI,
       if (Outs[i].Flags.isByVal()) {
         SDValue SizeNode =
             DAG.getConstant(Outs[i].Flags.getByValSize(), DL, MVT::i32);
-        SDValue Cpy =
-            DAG.getMemcpy(Chain, DL, DstAddr, Arg, SizeNode,
-                          Outs[i].Flags.getNonZeroByValAlign(),
-                          /*isVol = */ false, /*AlwaysInline = */ true,
-                          /*isTailCall = */ false, DstInfo,
-                          MachinePointerInfo(AMDGPUAS::PRIVATE_ADDRESS));
+        SDValue Cpy = DAG.getMemcpy(
+            Chain, DL, DstAddr, Arg, SizeNode, Outs[i].Flags.getNonZeroByValAlign(),
+            /*isVol = */ false, /*AlwaysInline = */ true,
+            /*isTailCall = */ false, /*MustPreserveCheriCapabilities = */ false,
+            DstInfo, MachinePointerInfo(AMDGPUAS::PRIVATE_ADDRESS));
 
         MemOpChains.push_back(Cpy);
       } else {

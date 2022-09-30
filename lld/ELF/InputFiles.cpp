@@ -215,7 +215,7 @@ static std::string createFileLineMsg(StringRef path, unsigned line) {
 
 template <class ELFT>
 static std::string getSrcMsgAux(ObjFile<ELFT> &file, const Symbol &sym,
-                                InputSectionBase &sec, uint64_t offset) {
+                                const InputSectionBase &sec, uint64_t offset) {
   // In DWARF, functions and variables are stored to different places.
   // First, look up a function for a given offset.
   if (Optional<DILineInfo> info = file.getDILineInfo(&sec, offset))
@@ -230,7 +230,7 @@ static std::string getSrcMsgAux(ObjFile<ELFT> &file, const Symbol &sym,
   return std::string(file.sourceFile);
 }
 
-std::string InputFile::getSrcMsg(const Symbol &sym, InputSectionBase &sec,
+std::string InputFile::getSrcMsg(const Symbol &sym, const InputSectionBase &sec,
                                  uint64_t offset) {
   if (kind() != ObjKind)
     return "";
@@ -282,7 +282,7 @@ ObjFile<ELFT>::getVariableLoc(StringRef name) {
 // Returns source line information for a given offset
 // using DWARF debug info.
 template <class ELFT>
-Optional<DILineInfo> ObjFile<ELFT>::getDILineInfo(InputSectionBase *s,
+Optional<DILineInfo> ObjFile<ELFT>::getDILineInfo(const InputSectionBase *s,
                                                   uint64_t offset) {
   // Detect SectionIndex for specified section.
   uint64_t sectionIndex = object::SectionedAddress::UndefSection;
@@ -332,6 +332,7 @@ template <class ELFT> void ELFFileBase::init() {
 
   // Initialize trivial attributes.
   const ELFFile<ELFT> &obj = getObj<ELFT>();
+  eflags = obj.getHeader().e_flags; // TODO: remove this
   emachine = obj.getHeader().e_machine;
   osabi = obj.getHeader().e_ident[llvm::ELF::EI_OSABI];
   abiVersion = obj.getHeader().e_ident[llvm::ELF::EI_ABIVERSION];
@@ -1373,6 +1374,8 @@ template <class ELFT> void SharedFile::parse() {
       if (val >= this->stringTable.size())
         fatal(toString(this) + ": invalid DT_SONAME entry");
       soName = this->stringTable.data() + val;
+    } else if (dyn.d_tag == DT_MIPS_CHERI_FLAGS) {
+      cheriFlags = dyn.getVal();
     }
   }
 
