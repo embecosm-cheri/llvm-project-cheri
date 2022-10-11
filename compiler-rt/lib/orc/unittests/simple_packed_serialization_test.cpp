@@ -127,7 +127,31 @@ TEST(SimplePackedSerializationTest, SequenceSerialization) {
 
 TEST(SimplePackedSerializationTest, StringViewCharSequenceSerialization) {
   const char *HW = "Hello, world!";
-  blobSerializationRoundTrip<SPSString, string_view>(string_view(HW));
+  blobSerializationRoundTrip<SPSString, std::string_view>(std::string_view(HW));
+}
+
+TEST(SimplePackedSerializationTest, SpanSerialization) {
+  const char Data[] = {3, 2, 1, 0, 1, 2, 3}; // Span should handle nulls.
+  span<const char> OutS(Data, sizeof(Data));
+
+  size_t Size = SPSArgList<SPSSequence<char>>::size(OutS);
+  auto Buffer = std::make_unique<char[]>(Size);
+  SPSOutputBuffer OB(Buffer.get(), Size);
+
+  EXPECT_TRUE(SPSArgList<SPSSequence<char>>::serialize(OB, OutS));
+
+  SPSInputBuffer IB(Buffer.get(), Size);
+
+  span<const char> InS;
+
+  EXPECT_TRUE(SPSArgList<SPSSequence<char>>::deserialize(IB, InS));
+
+  // Check that the serialized and deserialized values match.
+  EXPECT_EQ(InS.size(), OutS.size());
+  EXPECT_EQ(memcmp(OutS.data(), InS.data(), InS.size()), 0);
+
+  // Check that the span points directly to the input buffer.
+  EXPECT_EQ(InS.data(), Buffer.get() + sizeof(uint64_t));
 }
 
 TEST(SimplePackedSerializationTest, StdPairSerialization) {

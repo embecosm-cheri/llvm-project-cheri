@@ -3,23 +3,23 @@
 // RUN:  %cheri_purecap_cc1 -o - -O2 -emit-llvm %s | FileCheck %s --check-prefix=OPT
 
 // CHECK-LABEL: define {{[^@]+}}@test_long
-// CHECK-SAME: () addrspace(200) [[ATTR0:#.*]] {
+// CHECK-SAME: () addrspace(200) #[[ATTR0:[0-9]+]] {
 // CHECK-NEXT:  entry:
 // CHECK-NEXT:    [[D:%.*]] = alloca double, align 8, addrspace(200)
 // CHECK-NEXT:    [[L:%.*]] = alloca i64, align 8, addrspace(200)
 // CHECK-NEXT:    [[D2:%.*]] = alloca double, align 8, addrspace(200)
-// CHECK-NEXT:    store double 0x40934A456D5CFAAD, double addrspace(200)* [[D]], align 8
-// CHECK-NEXT:    [[TMP0:%.*]] = load double, double addrspace(200)* [[D]], align 8
+// CHECK-NEXT:    store double 0x40934A456D5CFAAD, ptr addrspace(200) [[D]], align 8
+// CHECK-NEXT:    [[TMP0:%.*]] = load double, ptr addrspace(200) [[D]], align 8
 // CHECK-NEXT:    [[CONV:%.*]] = fptosi double [[TMP0]] to i64
-// CHECK-NEXT:    store i64 [[CONV]], i64 addrspace(200)* [[L]], align 8
-// CHECK-NEXT:    [[TMP1:%.*]] = load i64, i64 addrspace(200)* [[L]], align 8
+// CHECK-NEXT:    store i64 [[CONV]], ptr addrspace(200) [[L]], align 8
+// CHECK-NEXT:    [[TMP1:%.*]] = load i64, ptr addrspace(200) [[L]], align 8
 // CHECK-NEXT:    [[CONV1:%.*]] = sitofp i64 [[TMP1]] to double
-// CHECK-NEXT:    store double [[CONV1]], double addrspace(200)* [[D2]], align 8
-// CHECK-NEXT:    [[TMP2:%.*]] = load double, double addrspace(200)* [[D2]], align 8
+// CHECK-NEXT:    store double [[CONV1]], ptr addrspace(200) [[D2]], align 8
+// CHECK-NEXT:    [[TMP2:%.*]] = load double, ptr addrspace(200) [[D2]], align 8
 // CHECK-NEXT:    ret double [[TMP2]]
 //
 // OPT-LABEL: define {{[^@]+}}@test_long
-// OPT-SAME: () local_unnamed_addr addrspace(200) [[ATTR0:#.*]] {
+// OPT-SAME: () local_unnamed_addr addrspace(200) #[[ATTR0:[0-9]+]] {
 // OPT-NEXT:  entry:
 // OPT-NEXT:    ret double 1.234000e+03
 //
@@ -32,25 +32,25 @@ double test_long(void) {
 }
 
 // CHECK-LABEL: define {{[^@]+}}@test_intcap
-// CHECK-SAME: () addrspace(200) [[ATTR0]] {
+// CHECK-SAME: () addrspace(200) #[[ATTR0]] {
 // CHECK-NEXT:  entry:
 // CHECK-NEXT:    [[D:%.*]] = alloca double, align 8, addrspace(200)
-// CHECK-NEXT:    [[CAP:%.*]] = alloca i8 addrspace(200)*, align 16, addrspace(200)
+// CHECK-NEXT:    [[CAP:%.*]] = alloca ptr addrspace(200), align 16, addrspace(200)
 // CHECK-NEXT:    [[D2:%.*]] = alloca double, align 8, addrspace(200)
-// CHECK-NEXT:    store double 0x40934A456D5CFAAD, double addrspace(200)* [[D]], align 8
-// CHECK-NEXT:    [[TMP0:%.*]] = load double, double addrspace(200)* [[D]], align 8
+// CHECK-NEXT:    store double 0x40934A456D5CFAAD, ptr addrspace(200) [[D]], align 8
+// CHECK-NEXT:    [[TMP0:%.*]] = load double, ptr addrspace(200) [[D]], align 8
 // CHECK-NEXT:    [[CONV:%.*]] = fptosi double [[TMP0]] to i64
-// CHECK-NEXT:    [[TMP1:%.*]] = getelementptr i8, i8 addrspace(200)* null, i64 [[CONV]]
-// CHECK-NEXT:    store i8 addrspace(200)* [[TMP1]], i8 addrspace(200)* addrspace(200)* [[CAP]], align 16
-// CHECK-NEXT:    [[TMP2:%.*]] = load i8 addrspace(200)*, i8 addrspace(200)* addrspace(200)* [[CAP]], align 16
-// CHECK-NEXT:    [[TMP3:%.*]] = call i64 @llvm.cheri.cap.address.get.i64(i8 addrspace(200)* [[TMP2]])
+// CHECK-NEXT:    [[TMP1:%.*]] = getelementptr i8, ptr addrspace(200) null, i64 [[CONV]]
+// CHECK-NEXT:    store ptr addrspace(200) [[TMP1]], ptr addrspace(200) [[CAP]], align 16
+// CHECK-NEXT:    [[TMP2:%.*]] = load ptr addrspace(200), ptr addrspace(200) [[CAP]], align 16
+// CHECK-NEXT:    [[TMP3:%.*]] = call i64 @llvm.cheri.cap.address.get.i64(ptr addrspace(200) [[TMP2]])
 // CHECK-NEXT:    [[CONV1:%.*]] = sitofp i64 [[TMP3]] to double
-// CHECK-NEXT:    store double [[CONV1]], double addrspace(200)* [[D2]], align 8
-// CHECK-NEXT:    [[TMP4:%.*]] = load double, double addrspace(200)* [[D2]], align 8
+// CHECK-NEXT:    store double [[CONV1]], ptr addrspace(200) [[D2]], align 8
+// CHECK-NEXT:    [[TMP4:%.*]] = load double, ptr addrspace(200) [[D2]], align 8
 // CHECK-NEXT:    ret double [[TMP4]]
 //
 // OPT-LABEL: define {{[^@]+}}@test_intcap
-// OPT-SAME: () local_unnamed_addr addrspace(200) [[ATTR0]] {
+// OPT-SAME: () local_unnamed_addr addrspace(200) #[[ATTR0]] {
 // OPT-NEXT:  entry:
 // OPT-NEXT:    ret double 1.234000e+03
 //
@@ -63,23 +63,23 @@ double test_intcap(void) {
 }
 
 // CHECK-LABEL: define {{[^@]+}}@test_ulong
-// CHECK-SAME: () addrspace(200) [[ATTR0]] {
+// CHECK-SAME: () addrspace(200) #[[ATTR0]] {
 // CHECK-NEXT:  entry:
 // CHECK-NEXT:    [[D:%.*]] = alloca double, align 8, addrspace(200)
 // CHECK-NEXT:    [[L:%.*]] = alloca i64, align 8, addrspace(200)
 // CHECK-NEXT:    [[D2:%.*]] = alloca double, align 8, addrspace(200)
-// CHECK-NEXT:    store double 0x40934A456D5CFAAD, double addrspace(200)* [[D]], align 8
-// CHECK-NEXT:    [[TMP0:%.*]] = load double, double addrspace(200)* [[D]], align 8
+// CHECK-NEXT:    store double 0x40934A456D5CFAAD, ptr addrspace(200) [[D]], align 8
+// CHECK-NEXT:    [[TMP0:%.*]] = load double, ptr addrspace(200) [[D]], align 8
 // CHECK-NEXT:    [[CONV:%.*]] = fptoui double [[TMP0]] to i64
-// CHECK-NEXT:    store i64 [[CONV]], i64 addrspace(200)* [[L]], align 8
-// CHECK-NEXT:    [[TMP1:%.*]] = load i64, i64 addrspace(200)* [[L]], align 8
+// CHECK-NEXT:    store i64 [[CONV]], ptr addrspace(200) [[L]], align 8
+// CHECK-NEXT:    [[TMP1:%.*]] = load i64, ptr addrspace(200) [[L]], align 8
 // CHECK-NEXT:    [[CONV1:%.*]] = uitofp i64 [[TMP1]] to double
-// CHECK-NEXT:    store double [[CONV1]], double addrspace(200)* [[D2]], align 8
-// CHECK-NEXT:    [[TMP2:%.*]] = load double, double addrspace(200)* [[D2]], align 8
+// CHECK-NEXT:    store double [[CONV1]], ptr addrspace(200) [[D2]], align 8
+// CHECK-NEXT:    [[TMP2:%.*]] = load double, ptr addrspace(200) [[D2]], align 8
 // CHECK-NEXT:    ret double [[TMP2]]
 //
 // OPT-LABEL: define {{[^@]+}}@test_ulong
-// OPT-SAME: () local_unnamed_addr addrspace(200) [[ATTR0]] {
+// OPT-SAME: () local_unnamed_addr addrspace(200) #[[ATTR0]] {
 // OPT-NEXT:  entry:
 // OPT-NEXT:    ret double 1.234000e+03
 //
@@ -92,25 +92,25 @@ double test_ulong(void) {
 }
 
 // CHECK-LABEL: define {{[^@]+}}@test_uintcap
-// CHECK-SAME: () addrspace(200) [[ATTR0]] {
+// CHECK-SAME: () addrspace(200) #[[ATTR0]] {
 // CHECK-NEXT:  entry:
 // CHECK-NEXT:    [[D:%.*]] = alloca double, align 8, addrspace(200)
-// CHECK-NEXT:    [[CAP:%.*]] = alloca i8 addrspace(200)*, align 16, addrspace(200)
+// CHECK-NEXT:    [[CAP:%.*]] = alloca ptr addrspace(200), align 16, addrspace(200)
 // CHECK-NEXT:    [[D2:%.*]] = alloca double, align 8, addrspace(200)
-// CHECK-NEXT:    store double 0x40934A456D5CFAAD, double addrspace(200)* [[D]], align 8
-// CHECK-NEXT:    [[TMP0:%.*]] = load double, double addrspace(200)* [[D]], align 8
+// CHECK-NEXT:    store double 0x40934A456D5CFAAD, ptr addrspace(200) [[D]], align 8
+// CHECK-NEXT:    [[TMP0:%.*]] = load double, ptr addrspace(200) [[D]], align 8
 // CHECK-NEXT:    [[CONV:%.*]] = fptoui double [[TMP0]] to i64
-// CHECK-NEXT:    [[TMP1:%.*]] = getelementptr i8, i8 addrspace(200)* null, i64 [[CONV]]
-// CHECK-NEXT:    store i8 addrspace(200)* [[TMP1]], i8 addrspace(200)* addrspace(200)* [[CAP]], align 16
-// CHECK-NEXT:    [[TMP2:%.*]] = load i8 addrspace(200)*, i8 addrspace(200)* addrspace(200)* [[CAP]], align 16
-// CHECK-NEXT:    [[TMP3:%.*]] = call i64 @llvm.cheri.cap.address.get.i64(i8 addrspace(200)* [[TMP2]])
+// CHECK-NEXT:    [[TMP1:%.*]] = getelementptr i8, ptr addrspace(200) null, i64 [[CONV]]
+// CHECK-NEXT:    store ptr addrspace(200) [[TMP1]], ptr addrspace(200) [[CAP]], align 16
+// CHECK-NEXT:    [[TMP2:%.*]] = load ptr addrspace(200), ptr addrspace(200) [[CAP]], align 16
+// CHECK-NEXT:    [[TMP3:%.*]] = call i64 @llvm.cheri.cap.address.get.i64(ptr addrspace(200) [[TMP2]])
 // CHECK-NEXT:    [[CONV1:%.*]] = uitofp i64 [[TMP3]] to double
-// CHECK-NEXT:    store double [[CONV1]], double addrspace(200)* [[D2]], align 8
-// CHECK-NEXT:    [[TMP4:%.*]] = load double, double addrspace(200)* [[D2]], align 8
+// CHECK-NEXT:    store double [[CONV1]], ptr addrspace(200) [[D2]], align 8
+// CHECK-NEXT:    [[TMP4:%.*]] = load double, ptr addrspace(200) [[D2]], align 8
 // CHECK-NEXT:    ret double [[TMP4]]
 //
 // OPT-LABEL: define {{[^@]+}}@test_uintcap
-// OPT-SAME: () local_unnamed_addr addrspace(200) [[ATTR0]] {
+// OPT-SAME: () local_unnamed_addr addrspace(200) #[[ATTR0]] {
 // OPT-NEXT:  entry:
 // OPT-NEXT:    ret double 1.234000e+03
 //

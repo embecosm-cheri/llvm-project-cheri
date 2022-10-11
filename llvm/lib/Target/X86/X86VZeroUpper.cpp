@@ -271,10 +271,8 @@ void VZeroUpperInserter::processBasicBlock(MachineBasicBlock &MBB) {
                     << getBlockExitStateName(CurState) << '\n');
 
   if (CurState == EXITS_DIRTY)
-    for (MachineBasicBlock::succ_iterator SI = MBB.succ_begin(),
-                                          SE = MBB.succ_end();
-         SI != SE; ++SI)
-      addDirtySuccessor(**SI);
+    for (MachineBasicBlock *Succ : MBB.successors())
+      addDirtySuccessor(*Succ);
 
   BlockStates[MBB.getNumber()].ExitState = CurState;
 }
@@ -301,9 +299,8 @@ bool VZeroUpperInserter::runOnMachineFunction(MachineFunction &MF) {
   bool YmmOrZmmUsed = FnHasLiveInYmmOrZmm;
   for (auto *RC : {&X86::VR256RegClass, &X86::VR512_0_15RegClass}) {
     if (!YmmOrZmmUsed) {
-      for (TargetRegisterClass::iterator i = RC->begin(), e = RC->end(); i != e;
-           i++) {
-        if (!MRI.reg_nodbg_empty(*i)) {
+      for (MCPhysReg R : *RC) {
+        if (!MRI.reg_nodbg_empty(R)) {
           YmmOrZmmUsed = true;
           break;
         }

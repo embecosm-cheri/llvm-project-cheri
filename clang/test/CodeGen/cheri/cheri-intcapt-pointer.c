@@ -2,7 +2,7 @@
 
 int main(void) {
   __intcap_t *t;
-  // CHECK: {{%.+}} = load i8 addrspace(200)**, i8 addrspace(200)*** %t
+  // CHECK: {{%.+}} = load ptr, ptr %t
   if (t) {
   }
   return 0;

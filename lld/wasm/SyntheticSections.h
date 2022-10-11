@@ -71,11 +71,11 @@ protected:
 // Create the custom "dylink" section containing information for the dynamic
 // linker.
 // See
-// https://github.com/WebAssembly/tool-conventions/blob/master/DynamicLinking.md
+// https://github.com/WebAssembly/tool-conventions/blob/main/DynamicLinking.md
 class DylinkSection : public SyntheticSection {
 public:
-  DylinkSection() : SyntheticSection(llvm::wasm::WASM_SEC_CUSTOM, "dylink") {}
-  bool isNeeded() const override { return config->isPic; }
+  DylinkSection() : SyntheticSection(llvm::wasm::WASM_SEC_CUSTOM, "dylink.0") {}
+  bool isNeeded() const override;
   void writeBody() override;
 
   uint32_t memAlign = 0;
@@ -131,7 +131,8 @@ inline bool operator==(const ImportKey<T> &lhs, const ImportKey<T> &rhs) {
 
 // `ImportKey<T>` can be used as a key in a `DenseMap` if `T` can be used as a
 // key in a `DenseMap`.
-template <typename T> struct llvm::DenseMapInfo<lld::wasm::ImportKey<T>> {
+namespace llvm {
+template <typename T> struct DenseMapInfo<lld::wasm::ImportKey<T>> {
   static lld::wasm::ImportKey<T> getEmptyKey() {
     typename lld::wasm::ImportKey<T> key(llvm::DenseMapInfo<T>::getEmptyKey());
     key.state = lld::wasm::ImportKey<T>::State::Empty;
@@ -154,6 +155,7 @@ template <typename T> struct llvm::DenseMapInfo<lld::wasm::ImportKey<T>> {
     return lhs == rhs;
   }
 };
+} // end namespace llvm
 
 namespace lld {
 namespace wasm {
@@ -196,6 +198,7 @@ protected:
   llvm::DenseMap<ImportKey<WasmGlobalType>, uint32_t> importedGlobals;
   llvm::DenseMap<ImportKey<WasmSignature>, uint32_t> importedFunctions;
   llvm::DenseMap<ImportKey<WasmTableType>, uint32_t> importedTables;
+  llvm::DenseMap<ImportKey<WasmSignature>, uint32_t> importedTags;
 };
 
 class FunctionSection : public SyntheticSection {
@@ -284,10 +287,19 @@ public:
   // specific relocation types combined with linker relaxation which could
   // transform a `global.get` to an `i32.const`.
   void addInternalGOTEntry(Symbol *sym);
-  bool needsRelocations() { return internalGotSymbols.size(); }
-  void generateRelocationCode(raw_ostream &os) const;
+  bool needsRelocations() {
+    if (config->extendedConst)
+      return false;
+    return llvm::any_of(internalGotSymbols,
+                        [=](Symbol *sym) { return !sym->isTLS(); });
+  }
+  bool needsTLSRelocations() {
+    return llvm::any_of(internalGotSymbols,
+                        [=](Symbol *sym) { return sym->isTLS(); });
+  }
+  void generateRelocationCode(raw_ostream &os, bool TLS) const;
 
-  std::vector<const DefinedData *> dataAddressGlobals;
+  std::vector<DefinedData *> dataAddressGlobals;
   std::vector<InputGlobal *> inputGlobals;
   std::vector<Symbol *> internalGotSymbols;
 

@@ -102,7 +102,7 @@ def which(command, paths = None):
     (or the PATH environment variable, if unspecified)."""
 
     if paths is None:
-        paths = os.environ.get('PATH','')
+        paths = os.environ.get('PATH', '')
 
     # Check for absolute match first.
     if os.path.isfile(command):
@@ -162,18 +162,15 @@ def mkdir_p(path):
 
 
 class ExecuteCommandTimeoutException(Exception):
-    def __init__(self, msg, out, err, exitCode, command=None):
+    def __init__(self, msg, out, err, exitCode):
         assert isinstance(msg, str)
         assert isinstance(out, str)
         assert isinstance(err, str)
         assert isinstance(exitCode, int)
-        if command is not None:
-            assert isinstance(command, list) or isinstance(command, str)
         self.msg = msg
         self.out = out
         self.err = err
         self.exitCode = exitCode
-        self.command = command
 
 # Close extra file handles on UNIX (on Windows this cannot be done while
 # also redirecting input).
@@ -205,56 +202,35 @@ def executeCommand(command, cwd=None, env=None, input=None, timeout=0):
                          stderr=subprocess.PIPE,
                          env=env, close_fds=kUseCloseFDs)
     timerObject = None
-    # FIXME: Because of the way nested function scopes work in Python 2.x we
-    # need to use a reference to a mutable object rather than a plain
-    # bool. In Python 3 we could use the "nonlocal" keyword but we need
-    # to support Python 2 as well.
-    hitTimeOut = [False]
-    # For python >= 3.3 we can use the timeout parameter to p.communicate which
-    # is much less fragile than the timer code.
-    if sys.version_info > (3, 3):
-        try:
-            if timeout <= 0:
-                timeout = None
-            out, err = p.communicate(input=input, timeout=timeout)
-        except subprocess.TimeoutExpired:
-            killProcessAndChildren(p.pid)
-            # p.communicate should return immediately and return the remaining
-            # stdout/stderr until the process was killed.
-            out, err = p.communicate(input=input)
-            hitTimeOut[0] = True
-        finally:
-            exitCode = p.returncode
-    else:  # python < 3.3
-        try:
-            if timeout > 0:
-                def killProcess():
-                    # We may be invoking a shell so we need to kill the
-                    # process and all its children.
-                    hitTimeOut[0] = True
-                    killProcessAndChildren(p.pid)
+    hitTimeOut = False
+    try:
+        if timeout > 0:
+            def killProcess():
+                # We may be invoking a shell so we need to kill the
+                # process and all its children.
+                nonlocal hitTimeOut
+                hitTimeOut = True
+                killProcessAndChildren(p.pid)
 
-                timerObject = threading.Timer(timeout, killProcess)
-                timerObject.start()
+            timerObject = threading.Timer(timeout, killProcess)
+            timerObject.start()
 
-            kwargs = dict()
-            out, err = p.communicate(input=input)
-            exitCode = p.wait()
-        finally:
-            if timerObject != None:
-                timerObject.cancel()
+        out, err = p.communicate(input=input)
+        exitCode = p.wait()
+    finally:
+        if timerObject != None:
+            timerObject.cancel()
 
     # Ensure the resulting output is always of string type.
     out = convert_string(out)
     err = convert_string(err)
 
-    if hitTimeOut[0]:
+    if hitTimeOut:
         raise ExecuteCommandTimeoutException(
             msg='Reached timeout of {} seconds'.format(timeout),
             out=out,
             err=err,
-            exitCode=exitCode,
-            command=command
+            exitCode=exitCode
             )
 
     # Detect Ctrl-C in subprocess.

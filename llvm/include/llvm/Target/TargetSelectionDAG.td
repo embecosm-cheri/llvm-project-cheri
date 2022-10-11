@@ -240,6 +240,16 @@ def SDTMaskedLoad: SDTypeProfile<1, 4, [       // masked load
   SDTCisSameNumEltsAs<0, 3>
 ]>;
 
+def SDTMaskedGather : SDTypeProfile<1, 4, [
+  SDTCisVec<0>, SDTCisSameAs<0, 1>, SDTCisVec<2>, SDTCisPtrTy<3>, SDTCisVec<4>,
+  SDTCisSameNumEltsAs<0, 2>, SDTCisSameNumEltsAs<0, 4>
+]>;
+
+def SDTMaskedScatter : SDTypeProfile<0, 4, [
+  SDTCisVec<0>, SDTCisVec<1>, SDTCisPtrTy<2>, SDTCisVec<3>,
+  SDTCisSameNumEltsAs<0, 1>, SDTCisSameNumEltsAs<0, 3>
+]>;
+
 def SDTVecShuffle : SDTypeProfile<1, 2, [
   SDTCisSameAs<0, 1>, SDTCisSameAs<1, 2>
 ]>;
@@ -312,10 +322,6 @@ def SDTAtomicCap2 : SDTypeProfile<1, 2, [
   SDTCisSameAs<0,2>, SDTCisPtrTy<0>, SDTCisPtrTy<1>
 ]>;
 
-def SDTConvertOp : SDTypeProfile<1, 5, [ //cvtss, su, us, uu, ff, fs, fu, sf, su
-  SDTCisVT<2, OtherVT>, SDTCisVT<3, OtherVT>, SDTCisPtrTy<4>, SDTCisPtrTy<5>
-]>;
-
 class SDCallSeqStart<list<SDTypeConstraint> constraints> :
         SDTypeProfile<0, 2, constraints>;
 class SDCallSeqEnd<list<SDTypeConstraint> constraints> :
@@ -384,6 +390,10 @@ def mul        : SDNode<"ISD::MUL"       , SDTIntBinOp,
                         [SDNPCommutative, SDNPAssociative]>;
 def mulhs      : SDNode<"ISD::MULHS"     , SDTIntBinOp, [SDNPCommutative]>;
 def mulhu      : SDNode<"ISD::MULHU"     , SDTIntBinOp, [SDNPCommutative]>;
+def avgfloors  : SDNode<"ISD::AVGFLOORS" , SDTIntBinOp, [SDNPCommutative]>;
+def avgflooru  : SDNode<"ISD::AVGFLOORU" , SDTIntBinOp, [SDNPCommutative]>;
+def avgceils   : SDNode<"ISD::AVGCEILS"  , SDTIntBinOp, [SDNPCommutative]>;
+def avgceilu   : SDNode<"ISD::AVGCEILU"  , SDTIntBinOp, [SDNPCommutative]>;
 def abds       : SDNode<"ISD::ABDS"      , SDTIntBinOp, [SDNPCommutative]>;
 def abdu       : SDNode<"ISD::ABDU"      , SDTIntBinOp, [SDNPCommutative]>;
 def smullohi   : SDNode<"ISD::SMUL_LOHI" , SDTIntBinHiLoOp, [SDNPCommutative]>;
@@ -659,6 +669,10 @@ def atomic_load_fadd : SDNode<"ISD::ATOMIC_LOAD_FADD" , SDTFPAtomic2,
                     [SDNPHasChain, SDNPMayStore, SDNPMayLoad, SDNPMemOperand]>;
 def atomic_load_fsub : SDNode<"ISD::ATOMIC_LOAD_FSUB" , SDTFPAtomic2,
                     [SDNPHasChain, SDNPMayStore, SDNPMayLoad, SDNPMemOperand]>;
+def atomic_load_fmax : SDNode<"ISD::ATOMIC_LOAD_FMAX", SDTFPAtomic2,
+                    [SDNPHasChain, SDNPMayStore, SDNPMayLoad, SDNPMemOperand]>;
+def atomic_load_fmin : SDNode<"ISD::ATOMIC_LOAD_FMIN", SDTFPAtomic2,
+                    [SDNPHasChain, SDNPMayStore, SDNPMayLoad, SDNPMemOperand]>;
 
 def atomic_load      : SDNode<"ISD::ATOMIC_LOAD", SDTAtomicLoad,
                     [SDNPHasChain, SDNPMayLoad, SDNPMemOperand]>;
@@ -702,6 +716,12 @@ def masked_st    : SDNode<"ISD::MSTORE",  SDTMaskedStore,
 def masked_ld    : SDNode<"ISD::MLOAD",  SDTMaskedLoad,
                        [SDNPHasChain, SDNPMayLoad, SDNPMemOperand]>;
 
+def masked_gather : SDNode<"ISD::MGATHER", SDTMaskedGather,
+                           [SDNPHasChain, SDNPMayLoad, SDNPMemOperand]>;
+
+def masked_scatter : SDNode<"ISD::MSCATTER", SDTMaskedScatter,
+                            [SDNPHasChain, SDNPMayStore, SDNPMemOperand]>;
+
 // Do not use ld, st directly. Use load, extload, sextload, zextload, store,
 // and truncst (see below).
 def ld         : SDNode<"ISD::LOAD"       , SDTLoad,
@@ -734,6 +754,9 @@ def concat_vectors : SDNode<"ISD::CONCAT_VECTORS",
 // backend, at least, needs it.
 def vector_extract_subvec : SDNode<"ISD::EXTRACT_SUBVECTOR",
     SDTypeProfile<1, 2, [SDTCisInt<2>, SDTCisVec<1>, SDTCisVec<0>]>,
+    []>;
+def vector_insert_subvec : SDNode<"ISD::INSERT_SUBVECTOR",
+    SDTypeProfile<1, 3, [SDTCisVec<0>, SDTCisSameAs<0, 1>, SDTCisVec<2>, SDTCisInt<3>]>,
     []>;
 
 // This operator does subvector type checking.
@@ -838,6 +861,10 @@ class PatFrags<dag ops, list<dag> frags, code pred = [{}],
   // existing rules from SelectionDAG for many common cases.
   // They will be tested prior to the code in pred and must not be used in
   // ImmLeaf and its subclasses.
+
+  // If set to true, a predicate is added that checks for the absence of use of
+  // the first result.
+  bit HasNoUse = ?;
 
   // Is the desired pre-packaged predicate for a load?
   bit IsLoad = ?;
@@ -1099,6 +1126,10 @@ def extloadvi16 : PatFrag<(ops node:$ptr), (extload node:$ptr)> {
 def extloadvi32 : PatFrag<(ops node:$ptr), (extload node:$ptr)> {
   let IsLoad = true;
   let ScalarMemoryVT = i32;
+}
+def extloadvf16 : PatFrag<(ops node:$ptr), (extload node:$ptr)> {
+  let IsLoad = true;
+  let ScalarMemoryVT = f16;
 }
 def extloadvf32 : PatFrag<(ops node:$ptr), (extload node:$ptr)> {
   let IsLoad = true;
@@ -1522,7 +1553,7 @@ def any_fsetccs : PatFrags<(ops node:$lhs, node:$rhs, node:$pred),
                           [(strict_fsetccs node:$lhs, node:$rhs, node:$pred),
                            (setcc node:$lhs, node:$rhs, node:$pred)]>;
 
-multiclass binary_atomic_op_ord<SDNode atomic_op> {
+multiclass binary_atomic_op_ord {
   def NAME#_monotonic : PatFrag<(ops node:$ptr, node:$val),
       (!cast<SDPatternOperator>(NAME) node:$ptr, node:$val)> {
     let IsAtomic = true;
@@ -1550,7 +1581,7 @@ multiclass binary_atomic_op_ord<SDNode atomic_op> {
   }
 }
 
-multiclass ternary_atomic_op_ord<SDNode atomic_op> {
+multiclass ternary_atomic_op_ord {
   def NAME#_monotonic : PatFrag<(ops node:$ptr, node:$cmp, node:$val),
       (!cast<SDPatternOperator>(NAME) node:$ptr, node:$cmp, node:$val)> {
     let IsAtomic = true;
@@ -1600,10 +1631,10 @@ multiclass binary_atomic_op<SDNode atomic_op, bit IsInt = 1> {
     let MemoryVT = !if(IsInt, i64, f64);
   }
 
-  defm NAME#_8  : binary_atomic_op_ord<atomic_op>;
-  defm NAME#_16 : binary_atomic_op_ord<atomic_op>;
-  defm NAME#_32 : binary_atomic_op_ord<atomic_op>;
-  defm NAME#_64 : binary_atomic_op_ord<atomic_op>;
+  defm NAME#_8  : binary_atomic_op_ord;
+  defm NAME#_16 : binary_atomic_op_ord;
+  defm NAME#_32 : binary_atomic_op_ord;
+  defm NAME#_64 : binary_atomic_op_ord;
 }
 
 multiclass ternary_atomic_op<SDNode atomic_op> {
@@ -1628,10 +1659,10 @@ multiclass ternary_atomic_op<SDNode atomic_op> {
     let MemoryVT = i64;
   }
 
-  defm NAME#_8  : ternary_atomic_op_ord<atomic_op>;
-  defm NAME#_16 : ternary_atomic_op_ord<atomic_op>;
-  defm NAME#_32 : ternary_atomic_op_ord<atomic_op>;
-  defm NAME#_64 : ternary_atomic_op_ord<atomic_op>;
+  defm NAME#_8  : ternary_atomic_op_ord;
+  defm NAME#_16 : ternary_atomic_op_ord;
+  defm NAME#_32 : ternary_atomic_op_ord;
+  defm NAME#_64 : ternary_atomic_op_ord;
 }
 
 defm atomic_load_add  : binary_atomic_op<atomic_load_add>;
@@ -1649,18 +1680,34 @@ defm atomic_load_umax : binary_atomic_op<atomic_load_umax>;
 defm atomic_store     : binary_atomic_op<atomic_store>;
 defm atomic_cmp_swap  : ternary_atomic_op<atomic_cmp_swap>;
 
+/// Atomic load which zeroes the excess high bits.
+def atomic_load_zext :
+  PatFrag<(ops node:$ptr), (atomic_load node:$ptr)> {
+  let IsAtomic = true; // FIXME: Should be IsLoad and/or IsAtomic?
+  let IsZeroExtLoad = true;
+}
+
+/// Atomic load which sign extends the excess high bits.
+def atomic_load_sext :
+  PatFrag<(ops node:$ptr), (atomic_load node:$ptr)> {
+  let IsAtomic = true; // FIXME: Should be IsLoad and/or IsAtomic?
+  let IsSignExtLoad = true;
+}
+
 def atomic_load_8 :
   PatFrag<(ops node:$ptr),
           (atomic_load node:$ptr)> {
   let IsAtomic = true;
   let MemoryVT = i8;
 }
+
 def atomic_load_16 :
   PatFrag<(ops node:$ptr),
           (atomic_load node:$ptr)> {
   let IsAtomic = true;
   let MemoryVT = i16;
 }
+
 def atomic_load_32 :
   PatFrag<(ops node:$ptr),
           (atomic_load node:$ptr)> {
@@ -1674,6 +1721,158 @@ def atomic_load_64 :
   let MemoryVT = i64;
 }
 
+def atomic_load_zext_8 :
+  PatFrag<(ops node:$ptr), (atomic_load_zext node:$ptr)> {
+  let IsAtomic = true; // FIXME: Should be IsLoad and/or IsAtomic?
+  let MemoryVT = i8;
+}
+
+def atomic_load_zext_16 :
+  PatFrag<(ops node:$ptr), (atomic_load_zext node:$ptr)> {
+  let IsAtomic = true; // FIXME: Should be IsLoad and/or IsAtomic?
+  let MemoryVT = i16;
+}
+
+def atomic_load_sext_8 :
+  PatFrag<(ops node:$ptr), (atomic_load_sext node:$ptr)> {
+  let IsAtomic = true; // FIXME: Should be IsLoad and/or IsAtomic?
+  let MemoryVT = i8;
+}
+
+def atomic_load_sext_16 :
+  PatFrag<(ops node:$ptr), (atomic_load_sext node:$ptr)> {
+  let IsAtomic = true; // FIXME: Should be IsLoad and/or IsAtomic?
+  let MemoryVT = i16;
+}
+
+// Atomic load which zeroes or anyextends the high bits.
+def atomic_load_az_8 : PatFrags<(ops node:$op),
+                                [(atomic_load_8 node:$op),
+                                 (atomic_load_zext_8 node:$op)]>;
+
+// Atomic load which zeroes or anyextends the high bits.
+def atomic_load_az_16 : PatFrags<(ops node:$op),
+                                 [(atomic_load_16 node:$op),
+                                  (atomic_load_zext_16 node:$op)]>;
+
+def nonext_masked_gather :
+  PatFrag<(ops node:$def, node:$pred, node:$ptr, node:$idx),
+          (masked_gather node:$def, node:$pred, node:$ptr, node:$idx), [{
+  return cast<MaskedGatherSDNode>(N)->getExtensionType() == ISD::NON_EXTLOAD;
+}]>;
+
+// Any extending masked gather fragments.
+def ext_masked_gather_i8 :
+  PatFrag<(ops node:$def, node:$pred, node:$ptr, node:$idx),
+          (masked_gather node:$def, node:$pred, node:$ptr, node:$idx), [{
+  auto MGN = cast<MaskedGatherSDNode>(N);
+  return MGN->getExtensionType() == ISD::EXTLOAD &&
+         MGN->getMemoryVT().getScalarType() == MVT::i8;
+}]>;
+def ext_masked_gather_i16 :
+  PatFrag<(ops node:$def, node:$pred, node:$ptr, node:$idx),
+          (masked_gather node:$def, node:$pred, node:$ptr, node:$idx), [{
+  auto MGN = cast<MaskedGatherSDNode>(N);
+  return MGN->getExtensionType() == ISD::EXTLOAD &&
+         MGN->getMemoryVT().getScalarType() == MVT::i16;
+}]>;
+def ext_masked_gather_i32 :
+  PatFrag<(ops node:$def, node:$pred, node:$ptr, node:$idx),
+          (masked_gather node:$def, node:$pred, node:$ptr, node:$idx), [{
+  auto MGN = cast<MaskedGatherSDNode>(N);
+  return MGN->getExtensionType() == ISD::EXTLOAD &&
+         MGN->getMemoryVT().getScalarType() == MVT::i32;
+}]>;
+
+// Sign extending masked gather fragments.
+def sext_masked_gather_i8 :
+  PatFrag<(ops node:$def, node:$pred, node:$ptr, node:$idx),
+          (masked_gather node:$def, node:$pred, node:$ptr, node:$idx), [{
+  auto MGN = cast<MaskedGatherSDNode>(N);
+  return MGN->getExtensionType() == ISD::SEXTLOAD &&
+         MGN->getMemoryVT().getScalarType() == MVT::i8;
+}]>;
+def sext_masked_gather_i16 :
+  PatFrag<(ops node:$def, node:$pred, node:$ptr, node:$idx),
+          (masked_gather node:$def, node:$pred, node:$ptr, node:$idx), [{
+  auto MGN = cast<MaskedGatherSDNode>(N);
+  return MGN->getExtensionType() == ISD::SEXTLOAD &&
+         MGN->getMemoryVT().getScalarType() == MVT::i16;
+}]>;
+def sext_masked_gather_i32 :
+  PatFrag<(ops node:$def, node:$pred, node:$ptr, node:$idx),
+          (masked_gather node:$def, node:$pred, node:$ptr, node:$idx), [{
+  auto MGN = cast<MaskedGatherSDNode>(N);
+  return MGN->getExtensionType() == ISD::SEXTLOAD &&
+         MGN->getMemoryVT().getScalarType() == MVT::i32;
+}]>;
+
+// Zero extending masked gather fragments.
+def zext_masked_gather_i8 :
+  PatFrag<(ops node:$def, node:$pred, node:$ptr, node:$idx),
+          (masked_gather node:$def, node:$pred, node:$ptr, node:$idx), [{
+  auto MGN = cast<MaskedGatherSDNode>(N);
+  return MGN->getExtensionType() == ISD::ZEXTLOAD &&
+         MGN->getMemoryVT().getScalarType() == MVT::i8;
+}]>;
+def zext_masked_gather_i16 :
+  PatFrag<(ops node:$def, node:$pred, node:$ptr, node:$idx),
+          (masked_gather node:$def, node:$pred, node:$ptr, node:$idx), [{
+  auto MGN = cast<MaskedGatherSDNode>(N);
+  return MGN->getExtensionType() == ISD::ZEXTLOAD &&
+         MGN->getMemoryVT().getScalarType() == MVT::i16;
+}]>;
+def zext_masked_gather_i32 :
+  PatFrag<(ops node:$def, node:$pred, node:$ptr, node:$idx),
+          (masked_gather node:$def, node:$pred, node:$ptr, node:$idx), [{
+  auto MGN = cast<MaskedGatherSDNode>(N);
+  return MGN->getExtensionType() == ISD::ZEXTLOAD &&
+         MGN->getMemoryVT().getScalarType() == MVT::i32;
+}]>;
+
+// Any/Zero extending masked gather fragments.
+def azext_masked_gather_i8 :
+  PatFrags<(ops node:$def, node:$pred, node:$ptr, node:$idx),
+           [(ext_masked_gather_i8 node:$def, node:$pred, node:$ptr, node:$idx),
+            (zext_masked_gather_i8 node:$def, node:$pred, node:$ptr, node:$idx)]>;
+def azext_masked_gather_i16 :
+  PatFrags<(ops node:$def, node:$pred, node:$ptr, node:$idx),
+           [(ext_masked_gather_i16 node:$def, node:$pred, node:$ptr, node:$idx),
+            (zext_masked_gather_i16 node:$def, node:$pred, node:$ptr, node:$idx)]>;
+def azext_masked_gather_i32 :
+  PatFrags<(ops node:$def, node:$pred, node:$ptr, node:$idx),
+           [(ext_masked_gather_i32 node:$def, node:$pred, node:$ptr, node:$idx),
+            (zext_masked_gather_i32 node:$def, node:$pred, node:$ptr, node:$idx)]>;
+
+def nontrunc_masked_scatter :
+  PatFrag<(ops node:$val, node:$pred, node:$ptr, node:$idx),
+          (masked_scatter node:$val, node:$pred, node:$ptr, node:$idx), [{
+  return !cast<MaskedScatterSDNode>(N)->isTruncatingStore();
+}]>;
+
+// Truncating masked scatter fragments.
+def trunc_masked_scatter_i8 :
+  PatFrag<(ops node:$val, node:$pred, node:$ptr, node:$idx),
+          (masked_scatter node:$val, node:$pred, node:$ptr, node:$idx), [{
+  auto MSN = cast<MaskedScatterSDNode>(N);
+  return MSN->isTruncatingStore() &&
+         MSN->getMemoryVT().getScalarType() == MVT::i8;
+}]>;
+def trunc_masked_scatter_i16 :
+  PatFrag<(ops node:$val, node:$pred, node:$ptr, node:$idx),
+          (masked_scatter node:$val, node:$pred, node:$ptr, node:$idx), [{
+  auto MSN = cast<MaskedScatterSDNode>(N);
+  return MSN->isTruncatingStore() &&
+         MSN->getMemoryVT().getScalarType() == MVT::i16;
+}]>;
+def trunc_masked_scatter_i32 :
+  PatFrag<(ops node:$val, node:$pred, node:$ptr, node:$idx),
+          (masked_scatter node:$val, node:$pred, node:$ptr, node:$idx), [{
+  auto MSN = cast<MaskedScatterSDNode>(N);
+  return MSN->isTruncatingStore() &&
+         MSN->getMemoryVT().getScalarType() == MVT::i32;
+}]>;
+
 // We can't use let MemoryVT = iFATPTRAny here since by the time it runs we
 // have turned it into an iFATPTR128, etc -> use the C++ predicate below. We
 // also can't set IsAtomic, since that requires MemoryVT, but that only
@@ -1684,7 +1883,7 @@ multiclass binary_atomic_op_cap<SDNode atomic_op> {
     return cast<AtomicSDNode>(N)->getMemoryVT().isFatPointer();
   }]>;
 
-  defm NAME : binary_atomic_op_ord<atomic_op>;
+  defm NAME : binary_atomic_op_ord;
 }
 
 multiclass ternary_atomic_op_cap<SDNode atomic_op> {
@@ -1693,7 +1892,7 @@ multiclass ternary_atomic_op_cap<SDNode atomic_op> {
     return cast<AtomicSDNode>(N)->getMemoryVT().isFatPointer();
   }]>;
 
-  defm NAME : ternary_atomic_op_ord<atomic_op>;
+  defm NAME : ternary_atomic_op_ord;
 }
 
 defm atomic_load_add_cap  : binary_atomic_op_cap<atomic_load_add_cap_node>;

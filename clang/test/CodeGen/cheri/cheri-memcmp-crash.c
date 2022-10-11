@@ -16,7 +16,7 @@ int a[];
 int b;
 int test2(void) { return !memcmp(a, &b, sizeof b); }
 // CHECK-LABEL: test2
-// CHECK: [[LHS:%.+]] = load i32, i32 addrspace(200)* getelementptr inbounds ([1 x i32], [1 x i32] addrspace(200)* @a, i64 0, i64 0), align 4
-// CHECK: [[RHS:%.+]] = load i32, i32 addrspace(200)* @b, align 4
+// CHECK: [[LHS:%.+]] = load i32, ptr addrspace(200) @a, align 4
+// CHECK: [[RHS:%.+]] = load i32, ptr addrspace(200) @b, align 4
 // CHECK: icmp eq i32 [[LHS]], [[RHS]]
 

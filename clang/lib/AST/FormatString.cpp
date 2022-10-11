@@ -21,7 +21,6 @@ using clang::analyze_format_string::FormatStringHandler;
 using clang::analyze_format_string::FormatSpecifier;
 using clang::analyze_format_string::LengthModifier;
 using clang::analyze_format_string::OptionalAmount;
-using clang::analyze_format_string::PositionContext;
 using clang::analyze_format_string::ConversionSpecifier;
 using namespace clang;
 
@@ -330,6 +329,12 @@ bool clang::analyze_format_string::ParseUTF8InvalidSpecifier(
 
 clang::analyze_format_string::ArgType::MatchKind
 ArgType::matchesType(ASTContext &C, QualType argTy) const {
+  // When using the format attribute in C++, you can receive a function or an
+  // array that will necessarily decay to a pointer when passed to the final
+  // format consumer. Apply decay before type comparison.
+  if (argTy->canDecayToPointerType())
+    argTy = C.getDecayedType(argTy);
+
   if (Ptr) {
     // It has to be a pointer.
     const PointerType *PT = argTy->getAs<PointerType>();
@@ -660,6 +665,8 @@ analyze_format_string::LengthModifier::toString() const {
 
 const char *ConversionSpecifier::toString() const {
   switch (kind) {
+  case bArg: return "b";
+  case BArg: return "B";
   case dArg: return "d";
   case DArg: return "D";
   case iArg: return "i";
@@ -782,7 +789,7 @@ bool FormatSpecifier::hasValidLengthModifier(const TargetInfo &Target,
             break;
         }
       }
-      LLVM_FALLTHROUGH;
+      [[fallthrough]];
     case LengthModifier::AsChar:
     case LengthModifier::AsLongLong:
     case LengthModifier::AsQuad:
@@ -791,6 +798,8 @@ bool FormatSpecifier::hasValidLengthModifier(const TargetInfo &Target,
     case LengthModifier::AsSizeT:
     case LengthModifier::AsPtrDiff:
       switch (CS.getKind()) {
+        case ConversionSpecifier::bArg:
+        case ConversionSpecifier::BArg:
         case ConversionSpecifier::dArg:
         case ConversionSpecifier::DArg:
         case ConversionSpecifier::iArg:
@@ -804,7 +813,7 @@ bool FormatSpecifier::hasValidLengthModifier(const TargetInfo &Target,
           return true;
         case ConversionSpecifier::FreeBSDrArg:
         case ConversionSpecifier::FreeBSDyArg:
-          return Target.getTriple().isOSFreeBSD() || Target.getTriple().isPS4();
+          return Target.getTriple().isOSFreeBSD() || Target.getTriple().isPS();
         default:
           return false;
       }
@@ -840,7 +849,7 @@ bool FormatSpecifier::hasValidLengthModifier(const TargetInfo &Target,
           return true;
         case ConversionSpecifier::FreeBSDrArg:
         case ConversionSpecifier::FreeBSDyArg:
-          return Target.getTriple().isOSFreeBSD() || Target.getTriple().isPS4();
+          return Target.getTriple().isOSFreeBSD() || Target.getTriple().isPS();
         default:
           return false;
       }
@@ -948,6 +957,8 @@ bool FormatSpecifier::hasStandardLengthModifier() const {
 bool FormatSpecifier::hasStandardConversionSpecifier(
     const LangOptions &LangOpt) const {
   switch (CS.getKind()) {
+    case ConversionSpecifier::bArg:
+    case ConversionSpecifier::BArg:
     case ConversionSpecifier::cArg:
     case ConversionSpecifier::dArg:
     case ConversionSpecifier::iArg:
@@ -1022,10 +1033,9 @@ Optional<LengthModifier> FormatSpecifier::getCorrectedLengthModifier() const {
 
 bool FormatSpecifier::namedTypeToLengthModifier(QualType QT,
                                                 LengthModifier &LM) {
-  assert(isa<TypedefType>(QT) && "Expected a TypedefType");
-  const TypedefNameDecl *Typedef = cast<TypedefType>(QT)->getDecl();
-
-  for (;;) {
+  for (/**/; const auto *TT = QT->getAs<TypedefType>();
+       QT = TT->getDecl()->getUnderlyingType()) {
+    const TypedefNameDecl *Typedef = TT->getDecl();
     const IdentifierInfo *Identifier = Typedef->getIdentifier();
     if (Identifier->getName() == "size_t") {
       LM.setKind(LengthModifier::AsSizeT);
@@ -1050,12 +1060,6 @@ bool FormatSpecifier::namedTypeToLengthModifier(QualType QT,
       LM.setKind(LengthModifier::AsPtrDiff);
       return true;
     }
-
-    QualType T = Typedef->getUnderlyingType();
-    if (!isa<TypedefType>(T))
-      break;
-
-    Typedef = cast<TypedefType>(T)->getDecl();
   }
   return false;
 }

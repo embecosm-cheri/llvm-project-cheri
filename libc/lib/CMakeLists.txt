@@ -1,15 +1,7 @@
-set(SCUDO_DEPS "")
-
-if(LLVM_LIBC_INCLUDE_SCUDO)
-  list(APPEND SCUDO_DEPS RTScudoStandalone.${LIBC_TARGET_ARCHITECTURE} RTScudoStandaloneCWrappers.${LIBC_TARGET_ARCHITECTURE})
-endif()
-
 add_entrypoint_library(
   llvmlibc
   DEPENDS
   ${TARGET_LLVMLIBC_ENTRYPOINTS}
-  EXT_DEPS
-  ${SCUDO_DEPS}
 )
 
 if(LLVM_ENABLE_PER_TARGET_RUNTIME_DIR)
@@ -24,9 +16,8 @@ install(
   COMPONENT llvmlibc
 )
 
-add_custom_target(
-    install-llvmlibc
-    DEPENDS llvmlibc
-    COMMAND "${CMAKE_COMMAND}" -DCMAKE_INSTALL_COMPONENT=llvmlibc
-            -P "${LIBC_BINARY_DIR}/cmake_install.cmake"
+add_llvm_install_targets(
+  install-llvmlibc
+  DEPENDS llvmlibc
+  COMPONENT llvmlibc
 )

@@ -15,6 +15,13 @@
 #ifndef UNWIND_ASSEMBLY_H
 #define UNWIND_ASSEMBLY_H
 
+#if defined(__linux__) && defined(__CET__)
+#include <cet.h>
+#define _LIBUNWIND_CET_ENDBR _CET_ENDBR
+#else
+#define _LIBUNWIND_CET_ENDBR
+#endif
+
 #if defined(__powerpc64__)
 #define SEPARATOR ;
 #define PPC64_OFFS_SRR0   0
@@ -60,7 +67,8 @@
 #define SEPARATOR ;
 #endif
 
-#if defined(__powerpc64__) && (!defined(_CALL_ELF) || _CALL_ELF == 1)
+#if defined(__powerpc64__) && (!defined(_CALL_ELF) || _CALL_ELF == 1) &&       \
+    !defined(_AIX)
 #define PPC64_OPD1 .section .opd,"aw",@progbits SEPARATOR
 #define PPC64_OPD2 SEPARATOR \
   .p2align 3 SEPARATOR \
@@ -74,7 +82,7 @@
 #define PPC64_OPD2
 #endif
 
-#if defined(__ARM_FEATURE_BTI_DEFAULT)
+#if defined(__aarch64__) && defined(__ARM_FEATURE_BTI_DEFAULT)
   .pushsection ".note.gnu.property", "a" SEPARATOR                             \
   .balign 8 SEPARATOR                                                          \
   .long 4 SEPARATOR                                                            \
@@ -90,6 +98,17 @@
 #define AARCH64_BTI  bti c
 #else
 #define AARCH64_BTI
+#endif
+
+#if !defined(__aarch64__)
+#ifdef __ARM_FEATURE_PAC_DEFAULT
+  .eabi_attribute Tag_PAC_extension, 2
+  .eabi_attribute Tag_PACRET_use, 1
+#endif
+#ifdef __ARM_FEATURE_BTI_DEFAULT
+  .eabi_attribute Tag_BTI_extension, 1
+  .eabi_attribute Tag_BTI_use, 1
+#endif
 #endif
 
 #define GLUE2(a, b) a ## b
@@ -126,7 +145,6 @@
 #define EXPORT_SYMBOL(name)
 #endif
 #define WEAK_SYMBOL(name) .weak name
-#define EMIT_FUNCTION_SIZE(name) .size name, . - name
 
 #if defined(__hexagon__)
 #define WEAK_ALIAS(name, aliasname)                                            \
@@ -186,38 +204,66 @@
 
 #elif defined(__sparc__)
 
+#elif defined(_AIX)
+
+#if defined(__powerpc64__)
+#define VBYTE_LEN 8
+#define CSECT_ALIGN 3
+#else
+#define VBYTE_LEN 4
+#define CSECT_ALIGN 2
+#endif
+
+// clang-format off
+#define DEFINE_LIBUNWIND_FUNCTION_AND_WEAK_ALIAS(name, aliasname)              \
+  .csect .text[PR], 2 SEPARATOR                                                \
+  .csect .name[PR], 2 SEPARATOR                                                \
+  .globl name[DS] SEPARATOR                                                    \
+  .globl .name[PR] SEPARATOR                                                   \
+  .align 4 SEPARATOR                                                           \
+  .csect name[DS], CSECT_ALIGN SEPARATOR                                       \
+aliasname:                                                                     \
+  .vbyte VBYTE_LEN, .name[PR] SEPARATOR                                        \
+  .vbyte VBYTE_LEN, TOC[TC0] SEPARATOR                                         \
+  .vbyte VBYTE_LEN, 0 SEPARATOR                                                \
+  .weak  aliasname SEPARATOR                                                   \
+  .weak  .aliasname SEPARATOR                                                  \
+  .csect .name[PR], 2 SEPARATOR                                                \
+.aliasname:                                                                    \
+
+#define WEAK_ALIAS(name, aliasname)
+#define NO_EXEC_STACK_DIRECTIVE
+
+// clang-format on
 #else
 
 #error Unsupported target
 
 #endif
 
-#ifndef EMIT_FUNCTION_SIZE
-#define EMIT_FUNCTION_SIZE(name)
-#endif
-
-#if defined(__mips__) && defined(__ELF__)
-#define FUNCTION_ENTRY_DIRECTIVE(name) .ent name
-#define FUNCTION_END_DIRECTIVE(name) .end name
+#if defined(_AIX)
+  // clang-format off
+#define DEFINE_LIBUNWIND_FUNCTION(name)                                        \
+  .globl name[DS] SEPARATOR                                                    \
+  .globl .name SEPARATOR                                                       \
+  .align 4 SEPARATOR                                                           \
+  .csect name[DS], CSECT_ALIGN SEPARATOR                                       \
+  .vbyte VBYTE_LEN, .name SEPARATOR                                            \
+  .vbyte VBYTE_LEN, TOC[TC0] SEPARATOR                                         \
+  .vbyte VBYTE_LEN, 0 SEPARATOR                                                \
+  .csect .text[PR], 2 SEPARATOR                                                \
+.name:
+  // clang-format on
 #else
-#define FUNCTION_ENTRY_DIRECTIVE(name)
-#define FUNCTION_END_DIRECTIVE(name)
-#endif
-
-
 #define DEFINE_LIBUNWIND_FUNCTION(name)                                        \
   .globl SYMBOL_NAME(name) SEPARATOR                                           \
-  FUNCTION_ENTRY_DIRECTIVE(SYMBOL_NAME(name)) SEPARATOR                        \
   HIDDEN_SYMBOL(SYMBOL_NAME(name)) SEPARATOR                                   \
   SYMBOL_IS_FUNC(SYMBOL_NAME(name)) SEPARATOR                                  \
   PPC64_OPD1                                                                   \
   SYMBOL_NAME(name):                                                           \
   PPC64_OPD2                                                                   \
   AARCH64_BTI
-
-#define END_LIBUNWIND_FUNCTION(name)                                           \
-  EMIT_FUNCTION_SIZE(SYMBOL_NAME(name)) SEPARATOR                              \
-  FUNCTION_END_DIRECTIVE(SYMBOL_NAME(name))
+#endif
 
 #if defined(__arm__)
 #if !defined(__ARM_ARCH)
@@ -235,7 +281,7 @@
 #endif
 #endif /* __arm__ */
 
-#if defined(__ppc__) || defined(__powerpc64__)
+#if defined(__powerpc__)
 #define PPC_LEFT_SHIFT(index) << (index)
 #endif
 

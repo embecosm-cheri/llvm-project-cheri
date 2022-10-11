@@ -12,7 +12,6 @@
 
 #include "CodeGenInstruction.h"
 #include "CodeGenTarget.h"
-#include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/ADT/StringMap.h"
 #include "llvm/TableGen/Error.h"
@@ -356,7 +355,7 @@ static void ParseConstraints(StringRef CStr, CGIOperandList &Ops, Record *Rec) {
 }
 
 void CGIOperandList::ProcessDisableEncoding(StringRef DisableEncoding) {
-  while (1) {
+  while (true) {
     StringRef OpName;
     std::tie(OpName, DisableEncoding) = getToken(DisableEncoding, " ,\t");
     if (OpName.empty()) break;
@@ -431,6 +430,7 @@ CodeGenInstruction::CodeGenInstruction(Record *R)
   hasExtraDefRegAllocReq = R->getValueAsBit("hasExtraDefRegAllocReq");
   isCodeGenOnly = R->getValueAsBit("isCodeGenOnly");
   isPseudo = R->getValueAsBit("isPseudo");
+  isMeta = R->getValueAsBit("isMeta");
   ImplicitDefs = R->getValueAsListOfDefs("Defs");
   ImplicitUses = R->getValueAsListOfDefs("Uses");
 
@@ -660,8 +660,8 @@ bool CodeGenInstAlias::tryAliasOpMatch(DagInit *Result, unsigned AliasOpNo,
     if (!BI->isComplete())
       return false;
     // Convert the bits init to an integer and use that for the result.
-    IntInit *II =
-      dyn_cast_or_null<IntInit>(BI->convertInitializerTo(IntRecTy::get()));
+    IntInit *II = dyn_cast_or_null<IntInit>(
+        BI->convertInitializerTo(IntRecTy::get(BI->getRecordKeeper())));
     if (!II)
       return false;
     ResOp = ResultOperand(II->getValue());

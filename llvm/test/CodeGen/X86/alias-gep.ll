@@ -36,8 +36,8 @@
 %struct.S1 = type { i32, i32, i32 }
 
 @s = global %struct.S1 { i32 31, i32 32, i32 33 }, align 4
-@offsetSym0 = alias i32, i32* getelementptr inbounds (%struct.S1, %struct.S1* @s, i64 0, i32 0)
-@offsetSym1 = alias i32, i32* getelementptr inbounds (%struct.S1, %struct.S1* @s, i64 0, i32 2)
+@offsetSym0 = alias i32, ptr @s
+@offsetSym1 = alias i32, ptr getelementptr inbounds (%struct.S1, ptr @s, i64 0, i32 2)
 @private_array = private global [16 x i8] zeroinitializer, align 4
 @private_array_plus_zero = alias i8, i8* getelementptr inbounds ([16 x i8], [16 x i8]* @private_array, i32 0, i32 0)
 @private_array_plus_one = alias i8, i8* getelementptr inbounds ([16 x i8], [16 x i8]* @private_array, i32 0, i32 1)

@@ -3,7 +3,7 @@
 ; This used to create a broken function.
 ; FIXME: the getoffset+add sequence should be folded to an increment
 ; REQUIRES: mips-registered-target
-; RUN: opt -mtriple=mips64 -mcpu=cheri128 -mattr=+cheri128 --relocation-model=pic -target-abi purecap -S -instcombine -O3 %s -o - | FileCheck %s
+; RUN: opt -mtriple=mips64 -mcpu=cheri128 -mattr=+cheri128 --relocation-model=pic -target-abi purecap -S -passes='default<O3>,instcombine' %s -o - | FileCheck %s
 ; RUN: opt -mtriple=mips64 -mcpu=cheri128 -mattr=+cheri128 --relocation-model=pic -target-abi purecap -S -O3 %s | llc -mtriple=mips64 -mcpu=cheri128 -mattr=+cheri128 --relocation-model=pic -target-abi purecap -O3 -o - | FileCheck %s --check-prefix ASM
 target datalayout = "E-m:e-pf200:128:128:128:64-i8:8:32-i16:16:32-i64:64-n32:64-S128-A200-P200-G200"
 

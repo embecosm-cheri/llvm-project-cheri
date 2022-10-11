@@ -22,7 +22,7 @@ template<class T>
 class RingBuffer {
  public:
   COMPILER_CHECK(sizeof(T) % sizeof(void *) == 0);
-  static RingBuffer *New(usize Size) {
+  static RingBuffer *New(uptr Size) {
     void *Ptr = MmapOrDie(SizeInBytes(Size), "RingBuffer");
     RingBuffer *RB = reinterpret_cast<RingBuffer*>(Ptr);
     uptr End = reinterpret_cast<uptr>(Ptr) + SizeInBytes(Size);
@@ -38,7 +38,7 @@ class RingBuffer {
                                  2 * sizeof(T *));
   }
 
-  static uptr SizeInBytes(usize Size) {
+  static uptr SizeInBytes(uptr Size) {
     return Size * sizeof(T) + 2 * sizeof(T*);
   }
 
@@ -86,27 +86,32 @@ class CompactRingBuffer {
   // Lower bytes store the address of the next buffer element.
   static constexpr int kPageSizeBits = 12;
   static constexpr int kSizeShift = 56;
+  static constexpr int kSizeBits = 64 - kSizeShift;
   static constexpr uptr kNextMask = (1ULL << kSizeShift) - 1;
 
   uptr GetStorageSize() const { return (long_ >> kSizeShift) << kPageSizeBits; }
 
-  void Init(void *storage, usize size) {
+  static uptr SignExtend(uptr x) { return ((sptr)x) << kSizeBits >> kSizeBits; }
+
+  void Init(void *storage, uptr size) {
     CHECK_EQ(sizeof(CompactRingBuffer<T>), sizeof(void *));
     CHECK(IsPowerOfTwo(size));
     CHECK_GE(size, 1 << kPageSizeBits);
     CHECK_LE(size, 128 << kPageSizeBits);
     CHECK_EQ(size % 4096, 0);
     CHECK_EQ(size % sizeof(T), 0);
-    CHECK_EQ((uptr)storage % (size * 2), 0);
-    long_ = (uptr)storage | ((size >> kPageSizeBits) << kSizeShift);
+    uptr st = (uptr)storage;
+    CHECK_EQ(st % (size * 2), 0);
+    CHECK_EQ(st, SignExtend(st & kNextMask));
+    long_ = (st & kNextMask) | ((size >> kPageSizeBits) << kSizeShift);
   }
 
   void SetNext(const T *next) {
-    long_ = (long_ & ~kNextMask) | (uptr)next;
+    long_ = (long_ & ~kNextMask) | ((uptr)next & kNextMask);
   }
 
  public:
-  CompactRingBuffer(void *storage, usize size) {
+  CompactRingBuffer(void *storage, uptr size) {
     Init(storage, size);
   }
 
@@ -119,7 +124,7 @@ class CompactRingBuffer {
     SetNext((const T *)storage + Idx);
   }
 
-  T *Next() const { return (T *)(long_ & kNextMask); }
+  T *Next() const { return (T *)(SignExtend(long_ & kNextMask)); }
 
   void *StartOfStorage() const {
     return (void *)((uptr)Next() & ~(GetStorageSize() - 1));

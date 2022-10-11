@@ -22,13 +22,11 @@ int* test(int i) {
 
 // CHECK-LABEL: 00000000
 // CHECK-NEXT: Format: DWARF32
-// CHECK-NEXT: Version: 4
 // n64 uses ra (register 31)
 // HYBRID:  Return address column: 31
 // PURECAP: Return address column: 89
-// CHECK-EMPTY:
-// HYBRID-NEXT: DW_CFA_def_cfa_register: SP_64
-// PURECAP-NEXT: DW_CFA_def_cfa_register: C11
+// HYBRID: DW_CFA_def_cfa_register: SP_64
+// PURECAP: DW_CFA_def_cfa_register: C11
 // CHECK-NEXT: DW_CFA_nop
 
 // CHECK-LABEL: 00000018

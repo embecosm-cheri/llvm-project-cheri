@@ -17,12 +17,19 @@
 #include "clang/Basic/TargetOptions.h"
 #include "llvm/ADT/Triple.h"
 #include "llvm/Support/Compiler.h"
+#include "llvm/Support/RISCVISAInfo.h"
 
 namespace clang {
 namespace targets {
 
 // RISC-V Target
 class RISCVTargetInfo : public TargetInfo {
+protected:
+  std::string ABI, CPU;
+  int CapSize = -1;
+  std::unique_ptr<llvm::RISCVISAInfo> ISAInfo;
+  static const Builtin::Info BuiltinInfo[];
+
   void setDataLayout() {
     StringRef Layout;
 
@@ -30,13 +37,13 @@ class RISCVTargetInfo : public TargetInfo {
         ABI == "ilp32e" ||
         ABI == "il32pc64" || ABI == "il32pc64f" || ABI == "il32pc64d" ||
         ABI == "il32pc64e") {
-      if (HasCheri)
+      if (ISAInfo->hasExtension("xcheri"))
         Layout = "e-m:e-pf200:64:64:64:32-p:32:32-i64:64-n32-S128";
       else
         Layout = "e-m:e-p:32:32-i64:64-n32-S128";
     } else if (ABI == "lp64" || ABI == "lp64f" || ABI == "lp64d" ||
                ABI == "l64pc128" || ABI == "l64pc128f" || ABI == "l64pc128d") {
-      if (HasCheri)
+      if (ISAInfo->hasExtension("xcheri"))
         Layout = "e-m:e-pf200:128:128:128:64-p:64:64-i64:64-i128:128-n64-S128";
       else
         Layout = "e-m:e-p:64:64-i64:64-i128:128-n64-S128";
@@ -51,38 +58,9 @@ class RISCVTargetInfo : public TargetInfo {
     resetDataLayout((Layout + PurecapOptions).str());
   }
 
-protected:
-  std::string ABI, CPU;
-  int CapSize = -1;
-
   void setCapabilityABITypes() {
     IntPtrType = TargetInfo::SignedIntCap;
   }
-
-  bool HasM = false;
-  bool HasA = false;
-  bool HasF = false;
-  bool HasD = false;
-  bool HasC = false;
-  bool HasCheri = false;
-  bool HasB = false;
-  bool HasV = false;
-  bool HasZba = false;
-  bool HasZbb = false;
-  bool HasZbc = false;
-  bool HasZbe = false;
-  bool HasZbf = false;
-  bool HasZbm = false;
-  bool HasZbp = false;
-  bool HasZbproposedc = false;
-  bool HasZbr = false;
-  bool HasZbs = false;
-  bool HasZbt = false;
-  bool HasZfh = false;
-  bool HasZvamo = false;
-  bool HasZvlsseg = false;
-
-  static const Builtin::Info BuiltinInfo[];
 
 public:
   RISCVTargetInfo(const llvm::Triple &Triple, const TargetOptions &)
@@ -116,6 +94,11 @@ public:
   }
 
   const char *getClobbers() const override { return ""; }
+
+  StringRef getConstraintRegister(StringRef Constraint,
+                                  StringRef Expression) const override {
+    return Expression;
+  }
 
   ArrayRef<const char *> getGCCRegNames() const override;
 
@@ -164,11 +147,15 @@ public:
     return (AddrSpace == 200) ? CapSize : PointerAlign;
   }
 
-  bool SupportsCapabilities() const override { return HasCheri; }
+  bool SupportsCapabilities() const override { return ISAInfo->hasExtension("xcheri"); }
 
   bool validateTarget(DiagnosticsEngine &Diags) const override;
 
-  bool hasExtIntType() const override { return true; }
+  bool hasBitIntType() const override { return true; }
+
+  bool useFP16ConversionIntrinsics() const override {
+    return false;
+  }
 };
 class LLVM_LIBRARY_VISIBILITY RISCV32TargetInfo : public RISCVTargetInfo {
 public:
@@ -202,7 +189,7 @@ public:
   void setMaxAtomicWidth() override {
     MaxAtomicPromoteWidth = 128;
 
-    if (HasA)
+    if (ISAInfo->hasExtension("a"))
       MaxAtomicInlineWidth = 32;
   }
 
@@ -239,7 +226,7 @@ public:
   void setMaxAtomicWidth() override {
     MaxAtomicPromoteWidth = 128;
 
-    if (HasA)
+    if (ISAInfo->hasExtension("a"))
       MaxAtomicInlineWidth = 64;
   }
 

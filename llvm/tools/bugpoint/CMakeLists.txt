@@ -38,4 +38,3 @@ add_llvm_tool(bugpoint
   SUPPORT_PLUGINS
   )
 export_executable_symbols_for_plugins(bugpoint)
-add_definitions(-DLLVM_NO_DEFAULT_ADDRESS_SPACE)

@@ -31,16 +31,13 @@ void test_subobject_addrof_basic(struct WithNested* s) {
   // CHECK-LABEL: @test_subobject_addrof_basic(
   do_stuff_with_int(TAKE_ADDRESS(s->n.a)); // expected-remark {{setting sub-object bounds for field 'a' (pointer to 'int') to 4 bytes}}
   // DBG: Found scalar type -> setting bounds for 'int' address to 4
-  // CHECK: [[BOUNDED_INT:%.+]] = tail call i8 addrspace(200)* @llvm.cheri.cap.bounds.set.i64(i8 addrspace(200)* {{.+}}, i64 4)
-  // CHECK-NEXT: %address.with.bounds = bitcast i8 addrspace(200)* [[BOUNDED_INT]] to i32 addrspace(200)*
+  // CHECK: [[BOUNDED_INT:%.+]] = tail call ptr addrspace(200) @llvm.cheri.cap.bounds.set.i64(ptr addrspace(200) {{.+}}, i64 4)
   do_stuff_with_nested(TAKE_ADDRESS(s->n)); // expected-remark {{setting sub-object bounds for field 'n' (pointer to 'struct Nested') to 12 bytes}}
   // DBG-NEXT: Found record type 'struct Nested' -> compiling C and no flexible array -> setting bounds for 'struct Nested' address to 12
-  // CHECK: [[BOUNDED_STRUCT:%.+]] = tail call i8 addrspace(200)* @llvm.cheri.cap.bounds.set.i64(i8 addrspace(200)* {{.+}}, i64 12)
-  // CHECK-NEXT: %address.with.bounds2 = bitcast i8 addrspace(200)* [[BOUNDED_STRUCT]] to %struct.Nested addrspace(200)*
+  // CHECK: [[BOUNDED_STRUCT:%.+]] = tail call ptr addrspace(200) @llvm.cheri.cap.bounds.set.i64(ptr addrspace(200) {{.+}}, i64 12)
   do_stuff_with_float(TAKE_ADDRESS(s->f1)); // expected-remark {{setting sub-object bounds for field 'f1' (pointer to 'float') to 4 bytes}}
   // DBG-NEXT: Found scalar type -> setting bounds for 'float' address to 4
-  // CHECK: [[BOUNDED_FLOAT:%.+]] = tail call i8 addrspace(200)* @llvm.cheri.cap.bounds.set.i64(i8 addrspace(200)* {{.+}}, i64 4)
-  // CHECK-NEXT: %address.with.bounds3 = bitcast i8 addrspace(200)* [[BOUNDED_FLOAT]] to float addrspace(200)*
+  // CHECK: [[BOUNDED_FLOAT:%.+]] = tail call ptr addrspace(200) @llvm.cheri.cap.bounds.set.i64(ptr addrspace(200) {{.+}}, i64 4)
 }
 
 typedef void (*fn_ptr_ty)(void);
@@ -65,8 +62,8 @@ void test_fnptr(struct ContainsFnPtr *s) {
   do_stuff_with_fn_ptr_ptr(&onstack.fn_ptr); // expected-remark-re {{setting sub-object bounds for field 'fn_ptr' (pointer to 'fn_ptr_ty' (aka 'void (*)(void)')) to {{16|32}} bytes}}
   // DBG-NEXT: subobj bounds check: got MemberExpr -> Found scalar type -> setting bounds for 'fn_ptr_ty' address to [[#CAP_SIZE]]
   do_stuff_with_fn_ptr_ptr(&fnptr_array[2]); // expected-remark-re {{setting sub-object bounds for pointer to 'fn_ptr_ty' (aka 'void (*)(void)') to {{16|32}} bytes}}
-  //  expected-remark-re@-1{{setting bounds for array subscript on 'fn_ptr_ty [4]' to {{64|128}} bytes}}
-  // DBG-NEXT: subscript 'fn_ptr_ty [4]' subobj bounds check: subscript on constant size array -> setting bounds for 'fn_ptr_ty [4]' subscript to {{64|128}}
+  //  expected-remark-re@-1{{setting bounds for array subscript on 'fn_ptr_ty[4]' (aka 'void (*[4])(void)') to {{64|128}} bytes}}
+  // DBG-NEXT: subscript 'fn_ptr_ty[4]' subobj bounds check: subscript on constant size array -> setting bounds for 'fn_ptr_ty[4]' subscript to {{64|128}}
   // DBG-NEXT: subobj bounds check: Found array subscript -> index is a constant -> const array index is not end and bounds==aggressive -> Found scalar type -> setting bounds for 'fn_ptr_ty' address to [[#CAP_SIZE]]
 }
 

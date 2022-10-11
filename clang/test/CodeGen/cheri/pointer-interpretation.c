@@ -20,30 +20,30 @@ _Pragma("pointer_interpretation integer")
 _Pragma("pointer_interpretation capability")
 _Pragma("pointer_interpretation default")
 
-//CHECK: %struct.test = type { i32 addrspace(200)*, i32 addrspace(200)*, i32 addrspace(200)* }
-//CHECK: %struct.test2 = type { i32*, i32*, i32* }
-//CHECK: %struct.test3 = type { i32*, i32*, i32* }
+//CHECK: %struct.test = type { ptr addrspace(200), ptr addrspace(200), ptr addrspace(200) }
+//CHECK: %struct.test2 = type { ptr, ptr, ptr }
+//CHECK: %struct.test3 = type { ptr, ptr, ptr }
 
 // CHECK: define dso_local signext i32 @x()
 int x(void)
 {
-	// CHECK: load i32 addrspace(200)*, i32 addrspace(200)**
-	// CHECK: load i32, i32 addrspace(200)*
+	// CHECK: load ptr addrspace(200), ptr
+	// CHECK: load i32, ptr addrspace(200)
 	return *t.a;
 }
 
 // CHECK: define dso_local signext i32 @y()
 int y(void)
 {
-	// CHECK: load i32*, i32**
-	// CHECK: load i32, i32*
+	// CHECK: load ptr, ptr
+	// CHECK: load i32, ptr
 	return *t2.a;
 }
 // CHECK: define dso_local signext i32 @z()
 int z(void)
 {
-	// CHECK: load i32*, i32**
-	// CHECK: load i32, i32*
+	// CHECK: load ptr, ptr
+	// CHECK: load i32, ptr
 	return *t3.a;
 }
 

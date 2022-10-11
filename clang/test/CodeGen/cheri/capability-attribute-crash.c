@@ -2,18 +2,18 @@
 // RUN: %cheri_cc1 -target-cpu mips4 -target-abi n64 -o - -fsyntax-only -ast-dump -verify %s | FileCheck %s -check-prefix AST
 // RUN: %cheri_cc1 -target-cpu mips4 -target-abi n64 -o - -emit-llvm -O0 -verify %s | FileCheck %s
 
-// CHECK-LABEL: @a(
-// CHECK-NEXT:  entry:
-// CHECK-NEXT:    [[PTR_TO_CAP_ADDR:%.*]] = alloca i32 addrspace(200)**, align 8
-// CHECK-NEXT:    [[C:%.*]] = alloca i32**, align 8
-// CHECK-NEXT:    store i32 addrspace(200)** [[PTR_TO_CAP:%.*]], i32 addrspace(200)*** [[PTR_TO_CAP_ADDR]], align 8
-// CHECK-NEXT:    [[TMP0:%.*]] = load i32 addrspace(200)**, i32 addrspace(200)*** [[PTR_TO_CAP_ADDR]], align 8
-// CHECK-NEXT:    [[TMP1:%.*]] = bitcast i32 addrspace(200)** [[TMP0]] to i32**
-// CHECK-NEXT:    store i32** [[TMP1]], i32*** [[C]], align 8
-// CHECK-NEXT:    [[TMP2:%.*]] = load i32**, i32*** [[C]], align 8
-// CHECK-NEXT:    ret i32** [[TMP2]]
 //
 
+// CHECK-LABEL: @a(
+// CHECK-NEXT:  entry:
+// CHECK-NEXT:    [[PTR_TO_CAP_ADDR:%.*]] = alloca ptr, align 8
+// CHECK-NEXT:    [[C:%.*]] = alloca ptr, align 8
+// CHECK-NEXT:    store ptr [[PTR_TO_CAP:%.*]], ptr [[PTR_TO_CAP_ADDR]], align 8
+// CHECK-NEXT:    [[TMP0:%.*]] = load ptr, ptr [[PTR_TO_CAP_ADDR]], align 8
+// CHECK-NEXT:    store ptr [[TMP0]], ptr [[C]], align 8
+// CHECK-NEXT:    [[TMP1:%.*]] = load ptr, ptr [[C]], align 8
+// CHECK-NEXT:    ret ptr [[TMP1]]
+//
 int **a(int * __capability *ptr_to_cap) {
   // casting a capability pointer to a non-capability pointer used to crash
   int **c = ptr_to_cap; // expected-warning{{initializing 'int **' with an expression of type 'int * __capability *' discards qualifiers in nested pointer types}}

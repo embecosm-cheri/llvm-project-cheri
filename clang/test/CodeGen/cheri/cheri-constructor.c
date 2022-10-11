@@ -6,5 +6,5 @@
 
 __attribute__((__constructor__)) void a() {}
 
-// CHECK: @llvm.global_ctors = appending addrspace(200) global [1 x { i32, void () addrspace(200)*, i8 addrspace(200)* }]
-// CHECK-SAME: [{ i32, void () addrspace(200)*, i8 addrspace(200)* } { i32 65535, void () addrspace(200)* @a, i8 addrspace(200)* null }]
+// CHECK: @llvm.global_ctors = appending addrspace(200) global [1 x { i32, ptr addrspace(200), ptr addrspace(200) }]
+// CHECK-SAME: [{ i32, ptr addrspace(200), ptr addrspace(200) } { i32 65535, ptr addrspace(200) @a, ptr addrspace(200) null }]

@@ -1,4 +1,4 @@
-//===----------------------------- Registers.hpp --------------------------===//
+//===----------------------------------------------------------------------===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -15,33 +15,14 @@
 #include <stdint.h>
 #include <string.h>
 
-#include "libunwind.h"
+#include "cet_unwind.h"
 #include "config.h"
+#include "libunwind.h"
 
 namespace libunwind {
 
 // For emulating 128-bit registers
 struct v128 { uint32_t vec[4]; };
-// For emulating CHERI capability
-#ifndef __CHERI__
-struct __attribute__((aligned(16))) fake_capability {
-  char bytes[16];
-};
-typedef struct fake_capability fake_capability_t;
-#else
-// To keep CAPABILITIES_NOT_SUPPORT working in hybrid mode
-// TODO: remove
-typedef __uintcap_t fake_capability_t;
-#endif
-
-#define CAPABILITIES_NOT_SUPPORTED                                             \
-  bool validCapabilityRegister(int) const { return false; }                    \
-  fake_capability_t getCapabilityRegister(int) const {                           \
-    _LIBUNWIND_ABORT("no CHERI capability registers");                         \
-  }                                                                            \
-  inline void setCapabilityRegister(int, fake_capability_t) {                    \
-    _LIBUNWIND_ABORT("no CHERI capability registers");                         \
-  }
 
 enum {
   REGISTERS_X86,
@@ -53,23 +34,30 @@ enum {
   REGISTERS_OR1K,
   REGISTERS_MIPS_O32,
   REGISTERS_MIPS_NEWABI,
-  REGISTERS_MIPS_CHERI,
   REGISTERS_SPARC,
+  REGISTERS_SPARC64,
   REGISTERS_HEXAGON,
   REGISTERS_RISCV,
   REGISTERS_VE,
+  REGISTERS_S390X,
 };
 
 #if defined(_LIBUNWIND_TARGET_I386)
 class _LIBUNWIND_HIDDEN Registers_x86;
 extern "C" void __libunwind_Registers_x86_jumpto(Registers_x86 *);
+
+#if defined(_LIBUNWIND_USE_CET)
+extern "C" void *__libunwind_cet_get_jump_target() {
+  return reinterpret_cast<void *>(&__libunwind_Registers_x86_jumpto);
+}
+#endif
+
 /// Registers_x86 holds the register state of a thread in a 32-bit intel
 /// process.
 class _LIBUNWIND_HIDDEN Registers_x86 {
 public:
   Registers_x86();
   Registers_x86(const void *registers);
-  CAPABILITIES_NOT_SUPPORTED
 
   bool        validRegister(int num) const;
   uint32_t    getRegister(int num) const;
@@ -82,7 +70,9 @@ public:
   void        setVectorRegister(int num, v128 value);
   static const char *getRegisterName(int num);
   void        jumpto() { __libunwind_Registers_x86_jumpto(this); }
-  static int  lastDwarfRegNum() { return _LIBUNWIND_HIGHEST_DWARF_REGISTER_X86; }
+  static constexpr int lastDwarfRegNum() {
+    return _LIBUNWIND_HIGHEST_DWARF_REGISTER_X86;
+  }
   static int  getArch() { return REGISTERS_X86; }
 
   uint32_t  getSP() const          { return _registers.__esp; }
@@ -275,11 +265,17 @@ inline void Registers_x86::setVectorRegister(int, v128) {
 /// process.
 class _LIBUNWIND_HIDDEN Registers_x86_64;
 extern "C" void __libunwind_Registers_x86_64_jumpto(Registers_x86_64 *);
+
+#if defined(_LIBUNWIND_USE_CET)
+extern "C" void *__libunwind_cet_get_jump_target() {
+  return reinterpret_cast<void *>(&__libunwind_Registers_x86_64_jumpto);
+}
+#endif
+
 class _LIBUNWIND_HIDDEN Registers_x86_64 {
 public:
   Registers_x86_64();
   Registers_x86_64(const void *registers);
-  CAPABILITIES_NOT_SUPPORTED
 
   bool        validRegister(int num) const;
   uint64_t    getRegister(int num) const;
@@ -292,7 +288,9 @@ public:
   void        setVectorRegister(int num, v128 value);
   static const char *getRegisterName(int num);
   void        jumpto() { __libunwind_Registers_x86_64_jumpto(this); }
-  static int  lastDwarfRegNum() { return _LIBUNWIND_HIGHEST_DWARF_REGISTER_X86_64; }
+  static constexpr int lastDwarfRegNum() {
+    return _LIBUNWIND_HIGHEST_DWARF_REGISTER_X86_64;
+  }
   static int  getArch() { return REGISTERS_X86_64; }
 
   uint64_t  getSP() const          { return _registers.__rsp; }
@@ -362,7 +360,7 @@ inline bool Registers_x86_64::validRegister(int regNum) const {
     return true;
   if (regNum < 0)
     return false;
-  if (regNum > 15)
+  if (regNum > 16)
     return false;
   return true;
 }
@@ -370,6 +368,7 @@ inline bool Registers_x86_64::validRegister(int regNum) const {
 inline uint64_t Registers_x86_64::getRegister(int regNum) const {
   switch (regNum) {
   case UNW_REG_IP:
+  case UNW_X86_64_RIP:
     return _registers.__rip;
   case UNW_REG_SP:
     return _registers.__rsp;
@@ -412,6 +411,7 @@ inline uint64_t Registers_x86_64::getRegister(int regNum) const {
 inline void Registers_x86_64::setRegister(int regNum, uint64_t value) {
   switch (regNum) {
   case UNW_REG_IP:
+  case UNW_X86_64_RIP:
     _registers.__rip = value;
     return;
   case UNW_REG_SP:
@@ -472,6 +472,7 @@ inline void Registers_x86_64::setRegister(int regNum, uint64_t value) {
 inline const char *Registers_x86_64::getRegisterName(int regNum) {
   switch (regNum) {
   case UNW_REG_IP:
+  case UNW_X86_64_RIP:
     return "rip";
   case UNW_REG_SP:
     return "rsp";
@@ -594,7 +595,6 @@ class _LIBUNWIND_HIDDEN Registers_ppc {
 public:
   Registers_ppc();
   Registers_ppc(const void *registers);
-  CAPABILITIES_NOT_SUPPORTED
 
   bool        validRegister(int num) const;
   uint32_t    getRegister(int num) const;
@@ -607,13 +607,17 @@ public:
   void        setVectorRegister(int num, v128 value);
   static const char *getRegisterName(int num);
   void        jumpto();
-  static int  lastDwarfRegNum() { return _LIBUNWIND_HIGHEST_DWARF_REGISTER_PPC; }
+  static constexpr int lastDwarfRegNum() {
+    return _LIBUNWIND_HIGHEST_DWARF_REGISTER_PPC;
+  }
   static int  getArch() { return REGISTERS_PPC; }
 
   uint64_t  getSP() const         { return _registers.__r1; }
   void      setSP(uint32_t value) { _registers.__r1 = value; }
   uint64_t  getIP() const         { return _registers.__srr0; }
   void      setIP(uint32_t value) { _registers.__srr0 = value; }
+  uint64_t  getCR() const         { return _registers.__cr; }
+  void      setCR(uint32_t value) { _registers.__cr = value; }
 
 private:
   struct ppc_thread_state_t {
@@ -1161,7 +1165,6 @@ class _LIBUNWIND_HIDDEN Registers_ppc64 {
 public:
   Registers_ppc64();
   Registers_ppc64(const void *registers);
-  CAPABILITIES_NOT_SUPPORTED
 
   bool        validRegister(int num) const;
   uint64_t    getRegister(int num) const;
@@ -1174,13 +1177,17 @@ public:
   void        setVectorRegister(int num, v128 value);
   static const char *getRegisterName(int num);
   void        jumpto();
-  static int  lastDwarfRegNum() { return _LIBUNWIND_HIGHEST_DWARF_REGISTER_PPC64; }
+  static constexpr int lastDwarfRegNum() {
+    return _LIBUNWIND_HIGHEST_DWARF_REGISTER_PPC64;
+  }
   static int  getArch() { return REGISTERS_PPC64; }
 
   uint64_t  getSP() const         { return _registers.__r1; }
   void      setSP(uint64_t value) { _registers.__r1 = value; }
   uint64_t  getIP() const         { return _registers.__srr0; }
   void      setIP(uint64_t value) { _registers.__srr0 = value; }
+  uint64_t  getCR() const         { return _registers.__cr; }
+  void      setCR(uint64_t value) { _registers.__cr = value; }
 
 private:
   struct ppc64_thread_state_t {
@@ -1809,8 +1816,8 @@ public:
   Registers_arm64(const void *registers);
 
   bool        validRegister(int num) const;
-  uintptr_t   getRegister(int num) const;
-  void        setRegister(int num, uintptr_t value);
+  uint64_t    getRegister(int num) const;
+  void        setRegister(int num, uint64_t value);
   bool        validFloatRegister(int num) const;
   double      getFloatRegister(int num) const;
   void        setFloatRegister(int num, double value);
@@ -1819,37 +1826,25 @@ public:
   void        setVectorRegister(int num, v128 value);
   static const char *getRegisterName(int num);
   void        jumpto() { __libunwind_Registers_arm64_jumpto(this); }
-  static int  lastDwarfRegNum() {
-#ifdef __CHERI_PURE_CAPABILITY__
-    return _LIBUNWIND_HIGHEST_DWARF_REGISTER_MORELLO;
-#else
+  static constexpr int lastDwarfRegNum() {
     return _LIBUNWIND_HIGHEST_DWARF_REGISTER_ARM64;
-#endif
   }
   static int  getArch() { return REGISTERS_ARM64; }
 
-#ifdef __CHERI_PURE_CAPABILITY__
-  bool        validCapabilityRegister(int num) const;
-  uintcap_t   getCapabilityRegister(int num) const;
-  void        setCapabilityRegister(int num, uintcap_t value);
-#else
-  CAPABILITIES_NOT_SUPPORTED
-#endif
-
-  uintptr_t  getSP() const          { return _registers.__sp; }
-  void       setSP(uintptr_t value) { _registers.__sp = value; }
-  uintptr_t  getIP() const          { return _registers.__pc; }
-  void       setIP(uintptr_t value) { _registers.__pc = value; }
-  uintptr_t  getFP() const          { return _registers.__fp; }
-  void       setFP(uintptr_t value) { _registers.__fp = value; }
+  uint64_t  getSP() const         { return _registers.__sp; }
+  void      setSP(uint64_t value) { _registers.__sp = value; }
+  uint64_t  getIP() const         { return _registers.__pc; }
+  void      setIP(uint64_t value) { _registers.__pc = value; }
+  uint64_t  getFP() const         { return _registers.__fp; }
+  void      setFP(uint64_t value) { _registers.__fp = value; }
 
 private:
   struct GPRs {
-    uintptr_t __x[29]; // r0-r28
-    uintptr_t __fp;    // Frame pointer r29
-    uintptr_t __lr;    // Link register r30
-    uintptr_t __sp;    // Stack pointer r31
-    uintptr_t __pc;    // Program counter
+    uint64_t __x[29]; // x0-x28
+    uint64_t __fp;    // Frame pointer x29
+    uint64_t __lr;    // Link register x30
+    uint64_t __sp;    // Stack pointer x31
+    uint64_t __pc;    // Program counter
     uint64_t __ra_sign_state; // RA sign state register
   };
 
@@ -1865,13 +1860,8 @@ inline Registers_arm64::Registers_arm64(const void *registers) {
   static_assert((check_fit<Registers_arm64, unw_context_t>::does_fit),
                 "arm64 registers do not fit into unw_context_t");
   memcpy(&_registers, registers, sizeof(_registers));
-#ifdef __CHERI_PURE_CAPABILITY__
-  static_assert(sizeof(GPRs) == 0x220,
-                "expected VFP registers to be at offset 544");
-#else
   static_assert(sizeof(GPRs) == 0x110,
                 "expected VFP registers to be at offset 272");
-#endif
   memcpy(_vectorHalfRegisters,
          static_cast<const uint8_t *>(registers) + sizeof(GPRs),
          sizeof(_vectorHalfRegisters));
@@ -1889,81 +1879,47 @@ inline bool Registers_arm64::validRegister(int regNum) const {
     return true;
   if (regNum < 0)
     return false;
-#ifdef __CHERI_PURE_CAPABILITY__
-  if ((regNum >= UNW_ARM64_C0) && (regNum <= UNW_ARM64_C31))
-    return true;
-#endif
   if (regNum > 95)
     return false;
-  if (regNum == UNW_ARM64_RA_SIGN_STATE)
+  if (regNum == UNW_AARCH64_RA_SIGN_STATE)
     return true;
   if ((regNum > 32) && (regNum < 64))
     return false;
   return true;
 }
 
-inline uintptr_t Registers_arm64::getRegister(int regNum) const {
-  if (regNum == UNW_REG_IP || regNum == UNW_ARM64_PC)
+inline uint64_t Registers_arm64::getRegister(int regNum) const {
+  if (regNum == UNW_REG_IP || regNum == UNW_AARCH64_PC)
     return _registers.__pc;
-  if (regNum == UNW_REG_SP || regNum == UNW_ARM64_SP)
+  if (regNum == UNW_REG_SP || regNum == UNW_AARCH64_SP)
     return _registers.__sp;
-  if (regNum == UNW_ARM64_RA_SIGN_STATE)
+  if (regNum == UNW_AARCH64_RA_SIGN_STATE)
     return _registers.__ra_sign_state;
-  if (regNum == UNW_ARM64_FP)
+  if (regNum == UNW_AARCH64_FP)
     return _registers.__fp;
-  if (regNum == UNW_ARM64_LR)
+  if (regNum == UNW_AARCH64_LR)
     return _registers.__lr;
   if ((regNum >= 0) && (regNum < 29))
     return _registers.__x[regNum];
-#ifdef __CHERI_PURE_CAPABILITY__
-  if ((regNum >= UNW_ARM64_C0) && (regNum <= UNW_ARM64_C31))
-    return _registers.__x[regNum - UNW_ARM64_C0];
-#endif
   _LIBUNWIND_ABORT("unsupported arm64 register");
 }
 
-inline void Registers_arm64::setRegister(int regNum, uintptr_t value) {
-  if (regNum == UNW_REG_IP || regNum == UNW_ARM64_PC)
+inline void Registers_arm64::setRegister(int regNum, uint64_t value) {
+  if (regNum == UNW_REG_IP || regNum == UNW_AARCH64_PC)
     _registers.__pc = value;
-  else if (regNum == UNW_REG_SP || regNum == UNW_ARM64_SP)
+  else if (regNum == UNW_REG_SP || regNum == UNW_AARCH64_SP)
     _registers.__sp = value;
-  else if (regNum == UNW_ARM64_RA_SIGN_STATE)
+  else if (regNum == UNW_AARCH64_RA_SIGN_STATE)
     _registers.__ra_sign_state = value;
-  else if (regNum == UNW_ARM64_FP)
+  else if (regNum == UNW_AARCH64_FP)
     _registers.__fp = value;
-  else if (regNum == UNW_ARM64_LR)
+  else if (regNum == UNW_AARCH64_LR)
     _registers.__lr = value;
   else if ((regNum >= 0) && (regNum < 29))
     _registers.__x[regNum] = value;
-#ifdef __CHERI_PURE_CAPABILITY__
-  else if ((regNum >= UNW_ARM64_C0) && (regNum <= UNW_ARM64_C31))
-    _registers.__x[regNum - UNW_ARM64_C0] = value;
-#endif
   else
     _LIBUNWIND_ABORT("unsupported arm64 register");
 }
-
-#ifdef __CHERI_PURE_CAPABILITY__
-inline bool Registers_arm64::validCapabilityRegister(int regNum) const {
-  if (regNum == UNW_REG_IP)
-    return true;
-  if (regNum == UNW_REG_SP)
-    return true;
-  if ((regNum >= UNW_ARM64_C0) && (regNum <= UNW_ARM64_C31))
-    return true;
-  return false;
-}
-
-inline uintcap_t Registers_arm64::getCapabilityRegister(int regNum) const {
-  assert(validCapabilityRegister(regNum));
-  return getRegister(regNum);
-}
-
-inline void Registers_arm64::setCapabilityRegister(int regNum, uintcap_t value) {
-  assert(validCapabilityRegister(regNum));
-  setRegister(regNum, value);
-}
-#endif
 
 inline const char *Registers_arm64::getRegisterName(int regNum) {
   switch (regNum) {
@@ -1971,222 +1927,157 @@ inline const char *Registers_arm64::getRegisterName(int regNum) {
     return "pc";
   case UNW_REG_SP:
     return "sp";
-  case UNW_ARM64_X0:
+  case UNW_AARCH64_X0:
     return "x0";
-  case UNW_ARM64_X1:
+  case UNW_AARCH64_X1:
     return "x1";
-  case UNW_ARM64_X2:
+  case UNW_AARCH64_X2:
     return "x2";
-  case UNW_ARM64_X3:
+  case UNW_AARCH64_X3:
     return "x3";
-  case UNW_ARM64_X4:
+  case UNW_AARCH64_X4:
     return "x4";
-  case UNW_ARM64_X5:
+  case UNW_AARCH64_X5:
     return "x5";
-  case UNW_ARM64_X6:
+  case UNW_AARCH64_X6:
     return "x6";
-  case UNW_ARM64_X7:
+  case UNW_AARCH64_X7:
     return "x7";
-  case UNW_ARM64_X8:
+  case UNW_AARCH64_X8:
     return "x8";
-  case UNW_ARM64_X9:
+  case UNW_AARCH64_X9:
     return "x9";
-  case UNW_ARM64_X10:
+  case UNW_AARCH64_X10:
     return "x10";
-  case UNW_ARM64_X11:
+  case UNW_AARCH64_X11:
     return "x11";
-  case UNW_ARM64_X12:
+  case UNW_AARCH64_X12:
     return "x12";
-  case UNW_ARM64_X13:
+  case UNW_AARCH64_X13:
     return "x13";
-  case UNW_ARM64_X14:
+  case UNW_AARCH64_X14:
     return "x14";
-  case UNW_ARM64_X15:
+  case UNW_AARCH64_X15:
     return "x15";
-  case UNW_ARM64_X16:
+  case UNW_AARCH64_X16:
     return "x16";
-  case UNW_ARM64_X17:
+  case UNW_AARCH64_X17:
     return "x17";
-  case UNW_ARM64_X18:
+  case UNW_AARCH64_X18:
     return "x18";
-  case UNW_ARM64_X19:
+  case UNW_AARCH64_X19:
     return "x19";
-  case UNW_ARM64_X20:
+  case UNW_AARCH64_X20:
     return "x20";
-  case UNW_ARM64_X21:
+  case UNW_AARCH64_X21:
     return "x21";
-  case UNW_ARM64_X22:
+  case UNW_AARCH64_X22:
     return "x22";
-  case UNW_ARM64_X23:
+  case UNW_AARCH64_X23:
     return "x23";
-  case UNW_ARM64_X24:
+  case UNW_AARCH64_X24:
     return "x24";
-  case UNW_ARM64_X25:
+  case UNW_AARCH64_X25:
     return "x25";
-  case UNW_ARM64_X26:
+  case UNW_AARCH64_X26:
     return "x26";
-  case UNW_ARM64_X27:
+  case UNW_AARCH64_X27:
     return "x27";
-  case UNW_ARM64_X28:
+  case UNW_AARCH64_X28:
     return "x28";
-  case UNW_ARM64_FP:
+  case UNW_AARCH64_FP:
     return "fp";
-  case UNW_ARM64_LR:
+  case UNW_AARCH64_LR:
     return "lr";
-  case UNW_ARM64_SP:
+  case UNW_AARCH64_SP:
     return "sp";
-  case UNW_ARM64_PC:
+  case UNW_AARCH64_PC:
     return "pc";
-  case UNW_ARM64_D0:
+  case UNW_AARCH64_V0:
     return "d0";
-  case UNW_ARM64_D1:
+  case UNW_AARCH64_V1:
     return "d1";
-  case UNW_ARM64_D2:
+  case UNW_AARCH64_V2:
     return "d2";
-  case UNW_ARM64_D3:
+  case UNW_AARCH64_V3:
     return "d3";
-  case UNW_ARM64_D4:
+  case UNW_AARCH64_V4:
     return "d4";
-  case UNW_ARM64_D5:
+  case UNW_AARCH64_V5:
     return "d5";
-  case UNW_ARM64_D6:
+  case UNW_AARCH64_V6:
     return "d6";
-  case UNW_ARM64_D7:
+  case UNW_AARCH64_V7:
     return "d7";
-  case UNW_ARM64_D8:
+  case UNW_AARCH64_V8:
     return "d8";
-  case UNW_ARM64_D9:
+  case UNW_AARCH64_V9:
     return "d9";
-  case UNW_ARM64_D10:
+  case UNW_AARCH64_V10:
     return "d10";
-  case UNW_ARM64_D11:
+  case UNW_AARCH64_V11:
     return "d11";
-  case UNW_ARM64_D12:
+  case UNW_AARCH64_V12:
     return "d12";
-  case UNW_ARM64_D13:
+  case UNW_AARCH64_V13:
     return "d13";
-  case UNW_ARM64_D14:
+  case UNW_AARCH64_V14:
     return "d14";
-  case UNW_ARM64_D15:
+  case UNW_AARCH64_V15:
     return "d15";
-  case UNW_ARM64_D16:
+  case UNW_AARCH64_V16:
     return "d16";
-  case UNW_ARM64_D17:
+  case UNW_AARCH64_V17:
     return "d17";
-  case UNW_ARM64_D18:
+  case UNW_AARCH64_V18:
     return "d18";
-  case UNW_ARM64_D19:
+  case UNW_AARCH64_V19:
     return "d19";
-  case UNW_ARM64_D20:
+  case UNW_AARCH64_V20:
     return "d20";
-  case UNW_ARM64_D21:
+  case UNW_AARCH64_V21:
     return "d21";
-  case UNW_ARM64_D22:
+  case UNW_AARCH64_V22:
     return "d22";
-  case UNW_ARM64_D23:
+  case UNW_AARCH64_V23:
     return "d23";
-  case UNW_ARM64_D24:
+  case UNW_AARCH64_V24:
     return "d24";
-  case UNW_ARM64_D25:
+  case UNW_AARCH64_V25:
     return "d25";
-  case UNW_ARM64_D26:
+  case UNW_AARCH64_V26:
     return "d26";
-  case UNW_ARM64_D27:
+  case UNW_AARCH64_V27:
     return "d27";
-  case UNW_ARM64_D28:
+  case UNW_AARCH64_V28:
     return "d28";
-  case UNW_ARM64_D29:
+  case UNW_AARCH64_V29:
     return "d29";
-  case UNW_ARM64_D30:
+  case UNW_AARCH64_V30:
     return "d30";
-  case UNW_ARM64_D31:
+  case UNW_AARCH64_V31:
     return "d31";
-  // Morello registers
-  case UNW_ARM64_C0:
-    return "c0";
-  case UNW_ARM64_C1:
-    return "c1";
-  case UNW_ARM64_C2:
-    return "c2";
-  case UNW_ARM64_C3:
-    return "c3";
-  case UNW_ARM64_C4:
-    return "c4";
-  case UNW_ARM64_C5:
-    return "c5";
-  case UNW_ARM64_C6:
-    return "c6";
-  case UNW_ARM64_C7:
-    return "c7";
-  case UNW_ARM64_C8:
-    return "c8";
-  case UNW_ARM64_C9:
-    return "c9";
-  case UNW_ARM64_C10:
-    return "c10";
-  case UNW_ARM64_C11:
-    return "c11";
-  case UNW_ARM64_C12:
-    return "c12";
-  case UNW_ARM64_C13:
-    return "c13";
-  case UNW_ARM64_C14:
-    return "c14";
-  case UNW_ARM64_C15:
-    return "c15";
-  case UNW_ARM64_C16:
-    return "c16";
-  case UNW_ARM64_C17:
-    return "c17";
-  case UNW_ARM64_C18:
-    return "c18";
-  case UNW_ARM64_C19:
-    return "c19";
-  case UNW_ARM64_C20:
-    return "c20";
-  case UNW_ARM64_C21:
-    return "c21";
-  case UNW_ARM64_C22:
-    return "c22";
-  case UNW_ARM64_C23:
-    return "c23";
-  case UNW_ARM64_C24:
-    return "c24";
-  case UNW_ARM64_C25:
-    return "c25";
-  case UNW_ARM64_C26:
-    return "c26";
-  case UNW_ARM64_C27:
-    return "c27";
-  case UNW_ARM64_C28:
-    return "c28";
-  case UNW_ARM64_C29:
-    return "cfp";
-  case UNW_ARM64_C30:
-    return "clr";
-  case UNW_ARM64_C31:
-    return "csp";
   default:
     return "unknown register";
   }
 }
 
 inline bool Registers_arm64::validFloatRegister(int regNum) const {
-  if (regNum < UNW_ARM64_D0)
+  if (regNum < UNW_AARCH64_V0)
     return false;
-  if (regNum > UNW_ARM64_D31)
+  if (regNum > UNW_AARCH64_V31)
     return false;
   return true;
 }
 
 inline double Registers_arm64::getFloatRegister(int regNum) const {
   assert(validFloatRegister(regNum));
-  return _vectorHalfRegisters[regNum - UNW_ARM64_D0];
+  return _vectorHalfRegisters[regNum - UNW_AARCH64_V0];
 }
 
 inline void Registers_arm64::setFloatRegister(int regNum, double value) {
   assert(validFloatRegister(regNum));
-  _vectorHalfRegisters[regNum - UNW_ARM64_D0] = value;
+  _vectorHalfRegisters[regNum - UNW_AARCH64_V0] = value;
 }
 
 inline bool Registers_arm64::validVectorRegister(int) const {
@@ -2212,7 +2103,6 @@ class _LIBUNWIND_HIDDEN Registers_arm {
 public:
   Registers_arm();
   Registers_arm(const void *registers);
-  CAPABILITIES_NOT_SUPPORTED
 
   bool        validRegister(int num) const;
   uint32_t    getRegister(int num) const;
@@ -2228,7 +2118,9 @@ public:
     restoreSavedFloatRegisters();
     restoreCoreAndJumpTo();
   }
-  static int  lastDwarfRegNum() { return _LIBUNWIND_HIGHEST_DWARF_REGISTER_ARM; }
+  static constexpr int lastDwarfRegNum() {
+    return _LIBUNWIND_HIGHEST_DWARF_REGISTER_ARM;
+  }
   static int  getArch() { return REGISTERS_ARM; }
 
   uint32_t  getSP() const         { return _registers.__sp; }
@@ -2266,6 +2158,10 @@ private:
     uint32_t __pc;    // Program counter r15
   };
 
+  struct PseudoRegisters {
+    uint32_t __pac; // Return Authentication Code (PAC)
+  };
+
   static void saveVFPWithFSTMD(void*);
   static void saveVFPWithFSTMX(void*);
   static void saveVFPv3(void*);
@@ -2282,6 +2178,7 @@ private:
 
   // ARM registers
   GPRs _registers;
+  PseudoRegisters _pseudo_registers;
 
   // We save floating point registers lazily because we can't know ahead of
   // time which ones are used. See EHABI #4.7.
@@ -2319,6 +2216,7 @@ inline Registers_arm::Registers_arm(const void *registers)
                 "arm registers do not fit into unw_context_t");
   // See __unw_getcontext() note about data.
   memcpy(&_registers, registers, sizeof(_registers));
+  memset(&_pseudo_registers, 0, sizeof(_pseudo_registers));
   memset(&_vfp_d0_d15_pad, 0, sizeof(_vfp_d0_d15_pad));
   memset(&_vfp_d16_d31, 0, sizeof(_vfp_d16_d31));
 #if defined(__ARM_WMMX)
@@ -2334,6 +2232,7 @@ inline Registers_arm::Registers_arm()
     _saved_vfp_d0_d15(false),
     _saved_vfp_d16_d31(false) {
   memset(&_registers, 0, sizeof(_registers));
+  memset(&_pseudo_registers, 0, sizeof(_pseudo_registers));
   memset(&_vfp_d0_d15_pad, 0, sizeof(_vfp_d0_d15_pad));
   memset(&_vfp_d16_d31, 0, sizeof(_vfp_d16_d31));
 #if defined(__ARM_WMMX)
@@ -2361,6 +2260,11 @@ inline bool Registers_arm::validRegister(int regNum) const {
     return true;
 #endif
 
+#ifdef __ARM_FEATURE_PAUTH
+  if (regNum == UNW_ARM_RA_AUTH_CODE)
+    return true;
+#endif
+
   return false;
 }
 
@@ -2385,6 +2289,11 @@ inline uint32_t Registers_arm::getRegister(int regNum) const {
     }
     return _iwmmx_control[regNum - UNW_ARM_WC0];
   }
+#endif
+
+#ifdef __ARM_FEATURE_PAUTH
+  if (regNum == UNW_ARM_RA_AUTH_CODE)
+    return _pseudo_registers.__pac;
 #endif
 
   _LIBUNWIND_ABORT("unsupported arm register");
@@ -2421,6 +2330,11 @@ inline void Registers_arm::setRegister(int regNum, uint32_t value) {
     return;
   }
 #endif
+
+  if (regNum == UNW_ARM_RA_AUTH_CODE) {
+    _pseudo_registers.__pac = value;
+    return;
+  }
 
   _LIBUNWIND_ABORT("unsupported arm register");
 }
@@ -2694,7 +2608,6 @@ class _LIBUNWIND_HIDDEN Registers_or1k {
 public:
   Registers_or1k();
   Registers_or1k(const void *registers);
-  CAPABILITIES_NOT_SUPPORTED
 
   bool        validRegister(int num) const;
   uint32_t    getRegister(int num) const;
@@ -2707,7 +2620,9 @@ public:
   void        setVectorRegister(int num, v128 value);
   static const char *getRegisterName(int num);
   void        jumpto();
-  static int  lastDwarfRegNum() { return _LIBUNWIND_HIGHEST_DWARF_REGISTER_OR1K; }
+  static constexpr int lastDwarfRegNum() {
+    return _LIBUNWIND_HIGHEST_DWARF_REGISTER_OR1K;
+  }
   static int  getArch() { return REGISTERS_OR1K; }
 
   uint64_t  getSP() const         { return _registers.__r[1]; }
@@ -2892,7 +2807,6 @@ class _LIBUNWIND_HIDDEN Registers_mips_o32 {
 public:
   Registers_mips_o32();
   Registers_mips_o32(const void *registers);
-  CAPABILITIES_NOT_SUPPORTED
 
   bool        validRegister(int num) const;
   uint32_t    getRegister(int num) const;
@@ -2905,7 +2819,9 @@ public:
   void        setVectorRegister(int num, v128 value);
   static const char *getRegisterName(int num);
   void        jumpto();
-  static int  lastDwarfRegNum() { return _LIBUNWIND_HIGHEST_DWARF_REGISTER_MIPS; }
+  static constexpr int lastDwarfRegNum() {
+    return _LIBUNWIND_HIGHEST_DWARF_REGISTER_MIPS;
+  }
   static int  getArch() { return REGISTERS_MIPS_O32; }
 
   uint32_t  getSP() const         { return _registers.__r[29]; }
@@ -3220,10 +3136,6 @@ class _LIBUNWIND_HIDDEN Registers_mips_newabi {
 public:
   Registers_mips_newabi();
   Registers_mips_newabi(const void *registers);
-  CAPABILITIES_NOT_SUPPORTED
-#ifdef __CHERI__
-#pragma message("Should also handle capability registers here.")
-#endif
 
   bool        validRegister(int num) const;
   uint64_t    getRegister(int num) const;
@@ -3236,7 +3148,9 @@ public:
   void        setVectorRegister(int num, v128 value);
   static const char *getRegisterName(int num);
   void        jumpto();
-  static int  lastDwarfRegNum() { return _LIBUNWIND_HIGHEST_DWARF_REGISTER_MIPS; }
+  static constexpr int lastDwarfRegNum() {
+    return _LIBUNWIND_HIGHEST_DWARF_REGISTER_MIPS;
+  }
   static int  getArch() { return REGISTERS_MIPS_NEWABI; }
 
   uint64_t  getSP() const         { return _registers.__r[29]; }
@@ -3509,363 +3423,6 @@ inline const char *Registers_mips_newabi::getRegisterName(int regNum) {
   default:
     return "unknown register";
   }
-
-}
-#endif // _LIBUNWIND_TARGET_MIPS_N64
-#if defined(_LIBUNWIND_TARGET_MIPS_CHERI)
-/// Registers_mips_cheri holds the register state of a thread in 64-bit MIPS
-/// process with the CHERI pure-capability ABI.
-class _LIBUNWIND_HIDDEN Registers_mips_cheri {
-public:
-  Registers_mips_cheri();
-  Registers_mips_cheri(const void *registers);
-
-  bool        validRegister(int num) const;
-  uintptr_t   getRegister(int num) const;
-  void        setRegister(int num, uintptr_t value);
-  bool        validFloatRegister(int num) const;
-  double      getFloatRegister(int num) const;
-  void        setFloatRegister(int num, double value);
-  bool        validVectorRegister(int num) const;
-  bool        validCapabilityRegister(int num) const;
-  uintcap_t   getCapabilityRegister(int num) const;
-  void        setCapabilityRegister(int num, uintcap_t value);
-  v128        getVectorRegister(int num) const;
-  void        setVectorRegister(int num, v128 value);
-  const char *getRegisterName(int num);
-  void        jumpto();
-  static int  lastDwarfRegNum() { return _LIBUNWIND_HIGHEST_DWARF_REGISTER_MIPS_CHERI; }
-  static int  getArch() { return REGISTERS_MIPS_CHERI; }
-
-  uintptr_t getSP() const { return _registers.__c[11]; }
-  void      setSP(uintptr_t value) { _registers.__c[11] = value; }
-  uintptr_t getIP() const {
-    CHERI_DBG("getIP(%#p)\n", (void *)_registers.__c[32]);
-    return _registers.__c[32];
-  }
-  void setIP(uintptr_t value) {
-    if (!__builtin_cheri_tag_get((void *)value) && (void *)value != nullptr) {
-      fprintf(stderr, "WARNING: Registers_mips_cheri::setIP() with untagged, "
-                      "non-null value %#p\n", (void *)value);
-    }
-    CHERI_DBG("setIP(%#p)\n", (void *)value);
-    _registers.__c[32] = value;
-  }
-
-  void dump(const char* where) {
-    fprintf(stderr, "Dumping registers from %s\n", where);
-    for (int i=0 ; i<32 ; i++) {
-        fprintf(stderr, "  %s = 0x%lx\n", getRegisterName(i), (long)addr_get(getRegister(i)));
-        // usleep(1);
-    }
-    fprintf(stderr, "  lo = 0x%lx\n", (long)addr_get(getRegister(UNW_MIPS_LO)));
-    fprintf(stderr, "  hi = 0x%lx\n", (long)addr_get(getRegister(UNW_MIPS_HI)));
-    for (int i=UNW_MIPS_DDC ; i<=UNW_MIPS_C31 ; i++) {
-        fprintf(stderr, "  %s = %#p\n",  getRegisterName(i), (void*)getRegister(i));
-        // usleep(1);
-    }
-    fprintf(stderr, "  $pcc = %#p\n", (void*)getIP());
-  }
-private:
-  template<typename T>
-  int64_t offset_get(T x) const {
-    return (int64_t)__builtin_cheri_offset_get(reinterpret_cast<void*>(x));
-  }
-  template<typename T>
-  uint64_t addr_get(T x) const {
-    return __builtin_cheri_address_get(reinterpret_cast<void*>(x));
-  }
-  template<typename T>
-  T offset_set(T x, uint64_t off) const {
-    return reinterpret_cast<T>(__builtin_cheri_offset_set(reinterpret_cast<void*>(x), off));
-  }
-  struct mips_cheri_thread_state_t {
-    uint64_t  __r[64];
-    uint64_t __hi;
-    uint64_t __lo;
-    // PCC is stored in __c[32]
-    // Note: for CHERI256 the compiler will insert 16 bytes of padding to align
-    // __c. This matches the definition of _LIBUNWIND_CAPREG_START and ensures
-    // that we can store the values correctly.
-    __uintcap_t __c[33];
-  };
-  mips_cheri_thread_state_t _registers;
-  static_assert(__builtin_offsetof(mips_cheri_thread_state_t, __c) ==
-                _LIBUNWIND_CAPREG_START * sizeof(uint64_t), "Wrong offset for capregs");
-};
-
-inline Registers_mips_cheri::Registers_mips_cheri(const void *registers) {
-  static_assert((check_fit<Registers_mips_cheri, unw_context_t>::does_fit),
-                "mips_cheri registers do not fit into unw_context_t");
-  memcpy(&_registers, static_cast<const uint8_t *>(registers),
-         sizeof(_registers));
-#if defined(CHERI_DUMP_REGISTERS)
-  dump("Registers_mips_cheri::Registers_mips_cheri(const void *registers)");
-#endif
-
-}
-
-inline uintcap_t Registers_mips_cheri::getCapabilityRegister(int regNum) const {
-  assert(validCapabilityRegister(regNum));
-  if (regNum == UNW_REG_IP)
-    return getIP();
-  if (regNum == UNW_REG_SP)
-    return getSP();
-  return _registers.__c[regNum - UNW_MIPS_DDC];
-}
-
-inline void Registers_mips_cheri::setCapabilityRegister(int regNum, uintcap_t value) {
-  assert(validCapabilityRegister(regNum));
-  if (regNum == UNW_REG_IP) {
-    setIP(value);
-    return;
-  }
-  if (regNum == UNW_REG_SP) {
-    _registers.__c[11] = value;
-    return;
-  }
-  _registers.__c[regNum - UNW_MIPS_DDC] = value;
-}
-
-inline Registers_mips_cheri::Registers_mips_cheri() {
-  memset(&_registers, 0, sizeof(_registers));
-}
-
-inline bool Registers_mips_cheri::validRegister(int regNum) const {
-  if (regNum == UNW_REG_IP)
-    return true;
-  if (regNum == UNW_REG_SP)
-    return true;
-  if (regNum < 0)
-    return false;
-  // FIXME: Hard float
-  if (regNum <= 32)
-    return true;
-  if (regNum == UNW_MIPS_LO || regNum == UNW_MIPS_HI)
-    return true;
-  if (regNum >= UNW_MIPS_DDC && regNum <= UNW_MIPS_C31)
-    return true;
-  return false;
-}
-
-inline uintptr_t Registers_mips_cheri::getRegister(int regNum) const {
-  if (regNum >= 1 && regNum <= 32)
-    return _registers.__r[regNum];
-  if (regNum >= UNW_MIPS_DDC && regNum <= UNW_MIPS_C31)
-    return _registers.__c[regNum - UNW_MIPS_DDC];
-
-  switch (regNum) {
-  case 0:
-    return 0u;
-  case UNW_MIPS_LO:
-    return _registers.__lo;
-  case UNW_MIPS_HI:
-    return _registers.__hi;
-  case UNW_REG_IP:
-    CHERI_DBG("GETTING $PCC: %#p\n", (void*)_registers.__c[32]);
-    return getIP();
-  case UNW_REG_SP:
-    return getSP();
-  }
-  _LIBUNWIND_ABORT("unsupported mips_cheri register");
-}
-
-inline void Registers_mips_cheri::setRegister(int regNum, uintptr_t value) {
-  if (regNum >= UNW_MIPS_R0 && regNum <= UNW_MIPS_R31) {
-    _registers.__r[regNum - UNW_MIPS_R0] = addr_get(value);
-    return;
-  }
-  if (regNum >= UNW_MIPS_DDC && regNum <= UNW_MIPS_C31) {
-    _registers.__c[regNum - UNW_MIPS_DDC] = value;
-    return;
-  }
-
-  switch (regNum) {
-  case UNW_MIPS_LO:
-    _registers.__lo = addr_get(value);
-    return;
-  case UNW_MIPS_HI:
-    _registers.__hi = addr_get(value);
-    return;
-  case UNW_REG_IP:
-    setIP(value);
-    return;
-  case UNW_REG_SP:
-    setSP(value);
-    return;
-  default:
-    _LIBUNWIND_ABORT("unsupported mips_cheri register");
-  }
-}
-
-inline bool Registers_mips_cheri::validCapabilityRegister(int regNum) const {
-  return (regNum >= UNW_MIPS_DDC && regNum <= UNW_MIPS_C31) ||
-         regNum == UNW_REG_SP || regNum == UNW_REG_IP;
-}
-
-inline bool Registers_mips_cheri::validFloatRegister(int /* regNum */) const {
-  return false;
-}
-
-inline double Registers_mips_cheri::getFloatRegister(int /* regNum */) const {
-  _LIBUNWIND_ABORT("mips_cheri float support not implemented");
-}
-
-inline void Registers_mips_cheri::setFloatRegister(int /* regNum */,
-                                             double /* value */) {
-  _LIBUNWIND_ABORT("mips_cheri float support not implemented");
-}
-
-inline bool Registers_mips_cheri::validVectorRegister(int /* regNum */) const {
-  return false;
-}
-
-inline v128 Registers_mips_cheri::getVectorRegister(int /* regNum */) const {
-  _LIBUNWIND_ABORT("mips_cheri vector support not implemented");
-}
-
-inline void Registers_mips_cheri::setVectorRegister(int /* regNum */, v128 /* value */) {
-  _LIBUNWIND_ABORT("mips_cheri vector support not implemented");
-}
-
-inline const char *Registers_mips_cheri::getRegisterName(int regNum) {
-  switch (regNum) {
-  case UNW_MIPS_R0:
-    return "$0";
-  case UNW_MIPS_R1:
-    return "$1";
-  case UNW_MIPS_R2:
-    return "$2";
-  case UNW_MIPS_R3:
-    return "$3";
-  case UNW_MIPS_R4:
-    return "$4";
-  case UNW_MIPS_R5:
-    return "$5";
-  case UNW_MIPS_R6:
-    return "$6";
-  case UNW_MIPS_R7:
-    return "$7";
-  case UNW_MIPS_R8:
-    return "$8";
-  case UNW_MIPS_R9:
-    return "$9";
-  case UNW_MIPS_R10:
-    return "$10";
-  case UNW_MIPS_R11:
-    return "$11";
-  case UNW_MIPS_R12:
-    return "$12";
-  case UNW_MIPS_R13:
-    return "$13";
-  case UNW_MIPS_R14:
-    return "$14";
-  case UNW_MIPS_R15:
-    return "$15";
-  case UNW_MIPS_R16:
-    return "$16";
-  case UNW_MIPS_R17:
-    return "$17";
-  case UNW_MIPS_R18:
-    return "$18";
-  case UNW_MIPS_R19:
-    return "$19";
-  case UNW_MIPS_R20:
-    return "$20";
-  case UNW_MIPS_R21:
-    return "$21";
-  case UNW_MIPS_R22:
-    return "$22";
-  case UNW_MIPS_R23:
-    return "$23";
-  case UNW_MIPS_R24:
-    return "$24";
-  case UNW_MIPS_R25:
-    return "$25";
-  case UNW_MIPS_R26:
-    return "$26";
-  case UNW_MIPS_R27:
-    return "$27";
-  case UNW_MIPS_R28:
-    return "$28";
-  case UNW_MIPS_R29:
-    return "$29";
-  case UNW_MIPS_R30:
-    return "$30";
-  case UNW_MIPS_R31:
-    return "$31";
-  case UNW_MIPS_HI:
-    return "$hi";
-  case UNW_MIPS_LO:
-    return "$lo";
-  case UNW_MIPS_DDC:
-    return "$ddc";
-  case UNW_MIPS_C1:
-    return "$c1";
-  case UNW_MIPS_C2:
-    return "$c2";
-  case UNW_MIPS_C3:
-    return "$c3";
-  case UNW_MIPS_C4:
-    return "$c4";
-  case UNW_MIPS_C5:
-    return "$c5";
-  case UNW_MIPS_C6:
-    return "$c6";
-  case UNW_MIPS_C7:
-    return "$c7";
-  case UNW_MIPS_C8:
-    return "$c8";
-  case UNW_MIPS_C9:
-    return "$c9";
-  case UNW_MIPS_C10:
-    return "$c10";
-  case UNW_MIPS_C11:
-    return "$c11";
-  case UNW_MIPS_C12:
-    return "$c12";
-  case UNW_MIPS_C13:
-    return "$c13";
-  case UNW_MIPS_C14:
-    return "$c14";
-  case UNW_MIPS_C15:
-    return "$c15";
-  case UNW_MIPS_C16:
-    return "$c16";
-  case UNW_MIPS_C17:
-    return "$c17";
-  case UNW_MIPS_C18:
-    return "$c18";
-  case UNW_MIPS_C19:
-    return "$c19";
-  case UNW_MIPS_C20:
-    return "$c20";
-  case UNW_MIPS_C21:
-    return "$c21";
-  case UNW_MIPS_C22:
-    return "$c22";
-  case UNW_MIPS_C23:
-    return "$c23";
-  case UNW_MIPS_C24:
-    return "$c24";
-  case UNW_MIPS_C25:
-    return "$c25";
-  case UNW_MIPS_C26:
-    return "$c26";
-  case UNW_MIPS_C27:
-    return "$c27";
-  case UNW_MIPS_C28:
-    return "$c28";
-  case UNW_MIPS_C29:
-    return "$c29";
-  case UNW_MIPS_C30:
-    return "$c30";
-  case UNW_MIPS_C31:
-    return "$c31";
-  default:
-    return "unknown register";
-  }
-
 }
 #endif // _LIBUNWIND_TARGET_MIPS_NEWABI
 
@@ -3888,7 +3445,9 @@ public:
   void        setVectorRegister(int num, v128 value);
   static const char *getRegisterName(int num);
   void        jumpto();
-  static int  lastDwarfRegNum() { return _LIBUNWIND_HIGHEST_DWARF_REGISTER_SPARC; }
+  static constexpr int lastDwarfRegNum() {
+    return _LIBUNWIND_HIGHEST_DWARF_REGISTER_SPARC;
+  }
   static int  getArch() { return REGISTERS_SPARC; }
 
   uint64_t  getSP() const         { return _registers.__regs[UNW_SPARC_O6]; }
@@ -4053,6 +3612,191 @@ inline const char *Registers_sparc::getRegisterName(int regNum) {
 }
 #endif // _LIBUNWIND_TARGET_SPARC
 
+#if defined(_LIBUNWIND_TARGET_SPARC64)
+/// Registers_sparc64 holds the register state of a thread in a 64-bit
+/// sparc process.
+class _LIBUNWIND_HIDDEN Registers_sparc64 {
+public:
+  Registers_sparc64() = default;
+  Registers_sparc64(const void *registers);
+
+  bool validRegister(int num) const;
+  uint64_t getRegister(int num) const;
+  void setRegister(int num, uint64_t value);
+  bool validFloatRegister(int num) const;
+  double getFloatRegister(int num) const;
+  void setFloatRegister(int num, double value);
+  bool validVectorRegister(int num) const;
+  v128 getVectorRegister(int num) const;
+  void setVectorRegister(int num, v128 value);
+  const char *getRegisterName(int num);
+  void jumpto();
+  static constexpr int lastDwarfRegNum() {
+    return _LIBUNWIND_HIGHEST_DWARF_REGISTER_SPARC64;
+  }
+  static int getArch() { return REGISTERS_SPARC64; }
+
+  uint64_t getSP() const { return _registers.__regs[UNW_SPARC_O6] + 2047; }
+  void setSP(uint64_t value) { _registers.__regs[UNW_SPARC_O6] = value - 2047; }
+  uint64_t getIP() const { return _registers.__regs[UNW_SPARC_O7]; }
+  void setIP(uint64_t value) { _registers.__regs[UNW_SPARC_O7] = value; }
+  uint64_t getWCookie() const { return _wcookie; }
+
+private:
+  struct sparc64_thread_state_t {
+    uint64_t __regs[32];
+  };
+
+  sparc64_thread_state_t _registers{};
+  uint64_t _wcookie = 0;
+};
+
+inline Registers_sparc64::Registers_sparc64(const void *registers) {
+  static_assert((check_fit<Registers_sparc64, unw_context_t>::does_fit),
+                "sparc64 registers do not fit into unw_context_t");
+  memcpy(&_registers, registers, sizeof(_registers));
+  memcpy(&_wcookie,
+         static_cast<const uint8_t *>(registers) + sizeof(_registers),
+         sizeof(_wcookie));
+}
+
+inline bool Registers_sparc64::validRegister(int regNum) const {
+  if (regNum == UNW_REG_IP)
+    return true;
+  if (regNum == UNW_REG_SP)
+    return true;
+  if (regNum < 0)
+    return false;
+  if (regNum <= UNW_SPARC_I7)
+    return true;
+  return false;
+}
+
+inline uint64_t Registers_sparc64::getRegister(int regNum) const {
+  if (regNum >= UNW_SPARC_G0 && regNum <= UNW_SPARC_I7)
+    return _registers.__regs[regNum];
+
+  switch (regNum) {
+  case UNW_REG_IP:
+    return _registers.__regs[UNW_SPARC_O7];
+  case UNW_REG_SP:
+    return _registers.__regs[UNW_SPARC_O6] + 2047;
+  }
+  _LIBUNWIND_ABORT("unsupported sparc64 register");
+}
+
+inline void Registers_sparc64::setRegister(int regNum, uint64_t value) {
+  if (regNum >= UNW_SPARC_G0 && regNum <= UNW_SPARC_I7) {
+    _registers.__regs[regNum] = value;
+    return;
+  }
+
+  switch (regNum) {
+  case UNW_REG_IP:
+    _registers.__regs[UNW_SPARC_O7] = value;
+    return;
+  case UNW_REG_SP:
+    _registers.__regs[UNW_SPARC_O6] = value - 2047;
+    return;
+  }
+  _LIBUNWIND_ABORT("unsupported sparc64 register");
+}
+
+inline bool Registers_sparc64::validFloatRegister(int) const { return false; }
+
+inline double Registers_sparc64::getFloatRegister(int) const {
+  _LIBUNWIND_ABORT("no sparc64 float registers");
+}
+
+inline void Registers_sparc64::setFloatRegister(int, double) {
+  _LIBUNWIND_ABORT("no sparc64 float registers");
+}
+
+inline bool Registers_sparc64::validVectorRegister(int) const { return false; }
+
+inline v128 Registers_sparc64::getVectorRegister(int) const {
+  _LIBUNWIND_ABORT("no sparc64 vector registers");
+}
+
+inline void Registers_sparc64::setVectorRegister(int, v128) {
+  _LIBUNWIND_ABORT("no sparc64 vector registers");
+}
+
+inline const char *Registers_sparc64::getRegisterName(int regNum) {
+  switch (regNum) {
+  case UNW_REG_IP:
+    return "pc";
+  case UNW_SPARC_G0:
+    return "g0";
+  case UNW_SPARC_G1:
+    return "g1";
+  case UNW_SPARC_G2:
+    return "g2";
+  case UNW_SPARC_G3:
+    return "g3";
+  case UNW_SPARC_G4:
+    return "g4";
+  case UNW_SPARC_G5:
+    return "g5";
+  case UNW_SPARC_G6:
+    return "g6";
+  case UNW_SPARC_G7:
+    return "g7";
+  case UNW_SPARC_O0:
+    return "o0";
+  case UNW_SPARC_O1:
+    return "o1";
+  case UNW_SPARC_O2:
+    return "o2";
+  case UNW_SPARC_O3:
+    return "o3";
+  case UNW_SPARC_O4:
+    return "o4";
+  case UNW_SPARC_O5:
+    return "o5";
+  case UNW_REG_SP:
+  case UNW_SPARC_O6:
+    return "o6";
+  case UNW_SPARC_O7:
+    return "o7";
+  case UNW_SPARC_L0:
+    return "l0";
+  case UNW_SPARC_L1:
+    return "l1";
+  case UNW_SPARC_L2:
+    return "l2";
+  case UNW_SPARC_L3:
+    return "l3";
+  case UNW_SPARC_L4:
+    return "l4";
+  case UNW_SPARC_L5:
+    return "l5";
+  case UNW_SPARC_L6:
+    return "l6";
+  case UNW_SPARC_L7:
+    return "l7";
+  case UNW_SPARC_I0:
+    return "i0";
+  case UNW_SPARC_I1:
+    return "i1";
+  case UNW_SPARC_I2:
+    return "i2";
+  case UNW_SPARC_I3:
+    return "i3";
+  case UNW_SPARC_I4:
+    return "i4";
+  case UNW_SPARC_I5:
+    return "i5";
+  case UNW_SPARC_I6:
+    return "i6";
+  case UNW_SPARC_I7:
+    return "i7";
+  default:
+    return "unknown register";
+  }
+}
+#endif // _LIBUNWIND_TARGET_SPARC64
+
 #if defined(_LIBUNWIND_TARGET_HEXAGON)
 /// Registers_hexagon holds the register state of a thread in a Hexagon QDSP6
 /// process.
@@ -4072,7 +3816,9 @@ public:
   void        setVectorRegister(int num, v128 value);
   const char *getRegisterName(int num);
   void        jumpto();
-  static int  lastDwarfRegNum() { return _LIBUNWIND_HIGHEST_DWARF_REGISTER_HEXAGON; }
+  static constexpr int lastDwarfRegNum() {
+    return _LIBUNWIND_HIGHEST_DWARF_REGISTER_HEXAGON;
+  }
   static int  getArch() { return REGISTERS_HEXAGON; }
 
   uint32_t  getSP() const         { return _registers.__r[UNW_HEXAGON_R29]; }
@@ -4240,6 +3986,14 @@ inline const char *Registers_hexagon::getRegisterName(int regNum) {
 
 // This check makes it safe when LIBUNWIND_ENABLE_CROSS_UNWINDING enabled.
 # ifdef __riscv
+#  if __riscv_xlen == 32
+typedef uint32_t reg_t;
+#  elif __riscv_xlen == 64
+typedef uint64_t reg_t;
+#  else
+#   error "Unsupported __riscv_xlen"
+#  endif
+
 #  if defined(__riscv_flen)
 #   if __riscv_flen == 64
 typedef double fp_t;
@@ -4254,17 +4008,18 @@ typedef double fp_t;
 #  endif
 # else
 // Use Max possible width when cross unwinding
+typedef uint64_t reg_t;
 typedef double fp_t;
 # define __riscv_xlen 64
 # define __riscv_flen 64
 #endif
-typedef uintptr_t reg_t;
 
 /// Registers_riscv holds the register state of a thread.
 class _LIBUNWIND_HIDDEN Registers_riscv {
 public:
   Registers_riscv();
   Registers_riscv(const void *registers);
+
   bool        validRegister(int num) const;
   reg_t       getRegister(int num) const;
   void        setRegister(int num, reg_t value);
@@ -4276,16 +4031,10 @@ public:
   void        setVectorRegister(int num, v128 value);
   static const char *getRegisterName(int num);
   void        jumpto();
-  static int  lastDwarfRegNum() { return _LIBUNWIND_HIGHEST_DWARF_REGISTER_RISCV; }
+  static constexpr int lastDwarfRegNum() {
+    return _LIBUNWIND_HIGHEST_DWARF_REGISTER_RISCV;
+  }
   static int  getArch() { return REGISTERS_RISCV; }
-
-#ifdef __CHERI_PURE_CAPABILITY__
-  bool        validCapabilityRegister(int num) const;
-  uintcap_t   getCapabilityRegister(int num) const;
-  void        setCapabilityRegister(int num, uintcap_t value);
-#else
-  CAPABILITIES_NOT_SUPPORTED
-#endif
 
   reg_t       getSP() const { return _registers[2]; }
   void        setSP(reg_t value) { _registers[2] = value; }
@@ -4304,10 +4053,7 @@ inline Registers_riscv::Registers_riscv(const void *registers) {
   static_assert((check_fit<Registers_riscv, unw_context_t>::does_fit),
                 "riscv registers do not fit into unw_context_t");
   memcpy(&_registers, registers, sizeof(_registers));
-# ifdef __CHERI_PURE_CAPABILITY__
-  static_assert(sizeof(_registers) == 0x200,
-                "expected float registers to be at offset 512");
-# elif __riscv_xlen == 32
+# if __riscv_xlen == 32
   static_assert(sizeof(_registers) == 0x80,
                 "expected float registers to be at offset 128");
 # elif __riscv_xlen == 64
@@ -4368,30 +4114,6 @@ inline void Registers_riscv::setRegister(int regNum, reg_t value) {
   else
     _LIBUNWIND_ABORT("unsupported riscv register");
 }
-
-#ifdef __CHERI_PURE_CAPABILITY__
-inline bool Registers_riscv::validCapabilityRegister(int regNum) const {
-  if (regNum == UNW_REG_IP)
-    return true;
-  if (regNum == UNW_REG_SP)
-    return true;
-  if (regNum < 0)
-    return false;
-  if (regNum > UNW_RISCV_X31)
-    return false;
-  return true;
-}
-
-inline uintcap_t Registers_riscv::getCapabilityRegister(int regNum) const {
-  assert(validCapabilityRegister(regNum));
-  return getRegister(regNum);
-}
-
-inline void Registers_riscv::setCapabilityRegister(int regNum, uintcap_t value) {
-  assert(validCapabilityRegister(regNum));
-  setRegister(regNum, value);
-}
-#endif
 
 inline const char *Registers_riscv::getRegisterName(int regNum) {
   switch (regNum) {
@@ -4597,7 +4319,9 @@ public:
   void        setVectorRegister(int num, v128 value);
   static const char *getRegisterName(int num);
   void        jumpto();
-  static int  lastDwarfRegNum() { return _LIBUNWIND_HIGHEST_DWARF_REGISTER_VE; }
+  static constexpr int lastDwarfRegNum() {
+    return _LIBUNWIND_HIGHEST_DWARF_REGISTER_VE;
+  }
   static int  getArch() { return REGISTERS_VE; }
 
   uint64_t  getSP() const         { return _registers.__s[11]; }
@@ -5018,6 +4742,295 @@ inline const char *Registers_ve::getRegisterName(int regNum) {
   return "unknown register";
 }
 #endif // _LIBUNWIND_TARGET_VE
+
+#if defined(_LIBUNWIND_TARGET_S390X)
+/// Registers_s390x holds the register state of a thread in a
+/// 64-bit Linux on IBM zSystems process.
+class _LIBUNWIND_HIDDEN Registers_s390x {
+public:
+  Registers_s390x();
+  Registers_s390x(const void *registers);
+
+  bool        validRegister(int num) const;
+  uint64_t    getRegister(int num) const;
+  void        setRegister(int num, uint64_t value);
+  bool        validFloatRegister(int num) const;
+  double      getFloatRegister(int num) const;
+  void        setFloatRegister(int num, double value);
+  bool        validVectorRegister(int num) const;
+  v128        getVectorRegister(int num) const;
+  void        setVectorRegister(int num, v128 value);
+  static const char *getRegisterName(int num);
+  void        jumpto();
+  static constexpr int lastDwarfRegNum() {
+    return _LIBUNWIND_HIGHEST_DWARF_REGISTER_S390X;
+  }
+  static int  getArch() { return REGISTERS_S390X; }
+
+  uint64_t  getSP() const         { return _registers.__gpr[15]; }
+  void      setSP(uint64_t value) { _registers.__gpr[15] = value; }
+  uint64_t  getIP() const         { return _registers.__pswa; }
+  void      setIP(uint64_t value) { _registers.__pswa = value; }
+
+private:
+  struct s390x_thread_state_t {
+    uint64_t __pswm;    // Problem Status Word: Mask
+    uint64_t __pswa;    // Problem Status Word: Address (PC)
+    uint64_t __gpr[16]; // General Purpose Registers
+    double __fpr[16];   // Floating-Point Registers
+  };
+
+  s390x_thread_state_t _registers;
+};
+
+inline Registers_s390x::Registers_s390x(const void *registers) {
+  static_assert((check_fit<Registers_s390x, unw_context_t>::does_fit),
+                "s390x registers do not fit into unw_context_t");
+  memcpy(&_registers, static_cast<const uint8_t *>(registers),
+         sizeof(_registers));
+}
+
+inline Registers_s390x::Registers_s390x() {
+  memset(&_registers, 0, sizeof(_registers));
+}
+
+inline bool Registers_s390x::validRegister(int regNum) const {
+  switch (regNum) {
+  case UNW_S390X_PSWM:
+  case UNW_S390X_PSWA:
+  case UNW_REG_IP:
+  case UNW_REG_SP:
+      return true;
+  }
+
+  if (regNum >= UNW_S390X_R0 && regNum <= UNW_S390X_R15)
+    return true;
+
+  return false;
+}
+
+inline uint64_t Registers_s390x::getRegister(int regNum) const {
+  if (regNum >= UNW_S390X_R0 && regNum <= UNW_S390X_R15)
+    return _registers.__gpr[regNum - UNW_S390X_R0];
+
+  switch (regNum) {
+  case UNW_S390X_PSWM:
+    return _registers.__pswm;
+  case UNW_S390X_PSWA:
+  case UNW_REG_IP:
+    return _registers.__pswa;
+  case UNW_REG_SP:
+    return _registers.__gpr[15];
+  }
+  _LIBUNWIND_ABORT("unsupported s390x register");
+}
+
+inline void Registers_s390x::setRegister(int regNum, uint64_t value) {
+  if (regNum >= UNW_S390X_R0 && regNum <= UNW_S390X_R15) {
+    _registers.__gpr[regNum - UNW_S390X_R0] = value;
+    return;
+  }
+
+  switch (regNum) {
+  case UNW_S390X_PSWM:
+    _registers.__pswm = value;
+    return;
+  case UNW_S390X_PSWA:
+  case UNW_REG_IP:
+    _registers.__pswa = value;
+    return;
+  case UNW_REG_SP:
+    _registers.__gpr[15] = value;
+    return;
+  }
+  _LIBUNWIND_ABORT("unsupported s390x register");
+}
+
+inline bool Registers_s390x::validFloatRegister(int regNum) const {
+  return regNum >= UNW_S390X_F0 && regNum <= UNW_S390X_F15;
+}
+
+inline double Registers_s390x::getFloatRegister(int regNum) const {
+  // NOTE: FPR DWARF register numbers are not consecutive.
+  switch (regNum) {
+  case UNW_S390X_F0:
+    return _registers.__fpr[0];
+  case UNW_S390X_F1:
+    return _registers.__fpr[1];
+  case UNW_S390X_F2:
+    return _registers.__fpr[2];
+  case UNW_S390X_F3:
+    return _registers.__fpr[3];
+  case UNW_S390X_F4:
+    return _registers.__fpr[4];
+  case UNW_S390X_F5:
+    return _registers.__fpr[5];
+  case UNW_S390X_F6:
+    return _registers.__fpr[6];
+  case UNW_S390X_F7:
+    return _registers.__fpr[7];
+  case UNW_S390X_F8:
+    return _registers.__fpr[8];
+  case UNW_S390X_F9:
+    return _registers.__fpr[9];
+  case UNW_S390X_F10:
+    return _registers.__fpr[10];
+  case UNW_S390X_F11:
+    return _registers.__fpr[11];
+  case UNW_S390X_F12:
+    return _registers.__fpr[12];
+  case UNW_S390X_F13:
+    return _registers.__fpr[13];
+  case UNW_S390X_F14:
+    return _registers.__fpr[14];
+  case UNW_S390X_F15:
+    return _registers.__fpr[15];
+  }
+  _LIBUNWIND_ABORT("unsupported s390x register");
+}
+
+inline void Registers_s390x::setFloatRegister(int regNum, double value) {
+  // NOTE: FPR DWARF register numbers are not consecutive.
+  switch (regNum) {
+  case UNW_S390X_F0:
+    _registers.__fpr[0] = value;
+    return;
+  case UNW_S390X_F1:
+    _registers.__fpr[1] = value;
+    return;
+  case UNW_S390X_F2:
+    _registers.__fpr[2] = value;
+    return;
+  case UNW_S390X_F3:
+    _registers.__fpr[3] = value;
+    return;
+  case UNW_S390X_F4:
+    _registers.__fpr[4] = value;
+    return;
+  case UNW_S390X_F5:
+    _registers.__fpr[5] = value;
+    return;
+  case UNW_S390X_F6:
+    _registers.__fpr[6] = value;
+    return;
+  case UNW_S390X_F7:
+    _registers.__fpr[7] = value;
+    return;
+  case UNW_S390X_F8:
+    _registers.__fpr[8] = value;
+    return;
+  case UNW_S390X_F9:
+    _registers.__fpr[9] = value;
+    return;
+  case UNW_S390X_F10:
+    _registers.__fpr[10] = value;
+    return;
+  case UNW_S390X_F11:
+    _registers.__fpr[11] = value;
+    return;
+  case UNW_S390X_F12:
+    _registers.__fpr[12] = value;
+    return;
+  case UNW_S390X_F13:
+    _registers.__fpr[13] = value;
+    return;
+  case UNW_S390X_F14:
+    _registers.__fpr[14] = value;
+    return;
+  case UNW_S390X_F15:
+    _registers.__fpr[15] = value;
+    return;
+  }
+  _LIBUNWIND_ABORT("unsupported s390x register");
+}
+
+inline bool Registers_s390x::validVectorRegister(int /*regNum*/) const {
+  return false;
+}
+
+inline v128 Registers_s390x::getVectorRegister(int /*regNum*/) const {
+  _LIBUNWIND_ABORT("s390x vector support not implemented");
+}
+
+inline void Registers_s390x::setVectorRegister(int /*regNum*/, v128 /*value*/) {
+  _LIBUNWIND_ABORT("s390x vector support not implemented");
+}
+
+inline const char *Registers_s390x::getRegisterName(int regNum) {
+  switch (regNum) {
+  case UNW_REG_IP:
+    return "ip";
+  case UNW_REG_SP:
+    return "sp";
+  case UNW_S390X_R0:
+    return "r0";
+  case UNW_S390X_R1:
+    return "r1";
+  case UNW_S390X_R2:
+    return "r2";
+  case UNW_S390X_R3:
+    return "r3";
+  case UNW_S390X_R4:
+    return "r4";
+  case UNW_S390X_R5:
+    return "r5";
+  case UNW_S390X_R6:
+    return "r6";
+  case UNW_S390X_R7:
+    return "r7";
+  case UNW_S390X_R8:
+    return "r8";
+  case UNW_S390X_R9:
+    return "r9";
+  case UNW_S390X_R10:
+    return "r10";
+  case UNW_S390X_R11:
+    return "r11";
+  case UNW_S390X_R12:
+    return "r12";
+  case UNW_S390X_R13:
+    return "r13";
+  case UNW_S390X_R14:
+    return "r14";
+  case UNW_S390X_R15:
+    return "r15";
+  case UNW_S390X_F0:
+    return "f0";
+  case UNW_S390X_F1:
+    return "f1";
+  case UNW_S390X_F2:
+    return "f2";
+  case UNW_S390X_F3:
+    return "f3";
+  case UNW_S390X_F4:
+    return "f4";
+  case UNW_S390X_F5:
+    return "f5";
+  case UNW_S390X_F6:
+    return "f6";
+  case UNW_S390X_F7:
+    return "f7";
+  case UNW_S390X_F8:
+    return "f8";
+  case UNW_S390X_F9:
+    return "f9";
+  case UNW_S390X_F10:
+    return "f10";
+  case UNW_S390X_F11:
+    return "f11";
+  case UNW_S390X_F12:
+    return "f12";
+  case UNW_S390X_F13:
+    return "f13";
+  case UNW_S390X_F14:
+    return "f14";
+  case UNW_S390X_F15:
+    return "f15";
+  }
+  return "unknown register";
+}
+#endif // _LIBUNWIND_TARGET_S390X
+
 
 } // namespace libunwind
 

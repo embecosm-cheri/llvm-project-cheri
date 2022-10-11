@@ -60,7 +60,7 @@ void* __capability csetbounds_malloc(void) {
 // JSON-NEXT: 		"pass": "CHERI range checker"
 // JSON-NEXT: 	},
 // JSON-NEXT: 	{
-// JSON-NEXT: 		"alignment": 16,
+// JSON-NEXT: 		"alignment": 1,
 // JSON-NEXT: 		"size": 16,
 // JSON-NEXT: 		"location": "{{.+}}/CodeGen/cheri/csetbounds-stats-basic.c:43:22",
 // JSON-NEXT: 		"pass": "CHERI range checker"

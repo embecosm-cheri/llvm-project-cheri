@@ -5,24 +5,23 @@
 struct a {
   void *__capability ptr;
 };
-// CHECK-LABEL: define dso_local void @c(
-// CHECK:       entry:
-// CHECK-NEXT:    %first = alloca %struct.a, align [[#CAP_SIZE]], addrspace(200)
-// CHECK-NEXT:    %second = alloca %struct.a, align [[#CAP_SIZE]], addrspace(200)
-// CHECK-NEXT:    %0 = bitcast %struct.a addrspace(200)* %second to i8 addrspace(200)*
-// CHECK-NEXT:    %ptr = getelementptr inbounds %struct.a, %struct.a addrspace(200)* %first, i32 0, i32 0
-// CHECK-NEXT:    store i8 addrspace(200)* %0, i8 addrspace(200)* addrspace(200)* %ptr, align [[#CAP_SIZE]]
+// CHECK-LABEL: @c(
+// CHECK-NEXT:  entry:
+// CHECK-NEXT:    [[FIRST:%.*]] = alloca [[STRUCT_A:%.*]], align 16, addrspace(200)
+// CHECK-NEXT:    [[SECOND:%.*]] = alloca [[STRUCT_A]], align 16, addrspace(200)
+// CHECK-NEXT:    [[PTR:%.*]] = getelementptr inbounds [[STRUCT_A]], ptr addrspace(200) [[FIRST]], i32 0, i32 0
+// CHECK-NEXT:    store ptr addrspace(200) [[SECOND]], ptr addrspace(200) [[PTR]], align 16
 // CHECK-NEXT:    ret void
 //
-// HYBRID-LABEL: define dso_local void @c(
-// HYBRID:       entry:
-// HYBRID-NEXT:    %first = alloca %struct.a, align [[#CAP_SIZE]]
-// HYBRID-NEXT:    %second = alloca %struct.a, align [[#CAP_SIZE]]
-// HYBRID-NEXT:    %0 = bitcast %struct.a* %second to i8*
-// HYBRID-NEXT:    %1 = addrspacecast i8* %0 to i8 addrspace(200)*
-// HYBRID-NEXT:    %ptr = getelementptr inbounds %struct.a, %struct.a* %first, i32 0, i32 0
-// HYBRID-NEXT:    store i8 addrspace(200)* %1, i8 addrspace(200)** %ptr, align [[#CAP_SIZE]]
+// HYBRID-LABEL: @c(
+// HYBRID-NEXT:  entry:
+// HYBRID-NEXT:    [[FIRST:%.*]] = alloca [[STRUCT_A:%.*]], align 16
+// HYBRID-NEXT:    [[SECOND:%.*]] = alloca [[STRUCT_A]], align 16
+// HYBRID-NEXT:    [[SECOND_ASCAST:%.*]] = addrspacecast ptr [[SECOND]] to ptr addrspace(200)
+// HYBRID-NEXT:    [[PTR:%.*]] = getelementptr inbounds [[STRUCT_A]], ptr [[FIRST]], i32 0, i32 0
+// HYBRID-NEXT:    store ptr addrspace(200) [[SECOND_ASCAST]], ptr [[PTR]], align 16
 // HYBRID-NEXT:    ret void
+//
 void c(void) {
   struct a first;
   struct a second;
@@ -31,53 +30,46 @@ void c(void) {
 
 struct foo;
 
-// CHECK-LABEL: define dso_local signext i32 @test(
-// CHECK:       entry:
-// CHECK-NEXT:    %fooptr.addr = alloca %struct.foo addrspace(200)*, align [[#CAP_SIZE]], addrspace(200)
-// CHECK-NEXT:    %foocap.addr = alloca %struct.foo addrspace(200)*, align [[#CAP_SIZE]], addrspace(200)
-// CHECK-NEXT:    %ptr = alloca i32 addrspace(200)*, align [[#CAP_SIZE]], addrspace(200)
-// CHECK-NEXT:    %cap = alloca i32 addrspace(200)*, align [[#CAP_SIZE]], addrspace(200)
-// CHECK-NEXT:    store %struct.foo addrspace(200)* %fooptr, %struct.foo addrspace(200)* addrspace(200)* %fooptr.addr, align [[#CAP_SIZE]]
-// CHECK-NEXT:    store %struct.foo addrspace(200)* %foocap, %struct.foo addrspace(200)* addrspace(200)* %foocap.addr, align [[#CAP_SIZE]]
-// CHECK-NEXT:    %0 = load %struct.foo addrspace(200)*, %struct.foo addrspace(200)* addrspace(200)* %foocap.addr, align [[#CAP_SIZE]]
-// CHECK-NEXT:    %1 = bitcast %struct.foo addrspace(200)* %0 to i8 addrspace(200)*
-// CHECK-NEXT:    %2 = bitcast i8 addrspace(200)* %1 to i32 addrspace(200)*
-// CHECK-NEXT:    store i32 addrspace(200)* %2, i32 addrspace(200)* addrspace(200)* %ptr, align [[#CAP_SIZE]]
-// CHECK-NEXT:    %3 = load %struct.foo addrspace(200)*, %struct.foo addrspace(200)* addrspace(200)* %fooptr.addr, align [[#CAP_SIZE]]
-// CHECK-NEXT:    %4 = bitcast %struct.foo addrspace(200)* %3 to i8 addrspace(200)*
-// CHECK-NEXT:    %5 = bitcast i8 addrspace(200)* %4 to i32 addrspace(200)*
-// CHECK-NEXT:    store i32 addrspace(200)* %5, i32 addrspace(200)* addrspace(200)* %cap, align [[#CAP_SIZE]]
-// CHECK-NEXT:    %6 = load i32 addrspace(200)*, i32 addrspace(200)* addrspace(200)* %ptr, align [[#CAP_SIZE]]
-// CHECK-NEXT:    %7 = load i32, i32 addrspace(200)* %6, align 4
-// CHECK-NEXT:    %8 = load i32 addrspace(200)*, i32 addrspace(200)* addrspace(200)* %cap, align [[#CAP_SIZE]]
-// CHECK-NEXT:    %9 = load i32, i32 addrspace(200)* %8, align 4
-// CHECK-NEXT:    %add = add nsw i32 %7, %9
-// CHECK-NEXT:    ret i32 %add
+// CHECK-LABEL: @test(
+// CHECK-NEXT:  entry:
+// CHECK-NEXT:    [[FOOPTR_ADDR:%.*]] = alloca ptr addrspace(200), align 16, addrspace(200)
+// CHECK-NEXT:    [[FOOCAP_ADDR:%.*]] = alloca ptr addrspace(200), align 16, addrspace(200)
+// CHECK-NEXT:    [[PTR:%.*]] = alloca ptr addrspace(200), align 16, addrspace(200)
+// CHECK-NEXT:    [[CAP:%.*]] = alloca ptr addrspace(200), align 16, addrspace(200)
+// CHECK-NEXT:    store ptr addrspace(200) [[FOOPTR:%.*]], ptr addrspace(200) [[FOOPTR_ADDR]], align 16
+// CHECK-NEXT:    store ptr addrspace(200) [[FOOCAP:%.*]], ptr addrspace(200) [[FOOCAP_ADDR]], align 16
+// CHECK-NEXT:    [[TMP0:%.*]] = load ptr addrspace(200), ptr addrspace(200) [[FOOCAP_ADDR]], align 16
+// CHECK-NEXT:    store ptr addrspace(200) [[TMP0]], ptr addrspace(200) [[PTR]], align 16
+// CHECK-NEXT:    [[TMP1:%.*]] = load ptr addrspace(200), ptr addrspace(200) [[FOOPTR_ADDR]], align 16
+// CHECK-NEXT:    store ptr addrspace(200) [[TMP1]], ptr addrspace(200) [[CAP]], align 16
+// CHECK-NEXT:    [[TMP2:%.*]] = load ptr addrspace(200), ptr addrspace(200) [[PTR]], align 16
+// CHECK-NEXT:    [[TMP3:%.*]] = load i32, ptr addrspace(200) [[TMP2]], align 4
+// CHECK-NEXT:    [[TMP4:%.*]] = load ptr addrspace(200), ptr addrspace(200) [[CAP]], align 16
+// CHECK-NEXT:    [[TMP5:%.*]] = load i32, ptr addrspace(200) [[TMP4]], align 4
+// CHECK-NEXT:    [[ADD:%.*]] = add nsw i32 [[TMP3]], [[TMP5]]
+// CHECK-NEXT:    ret i32 [[ADD]]
 //
-// HYBRID-LABEL: define dso_local signext i32 @test(
-// HYBRID:       entry:
-// HYBRID-NEXT:    %fooptr.addr = alloca %struct.foo*, align 8
-// HYBRID-NEXT:    %foocap.addr = alloca %struct.foo addrspace(200)*, align [[#CAP_SIZE]]
-// HYBRID-NEXT:    %ptr = alloca i32*, align 8
-// HYBRID-NEXT:    %cap = alloca i32 addrspace(200)*, align [[#CAP_SIZE]]
-// HYBRID-NEXT:    store %struct.foo* %fooptr, %struct.foo** %fooptr.addr, align 8
-// HYBRID-NEXT:    store %struct.foo addrspace(200)* %foocap, %struct.foo addrspace(200)** %foocap.addr, align [[#CAP_SIZE]]
-// HYBRID-NEXT:    %0 = load %struct.foo addrspace(200)*, %struct.foo addrspace(200)** %foocap.addr, align [[#CAP_SIZE]]
-// HYBRID-NEXT:    %1 = bitcast %struct.foo addrspace(200)* %0 to i8 addrspace(200)*
-// HYBRID-NEXT:    %2 = addrspacecast i8 addrspace(200)* %1 to i8*
-// HYBRID-NEXT:    %3 = bitcast i8* %2 to i32*
-// HYBRID-NEXT:    store i32* %3, i32** %ptr, align 8
-// HYBRID-NEXT:    %4 = load %struct.foo*, %struct.foo** %fooptr.addr, align 8
-// HYBRID-NEXT:    %5 = bitcast %struct.foo* %4 to i8*
-// HYBRID-NEXT:    %6 = addrspacecast i8* %5 to i8 addrspace(200)*
-// HYBRID-NEXT:    %7 = bitcast i8 addrspace(200)* %6 to i32 addrspace(200)*
-// HYBRID-NEXT:    store i32 addrspace(200)* %7, i32 addrspace(200)** %cap, align [[#CAP_SIZE]]
-// HYBRID-NEXT:    %8 = load i32*, i32** %ptr, align 8
-// HYBRID-NEXT:    %9 = load i32, i32* %8, align 4
-// HYBRID-NEXT:    %10 = load i32 addrspace(200)*, i32 addrspace(200)** %cap, align [[#CAP_SIZE]]
-// HYBRID-NEXT:    %11 = load i32, i32 addrspace(200)* %10, align 4
-// HYBRID-NEXT:    %add = add nsw i32 %9, %11
-// HYBRID-NEXT:    ret i32 %add
+// HYBRID-LABEL: @test(
+// HYBRID-NEXT:  entry:
+// HYBRID-NEXT:    [[FOOPTR_ADDR:%.*]] = alloca ptr, align 8
+// HYBRID-NEXT:    [[FOOCAP_ADDR:%.*]] = alloca ptr addrspace(200), align 16
+// HYBRID-NEXT:    [[PTR:%.*]] = alloca ptr, align 8
+// HYBRID-NEXT:    [[CAP:%.*]] = alloca ptr addrspace(200), align 16
+// HYBRID-NEXT:    store ptr [[FOOPTR:%.*]], ptr [[FOOPTR_ADDR]], align 8
+// HYBRID-NEXT:    store ptr addrspace(200) [[FOOCAP:%.*]], ptr [[FOOCAP_ADDR]], align 16
+// HYBRID-NEXT:    [[TMP0:%.*]] = load ptr addrspace(200), ptr [[FOOCAP_ADDR]], align 16
+// HYBRID-NEXT:    [[TMP1:%.*]] = addrspacecast ptr addrspace(200) [[TMP0]] to ptr
+// HYBRID-NEXT:    store ptr [[TMP1]], ptr [[PTR]], align 8
+// HYBRID-NEXT:    [[TMP2:%.*]] = load ptr, ptr [[FOOPTR_ADDR]], align 8
+// HYBRID-NEXT:    [[TMP3:%.*]] = addrspacecast ptr [[TMP2]] to ptr addrspace(200)
+// HYBRID-NEXT:    store ptr addrspace(200) [[TMP3]], ptr [[CAP]], align 16
+// HYBRID-NEXT:    [[TMP4:%.*]] = load ptr, ptr [[PTR]], align 8
+// HYBRID-NEXT:    [[TMP5:%.*]] = load i32, ptr [[TMP4]], align 4
+// HYBRID-NEXT:    [[TMP6:%.*]] = load ptr addrspace(200), ptr [[CAP]], align 16
+// HYBRID-NEXT:    [[TMP7:%.*]] = load i32, ptr addrspace(200) [[TMP6]], align 4
+// HYBRID-NEXT:    [[ADD:%.*]] = add nsw i32 [[TMP5]], [[TMP7]]
+// HYBRID-NEXT:    ret i32 [[ADD]]
+//
 int test(struct foo* fooptr, struct foo* __capability foocap) {
   int* ptr = (__cheri_fromcap void*)foocap;
   int* __capability cap = (__cheri_tocap void* __capability)fooptr;

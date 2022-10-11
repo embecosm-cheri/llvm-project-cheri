@@ -1,4 +1,4 @@
-//===-------------------- UnwindRegistersRestore.S ------------------------===//
+//===----------------------------------------------------------------------===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -7,9 +7,12 @@
 //===----------------------------------------------------------------------===//
 
 #include "assembly.h"
-#include "__libunwind_config.h"
 
+#if defined(_AIX)
+  .toc
+#else
   .text
+#endif
 
 #if !defined(__USING_SJLJ_EXCEPTIONS__)
 
@@ -26,6 +29,8 @@ DEFINE_LIBUNWIND_FUNCTION(__libunwind_Registers_x86_jumpto)
 #  + return address        +
 #  +-----------------------+   <-- SP
 #  +                       +
+
+  _LIBUNWIND_CET_ENDBR
   movl   4(%esp), %eax
   # set up eax and ret on new stack location
   movl  28(%eax), %edx # edx holds new stack pointer
@@ -47,7 +52,8 @@ DEFINE_LIBUNWIND_FUNCTION(__libunwind_Registers_x86_jumpto)
   # skip ss
   # skip eflags
   pop    %eax  # eax was already pushed on new stack
-  ret        # eip was already pushed on new stack
+  pop    %ecx
+  jmp    *%ecx
   # skip cs
   # skip ds
   # skip es
@@ -71,6 +77,7 @@ DEFINE_LIBUNWIND_FUNCTION(__libunwind_Registers_x86_64_jumpto)
 # On entry, thread_state pointer is in rdi
 #endif
 
+  _LIBUNWIND_CET_ENDBR
   movq  56(%rdi), %rax # rax holds new stack pointer
   subq  $16, %rax
   movq  %rax, 56(%rdi)
@@ -120,104 +127,9 @@ DEFINE_LIBUNWIND_FUNCTION(__libunwind_Registers_x86_64_jumpto)
 #endif
   movq  56(%rdi), %rsp  # cut back rsp to new location
   pop    %rdi      # rdi was saved here earlier
-  ret            # rip was saved here
-#elif defined(__mips64) && defined(__CHERI_PURE_CAPABILITY__)
-.set noreorder
+  pop    %rcx
+  jmpq   *%rcx
 
-DEFINE_LIBUNWIND_FUNCTION(_ZN9libunwind20Registers_mips_cheri6jumptoEv)
-#
-# void libunwind::Registers_mips_cheri::jumpto()
-#
-# On entry:
-#  thread_state pointer is in $c3
-#
-#define RESTORE_GPR(x) cld $x, $zero, (x*8)($c3)
-
-  cld	$t0, $zero, (64*8)($c3)
-  mthi	$t0
-  cld	$t0, $zero, (65*8)($c3)
-  mtlo	$t0
-
-  RESTORE_GPR(1)
-  RESTORE_GPR(2)
-  RESTORE_GPR(3)
-  RESTORE_GPR(4)
-  RESTORE_GPR(5)
-  RESTORE_GPR(6)
-  RESTORE_GPR(7)
-  RESTORE_GPR(8)
-  RESTORE_GPR(9)
-  RESTORE_GPR(10)
-  RESTORE_GPR(11)
-  RESTORE_GPR(12)
-  RESTORE_GPR(13)
-  RESTORE_GPR(14)
-  RESTORE_GPR(15)
-  RESTORE_GPR(16)
-  RESTORE_GPR(17)
-  RESTORE_GPR(18)
-  RESTORE_GPR(19)
-  RESTORE_GPR(20)
-  RESTORE_GPR(21)
-  RESTORE_GPR(22)
-  RESTORE_GPR(23)
-  RESTORE_GPR(24)
-  RESTORE_GPR(25)
-  RESTORE_GPR(26)
-  RESTORE_GPR(27)
-  RESTORE_GPR(28)
-  RESTORE_GPR(29)
-  RESTORE_GPR(30)
-  RESTORE_GPR(31)
-
-#ifndef __SIZEOF_UINTCAP__
-#error __SIZEOF_UINTCAP__ must be defined!
-#endif
-  CIncOffset $c3, $c3, _LIBUNWIND_CAPREG_START*8
-
-#define RESTORE_CAP_REG(reg, idx) clc $c ## reg, $zero, ((idx)*(__SIZEOF_UINTCAP__))($c3)
-#define RESTORE_CAP(x) RESTORE_CAP_REG(x, x)
-  // Use $c17 as the temporary when restoring $ddc since it is loaded last
-  RESTORE_CAP_REG(17, 0)
-  csetdefault $c17
-  RESTORE_CAP(1)
-  RESTORE_CAP(2)
-  RESTORE_CAP(4)
-  RESTORE_CAP(5)
-  RESTORE_CAP(6)
-  RESTORE_CAP(7)
-  RESTORE_CAP(8)
-  RESTORE_CAP(9)
-  RESTORE_CAP(10)
-  RESTORE_CAP(11)
-  RESTORE_CAP(12)
-  RESTORE_CAP(13)
-  RESTORE_CAP(14)
-  RESTORE_CAP(15)
-  RESTORE_CAP(16)
-  RESTORE_CAP(18)
-  RESTORE_CAP(19)
-  RESTORE_CAP(20)
-  RESTORE_CAP(21)
-  RESTORE_CAP(22)
-  RESTORE_CAP(23)
-  RESTORE_CAP(24)
-  RESTORE_CAP(25)
-  RESTORE_CAP(26)
-  // Also restore 27-31 even though they should be null
-  .set cheri_sysregs_accessible
-  RESTORE_CAP(27)
-  RESTORE_CAP(28)
-  RESTORE_CAP(29)
-  RESTORE_CAP(30)
-  RESTORE_CAP(31)
-
-  // Load the new PC into $cra
-  RESTORE_CAP_REG(17, 32)
-  // Jump to $ca, load $c3 in the delay slot
-  cjr $c17
-  RESTORE_CAP(3)
-END_LIBUNWIND_FUNCTION(_ZN9libunwind20Registers_mips_cheri6jumptoEv)
 
 #elif defined(__powerpc64__)
 
@@ -314,27 +226,36 @@ DEFINE_LIBUNWIND_FUNCTION(_ZN9libunwind15Registers_ppc646jumptoEv)
   PPC64_LVS(30)
   PPC64_LVS(31)
 
-  // use VRSAVE to conditionally restore the remaining VS regs,
-  // that are where the V regs are mapped
+#define PPC64_CLVS_RESTORE(n)                    \
+  addi   4, 3, PPC64_OFFS_FP + n * 16           ;\
+  lxvd2x n, 0, 4
 
+#if !defined(_AIX)
+  // use VRSAVE to conditionally restore the remaining VS regs, that are
+  // where the V regs are mapped. In the AIX ABI, VRSAVE is not used.
   ld    5, PPC64_OFFS_VRSAVE(3)   // test VRsave
   cmpwi 5, 0
   beq   Lnovec
 
 // conditionally load VS
-#define PPC64_CLVS_BOTTOM(n)               \
-  beq    Ldone##n                         ;\
-  addi   4, 3, PPC64_OFFS_FP + n * 16     ;\
-  lxvd2x n, 0, 4                          ;\
+#define PPC64_CLVSl(n)                           \
+  andis. 0, 5, (1 PPC_LEFT_SHIFT(47-n))         ;\
+  beq    Ldone##n                               ;\
+  PPC64_CLVS_RESTORE(n)                         ;\
 Ldone##n:
 
-#define PPC64_CLVSl(n)                    \
-  andis. 0, 5, (1 PPC_LEFT_SHIFT(47-n))  ;\
-PPC64_CLVS_BOTTOM(n)
+#define PPC64_CLVSh(n)                           \
+  andi.  0, 5, (1 PPC_LEFT_SHIFT(63-n))         ;\
+  beq    Ldone##n                               ;\
+  PPC64_CLVS_RESTORE(n)                         ;\
+Ldone##n:
 
-#define PPC64_CLVSh(n)                    \
-  andi.  0, 5, (1 PPC_LEFT_SHIFT(63-n))  ;\
-PPC64_CLVS_BOTTOM(n)
+#else
+
+#define PPC64_CLVSl(n) PPC64_CLVS_RESTORE(n)
+#define PPC64_CLVSh(n) PPC64_CLVS_RESTORE(n)
+
+#endif // !defined(_AIX)
 
   PPC64_CLVSl(32)
   PPC64_CLVSl(33)
@@ -410,32 +331,44 @@ PPC64_CLVS_BOTTOM(n)
   PPC64_LF(31)
 
 #if defined(__ALTIVEC__)
-  // restore vector registers if any are in use
+
+#define PPC64_CLV_UNALIGNED_RESTORE(n)       \
+  ld     0, (PPC64_OFFS_V + n * 16)(3)      ;\
+  std    0, 0(4)                            ;\
+  ld     0, (PPC64_OFFS_V + n * 16 + 8)(3)  ;\
+  std    0, 8(4)                            ;\
+  lvx    n, 0, 4
+
+#if !defined(_AIX)
+  // restore vector registers if any are in use. In the AIX ABI, VRSAVE is
+  // not used.
   ld    5, PPC64_OFFS_VRSAVE(3)   // test VRsave
   cmpwi 5, 0
   beq   Lnovec
+
+#define PPC64_CLV_UNALIGNEDl(n)              \
+  andis. 0, 5, (1 PPC_LEFT_SHIFT(15-n))     ;\
+  beq    Ldone##n                           ;\
+  PPC64_CLV_UNALIGNED_RESTORE(n)            ;\
+Ldone  ## n:
+
+#define PPC64_CLV_UNALIGNEDh(n)              \
+  andi.  0, 5, (1 PPC_LEFT_SHIFT(31-n))     ;\
+  beq    Ldone##n                           ;\
+  PPC64_CLV_UNALIGNED_RESTORE(n)            ;\
+Ldone  ## n:
+
+#else
+
+#define PPC64_CLV_UNALIGNEDl(n) PPC64_CLV_UNALIGNED_RESTORE(n)
+#define PPC64_CLV_UNALIGNEDh(n) PPC64_CLV_UNALIGNED_RESTORE(n)
+
+#endif // !defined(_AIX)
 
   subi  4, 1, 16
   // r4 is now a 16-byte aligned pointer into the red zone
   // the _vectorScalarRegisters may not be 16-byte aligned
   // so copy via red zone temp buffer
-
-#define PPC64_CLV_UNALIGNED_BOTTOM(n)            \
-  beq    Ldone##n                               ;\
-  ld     0, (PPC64_OFFS_V + n * 16)(3)          ;\
-  std    0, 0(4)                                ;\
-  ld     0, (PPC64_OFFS_V + n * 16 + 8)(3)      ;\
-  std    0, 8(4)                                ;\
-  lvx    n, 0, 4                                ;\
-Ldone  ## n:
-
-#define PPC64_CLV_UNALIGNEDl(n)                 \
-  andis. 0, 5, (1 PPC_LEFT_SHIFT(15-n))        ;\
-PPC64_CLV_UNALIGNED_BOTTOM(n)
-
-#define PPC64_CLV_UNALIGNEDh(n)                \
-  andi.  0, 5, (1 PPC_LEFT_SHIFT(31-n))       ;\
-PPC64_CLV_UNALIGNED_BOTTOM(n)
 
   PPC64_CLV_UNALIGNEDl(0)
   PPC64_CLV_UNALIGNEDl(1)
@@ -479,14 +412,26 @@ Lnovec:
   ld    0, PPC64_OFFS_SRR0(3)
   mtctr 0
 
+#if defined(_AIX)
+  // After setting GPR1 to a higher address, AIX wipes out the original
+  // stack space below that address invalidated by the new GPR1 value. Use
+  // GPR0 to save the value of GPR3 in the context before it is wiped out.
+  // This compromises the content of GPR0 which is a volatile register.
+  ld 0, (8 * (3 + 2))(3)
+#else
   PPC64_LR(0)
+#endif
   PPC64_LR(5)
   PPC64_LR(4)
   PPC64_LR(1)
+#if defined(_AIX)
+  mr 3, 0
+#else
   PPC64_LR(3)
+#endif
   bctr
 
-#elif defined(__ppc__)
+#elif defined(__powerpc__)
 
 DEFINE_LIBUNWIND_FUNCTION(_ZN9libunwind13Registers_ppc6jumptoEv)
 //
@@ -567,45 +512,48 @@ DEFINE_LIBUNWIND_FUNCTION(_ZN9libunwind13Registers_ppc6jumptoEv)
 #endif
 
 #if defined(__ALTIVEC__)
-  // restore vector registers if any are in use
+
+#define LOAD_VECTOR_RESTORE(_index)                 \
+  lwz     0, 424+_index*16(3)             SEPARATOR \
+  stw     0, 0(4)                         SEPARATOR \
+  lwz     0, 424+_index*16+4(3)           SEPARATOR \
+  stw     0, 4(4)                         SEPARATOR \
+  lwz     0, 424+_index*16+8(3)           SEPARATOR \
+  stw     0, 8(4)                         SEPARATOR \
+  lwz     0, 424+_index*16+12(3)          SEPARATOR \
+  stw     0, 12(4)                        SEPARATOR \
+  lvx     _index, 0, 4
+
+#if !defined(_AIX)
+  // restore vector registers if any are in use. In the AIX ABI, VRSAVE
+  // is not used.
   lwz     5, 156(3)       // test VRsave
   cmpwi   5, 0
   beq     Lnovec
+
+#define LOAD_VECTOR_UNALIGNEDl(_index)                   \
+  andis.  0, 5, (1 PPC_LEFT_SHIFT(15-_index))  SEPARATOR \
+  beq     Ldone ## _index                      SEPARATOR \
+  LOAD_VECTOR_RESTORE(_index)                  SEPARATOR \
+  Ldone ## _index:
+
+#define LOAD_VECTOR_UNALIGNEDh(_index)                   \
+  andi.   0, 5, (1 PPC_LEFT_SHIFT(31-_index))  SEPARATOR \
+  beq     Ldone ## _index                      SEPARATOR \
+  LOAD_VECTOR_RESTORE(_index)                  SEPARATOR \
+  Ldone ## _index:
+
+#else
+
+#define LOAD_VECTOR_UNALIGNEDl(_index) LOAD_VECTOR_RESTORE(_index)
+#define LOAD_VECTOR_UNALIGNEDh(_index) LOAD_VECTOR_RESTORE(_index)
+
+#endif // !defined(_AIX)
 
   subi    4, 1, 16
   rlwinm  4, 4, 0, 0, 27  // mask low 4-bits
   // r4 is now a 16-byte aligned pointer into the red zone
   // the _vectorRegisters may not be 16-byte aligned so copy via red zone temp buffer
-
-
-#define LOAD_VECTOR_UNALIGNEDl(_index)          \
-  andis.  0, 5, (1 PPC_LEFT_SHIFT(15-_index)) SEPARATOR \
-  beq     Ldone ## _index             SEPARATOR \
-  lwz     0, 424+_index*16(3)         SEPARATOR \
-  stw     0, 0(%r4)                   SEPARATOR \
-  lwz     0, 424+_index*16+4(%r3)     SEPARATOR \
-  stw     0, 4(%r4)                   SEPARATOR \
-  lwz     0, 424+_index*16+8(%r3)     SEPARATOR \
-  stw     0, 8(%r4)                   SEPARATOR \
-  lwz     0, 424+_index*16+12(%r3)    SEPARATOR \
-  stw     0, 12(%r4)                  SEPARATOR \
-  lvx     _index, 0, 4                SEPARATOR \
-  Ldone ## _index:
-
-#define LOAD_VECTOR_UNALIGNEDh(_index)          \
-  andi.   0, 5, (1 PPC_LEFT_SHIFT(31-_index)) SEPARATOR \
-  beq     Ldone ## _index             SEPARATOR \
-  lwz     0, 424+_index*16(3)         SEPARATOR \
-  stw     0, 0(4)                     SEPARATOR \
-  lwz     0, 424+_index*16+4(3)       SEPARATOR \
-  stw     0, 4(4)                     SEPARATOR \
-  lwz     0, 424+_index*16+8(3)       SEPARATOR \
-  stw     0, 8(%r4)                   SEPARATOR \
-  lwz     0, 424+_index*16+12(3)      SEPARATOR \
-  stw     0, 12(4)                    SEPARATOR \
-  lvx     _index, 0, 4                SEPARATOR \
-  Ldone ## _index:
-
 
   LOAD_VECTOR_UNALIGNEDl(0)
   LOAD_VECTOR_UNALIGNEDl(1)
@@ -665,53 +613,6 @@ Lnovec:
 //
   .p2align 2
 DEFINE_LIBUNWIND_FUNCTION(__libunwind_Registers_arm64_jumpto)
-#ifdef __CHERI_PURE_CAPABILITY__
-  // skip restore of c0,c1 for now
-  ldp    c2, c3,  [c0, #0x020]
-  ldp    c4, c5,  [c0, #0x040]
-  ldp    c6, c7,  [c0, #0x060]
-  ldp    c8, c9,  [c0, #0x080]
-  ldp    c10,c11, [c0, #0x0a0]
-  ldp    c12,c13, [c0, #0x0c0]
-  ldp    c14,c15, [c0, #0x0e0]
-  // c16 and c17 were clobbered by the call into the unwinder, so no point in
-  // restoring them.
-  ldp    c18,c19, [c0, #0x120]
-  ldp    c20,c21, [c0, #0x140]
-  ldp    c22,c23, [c0, #0x160]
-  ldp    c24,c25, [c0, #0x180]
-  ldp    c26,c27, [c0, #0x1a0]
-  ldp    c28,c29, [c0, #0x1c0]
-  ldr    c30,     [c0, #0x200]  // restore pcc into clr
-
-  add    c16,c0, #0x220
-  ldp    d0, d1,  [c16, #0x000]
-  ldp    d2, d3,  [c16, #0x010]
-  ldp    d4, d5,  [c16, #0x020]
-  ldp    d6, d7,  [c16, #0x030]
-  ldp    d8, d9,  [c16, #0x040]
-  ldp    d10,d11, [c16, #0x050]
-  ldp    d12,d13, [c16, #0x060]
-  ldp    d14,d15, [c16, #0x070]
-  ldp    d16,d17, [c16, #0x080]
-  ldp    d18,d19, [c16, #0x090]
-  ldp    d20,d21, [c16, #0x0a0]
-  ldp    d22,d23, [c16, #0x0b0]
-  ldp    d24,d25, [c16, #0x0c0]
-  ldp    d26,d27, [c16, #0x0d0]
-  ldp    d28,d29, [c16, #0x0e0]
-  ldr    d30,     [c16, #0x0f0]
-  ldr    d31,     [c16, #0x0f8]
-
-  // Finally, restore csp. This must be done after the the last read from the
-  // context struct, because it is allocated on the stack, and an exception
-  // could clobber the de-allocated portion of the stack after csp has been
-  // restored.
-  ldr    c16,     [c0, #0x1f0]
-  ldp    c0, c1,  [c0, #0x000]  // restore c0,c1
-  mov    csp,c16                // restore csp
-  ret                           // jump to pcc
-#else
   // skip restore of x0,x1 for now
   ldp    x2, x3,  [x0, #0x010]
   ldp    x4, x5,  [x0, #0x020]
@@ -756,7 +657,6 @@ DEFINE_LIBUNWIND_FUNCTION(__libunwind_Registers_arm64_jumpto)
   ldp    x0, x1,  [x0, #0x000]  // restore x0,x1
   mov    sp,x16                 // restore sp
   ret    x30                    // jump to pc
-#endif
 
 #elif defined(__arm__) && !defined(__APPLE__)
 
@@ -800,7 +700,13 @@ DEFINE_LIBUNWIND_FUNCTION(_ZN9libunwind13Registers_arm20restoreCoreAndJumpToEv)
   ldr sp, [lr, #52]
   ldr lr, [lr, #60]  @ restore pc into lr
 #endif
+#if defined(__ARM_FEATURE_BTI_DEFAULT) && !defined(__ARM_ARCH_ISA_ARM)
+  // 'bx' is not BTI setting when used with lr, therefore r12 is used instead
+  mov r12, lr
+  JMP(r12)
+#else
   JMP(lr)
+#endif
 
 @
 @ static void libunwind::Registers_arm::restoreVFPWithFLDMD(unw_fpreg_t* values)
@@ -945,11 +851,12 @@ DEFINE_LIBUNWIND_FUNCTION(_ZN9libunwind14Registers_or1k6jumptoEv)
   l.lwz    r30,120(r3)
   l.lwz    r31,124(r3)
 
+  # load new pc into ra
+  l.lwz    r9, 128(r3)
+
   # at last, restore r3
   l.lwz    r3,  12(r3)
 
-  # load new pc into ra
-  l.lwz    r9, 128(r3)
   # jump to pc
   l.jr     r9
    l.nop
@@ -1195,6 +1102,53 @@ DEFINE_LIBUNWIND_FUNCTION(_ZN9libunwind21Registers_mips_newabi6jumptoEv)
   ld    $4, (8 * 4)($4)
   .set pop
 
+#elif defined(__sparc__) && defined(__arch64__)
+
+DEFINE_LIBUNWIND_FUNCTION(_ZN9libunwind17Registers_sparc646jumptoEv)
+//
+// void libunwind::Registers_sparc64::jumpto()
+//
+// On entry:
+//  thread_state pointer is in %o0
+//
+  .register %g2, #scratch
+  .register %g3, #scratch
+  .register %g6, #scratch
+  .register %g7, #scratch
+  flushw
+  ldx  [%o0 + 0x08], %g1
+  ldx  [%o0 + 0x10], %g2
+  ldx  [%o0 + 0x18], %g3
+  ldx  [%o0 + 0x20], %g4
+  ldx  [%o0 + 0x28], %g5
+  ldx  [%o0 + 0x30], %g6
+  ldx  [%o0 + 0x38], %g7
+  ldx  [%o0 + 0x48], %o1
+  ldx  [%o0 + 0x50], %o2
+  ldx  [%o0 + 0x58], %o3
+  ldx  [%o0 + 0x60], %o4
+  ldx  [%o0 + 0x68], %o5
+  ldx  [%o0 + 0x70], %o6
+  ldx  [%o0 + 0x78], %o7
+  ldx  [%o0 + 0x80], %l0
+  ldx  [%o0 + 0x88], %l1
+  ldx  [%o0 + 0x90], %l2
+  ldx  [%o0 + 0x98], %l3
+  ldx  [%o0 + 0xa0], %l4
+  ldx  [%o0 + 0xa8], %l5
+  ldx  [%o0 + 0xb0], %l6
+  ldx  [%o0 + 0xb8], %l7
+  ldx  [%o0 + 0xc0], %i0
+  ldx  [%o0 + 0xc8], %i1
+  ldx  [%o0 + 0xd0], %i2
+  ldx  [%o0 + 0xd8], %i3
+  ldx  [%o0 + 0xe0], %i4
+  ldx  [%o0 + 0xe8], %i5
+  ldx  [%o0 + 0xf0], %i6
+  ldx  [%o0 + 0xf8], %i7
+  jmp  %o7
+   ldx [%o0 + 0x40], %o0
+
 #elif defined(__sparc__)
 
 //
@@ -1219,22 +1173,6 @@ DEFINE_LIBUNWIND_FUNCTION(_ZN9libunwind15Registers_sparc6jumptoEv)
 
 #elif defined(__riscv)
 
-.macro restore_fpr num
-#ifdef __CHERI_PURE_CAPABILITY__
-  cfld   f\num, (__SIZEOF_CHERI_CAPABILITY__ * 32 + 8 * \num)(ca0)
-#else
-  FLOAD  f\num, (8 * 32 + 8 * \num)(a0)
-#endif
-.endm
-
-.macro restore_gpr num
-#ifdef __CHERI_PURE_CAPABILITY__
-  clc   c\num, (__SIZEOF_CHERI_CAPABILITY__ * \num)(ca0)
-#else
-  ILOAD x\num, (8 * \num)(a0)
-#endif
-.endm
-
 //
 // void libunwind::Registers_riscv::jumpto()
 //
@@ -1243,85 +1181,113 @@ DEFINE_LIBUNWIND_FUNCTION(_ZN9libunwind15Registers_sparc6jumptoEv)
 //
   .p2align 2
 DEFINE_LIBUNWIND_FUNCTION(_ZN9libunwind15Registers_riscv6jumptoEv)
-#if defined(__riscv_flen)
-   restore_fpr 0
-   restore_fpr 1
-   restore_fpr 2
-   restore_fpr 3
-   restore_fpr 4
-   restore_fpr 5
-   restore_fpr 6
-   restore_fpr 7
-   restore_fpr 8
-   restore_fpr 9
-   restore_fpr 10
-   restore_fpr 11
-   restore_fpr 12
-   restore_fpr 13
-   restore_fpr 14
-   restore_fpr 15
-   restore_fpr 16
-   restore_fpr 17
-   restore_fpr 18
-   restore_fpr 19
-   restore_fpr 20
-   restore_fpr 21
-   restore_fpr 22
-   restore_fpr 23
-   restore_fpr 24
-   restore_fpr 25
-   restore_fpr 26
-   restore_fpr 27
-   restore_fpr 28
-   restore_fpr 29
-   restore_fpr 30
-   restore_fpr 31
-#endif
+# if defined(__riscv_flen)
+  FLOAD    f0, (RISCV_FOFFSET + RISCV_FSIZE * 0)(a0)
+  FLOAD    f1, (RISCV_FOFFSET + RISCV_FSIZE * 1)(a0)
+  FLOAD    f2, (RISCV_FOFFSET + RISCV_FSIZE * 2)(a0)
+  FLOAD    f3, (RISCV_FOFFSET + RISCV_FSIZE * 3)(a0)
+  FLOAD    f4, (RISCV_FOFFSET + RISCV_FSIZE * 4)(a0)
+  FLOAD    f5, (RISCV_FOFFSET + RISCV_FSIZE * 5)(a0)
+  FLOAD    f6, (RISCV_FOFFSET + RISCV_FSIZE * 6)(a0)
+  FLOAD    f7, (RISCV_FOFFSET + RISCV_FSIZE * 7)(a0)
+  FLOAD    f8, (RISCV_FOFFSET + RISCV_FSIZE * 8)(a0)
+  FLOAD    f9, (RISCV_FOFFSET + RISCV_FSIZE * 9)(a0)
+  FLOAD    f10, (RISCV_FOFFSET + RISCV_FSIZE * 10)(a0)
+  FLOAD    f11, (RISCV_FOFFSET + RISCV_FSIZE * 11)(a0)
+  FLOAD    f12, (RISCV_FOFFSET + RISCV_FSIZE * 12)(a0)
+  FLOAD    f13, (RISCV_FOFFSET + RISCV_FSIZE * 13)(a0)
+  FLOAD    f14, (RISCV_FOFFSET + RISCV_FSIZE * 14)(a0)
+  FLOAD    f15, (RISCV_FOFFSET + RISCV_FSIZE * 15)(a0)
+  FLOAD    f16, (RISCV_FOFFSET + RISCV_FSIZE * 16)(a0)
+  FLOAD    f17, (RISCV_FOFFSET + RISCV_FSIZE * 17)(a0)
+  FLOAD    f18, (RISCV_FOFFSET + RISCV_FSIZE * 18)(a0)
+  FLOAD    f19, (RISCV_FOFFSET + RISCV_FSIZE * 19)(a0)
+  FLOAD    f20, (RISCV_FOFFSET + RISCV_FSIZE * 20)(a0)
+  FLOAD    f21, (RISCV_FOFFSET + RISCV_FSIZE * 21)(a0)
+  FLOAD    f22, (RISCV_FOFFSET + RISCV_FSIZE * 22)(a0)
+  FLOAD    f23, (RISCV_FOFFSET + RISCV_FSIZE * 23)(a0)
+  FLOAD    f24, (RISCV_FOFFSET + RISCV_FSIZE * 24)(a0)
+  FLOAD    f25, (RISCV_FOFFSET + RISCV_FSIZE * 25)(a0)
+  FLOAD    f26, (RISCV_FOFFSET + RISCV_FSIZE * 26)(a0)
+  FLOAD    f27, (RISCV_FOFFSET + RISCV_FSIZE * 27)(a0)
+  FLOAD    f28, (RISCV_FOFFSET + RISCV_FSIZE * 28)(a0)
+  FLOAD    f29, (RISCV_FOFFSET + RISCV_FSIZE * 29)(a0)
+  FLOAD    f30, (RISCV_FOFFSET + RISCV_FSIZE * 30)(a0)
+  FLOAD    f31, (RISCV_FOFFSET + RISCV_FSIZE * 31)(a0)
+# endif
 
   // x0 is zero
-#ifdef __CHERI_PURE_CAPABILITY__
-  clc   c1, (__SIZEOF_CHERI_CAPABILITY__ * 0)(ca0) // restore pc into ra
-#else
-  ILOAD    x1, (8 * 0)(a0) // restore pc into ra
-#endif
-  restore_gpr 2
-  restore_gpr 3
-  restore_gpr 4
-  restore_gpr 5
-  restore_gpr 6
-  restore_gpr 7
-  restore_gpr 8
-  restore_gpr 9
+  ILOAD    x1, (RISCV_ISIZE * 0)(a0) // restore pc into ra
+  ILOAD    x2, (RISCV_ISIZE * 2)(a0)
+  ILOAD    x3, (RISCV_ISIZE * 3)(a0)
+  ILOAD    x4, (RISCV_ISIZE * 4)(a0)
+  ILOAD    x5, (RISCV_ISIZE * 5)(a0)
+  ILOAD    x6, (RISCV_ISIZE * 6)(a0)
+  ILOAD    x7, (RISCV_ISIZE * 7)(a0)
+  ILOAD    x8, (RISCV_ISIZE * 8)(a0)
+  ILOAD    x9, (RISCV_ISIZE * 9)(a0)
   // skip a0 for now
-  restore_gpr 11
-  restore_gpr 12
-  restore_gpr 13
-  restore_gpr 14
-  restore_gpr 15
-  restore_gpr 16
-  restore_gpr 17
-  restore_gpr 18
-  restore_gpr 19
-  restore_gpr 20
-  restore_gpr 21
-  restore_gpr 22
-  restore_gpr 23
-  restore_gpr 24
-  restore_gpr 25
-  restore_gpr 26
-  restore_gpr 27
-  restore_gpr 28
-  restore_gpr 29
-  restore_gpr 30
-  restore_gpr 31
-  restore_gpr 10   // restore a0
+  ILOAD    x11, (RISCV_ISIZE * 11)(a0)
+  ILOAD    x12, (RISCV_ISIZE * 12)(a0)
+  ILOAD    x13, (RISCV_ISIZE * 13)(a0)
+  ILOAD    x14, (RISCV_ISIZE * 14)(a0)
+  ILOAD    x15, (RISCV_ISIZE * 15)(a0)
+  ILOAD    x16, (RISCV_ISIZE * 16)(a0)
+  ILOAD    x17, (RISCV_ISIZE * 17)(a0)
+  ILOAD    x18, (RISCV_ISIZE * 18)(a0)
+  ILOAD    x19, (RISCV_ISIZE * 19)(a0)
+  ILOAD    x20, (RISCV_ISIZE * 20)(a0)
+  ILOAD    x21, (RISCV_ISIZE * 21)(a0)
+  ILOAD    x22, (RISCV_ISIZE * 22)(a0)
+  ILOAD    x23, (RISCV_ISIZE * 23)(a0)
+  ILOAD    x24, (RISCV_ISIZE * 24)(a0)
+  ILOAD    x25, (RISCV_ISIZE * 25)(a0)
+  ILOAD    x26, (RISCV_ISIZE * 26)(a0)
+  ILOAD    x27, (RISCV_ISIZE * 27)(a0)
+  ILOAD    x28, (RISCV_ISIZE * 28)(a0)
+  ILOAD    x29, (RISCV_ISIZE * 29)(a0)
+  ILOAD    x30, (RISCV_ISIZE * 30)(a0)
+  ILOAD    x31, (RISCV_ISIZE * 31)(a0)
+  ILOAD    x10, (RISCV_ISIZE * 10)(a0)   // restore a0
 
-#ifdef __CHERI_PURE_CAPABILITY__
-  cret          // jump to cra
-#else
-  ret           // jump to ra
-#endif
-END_LIBUNWIND_FUNCTION(_ZN9libunwind15Registers_riscv6jumptoEv)
+  ret                       // jump to ra
+
+#elif defined(__s390x__)
+
+DEFINE_LIBUNWIND_FUNCTION(_ZN9libunwind15Registers_s390x6jumptoEv)
+//
+// void libunwind::Registers_s390x::jumpto()
+//
+// On entry:
+//  thread_state pointer is in r2
+//
+
+  // Skip PSWM, but load PSWA into r1
+  lg %r1, 8(%r2)
+
+  // Restore FPRs
+  ld %f0, 144(%r2)
+  ld %f1, 152(%r2)
+  ld %f2, 160(%r2)
+  ld %f3, 168(%r2)
+  ld %f4, 176(%r2)
+  ld %f5, 184(%r2)
+  ld %f6, 192(%r2)
+  ld %f7, 200(%r2)
+  ld %f8, 208(%r2)
+  ld %f9, 216(%r2)
+  ld %f10, 224(%r2)
+  ld %f11, 232(%r2)
+  ld %f12, 240(%r2)
+  ld %f13, 248(%r2)
+  ld %f14, 256(%r2)
+  ld %f15, 264(%r2)
+
+  // Restore GPRs - skipping %r0 and %r1
+  lmg  %r2, %r15, 32(%r2)
+
+  // Return to PSWA (was loaded into %r1 above)
+  br %r1
 
 #endif
 

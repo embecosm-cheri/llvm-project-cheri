@@ -1,4 +1,4 @@
-//===----------------------------- config.h -------------------------------===//
+//===----------------------------------------------------------------------===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -43,6 +43,9 @@
   // For ARM EHABI, Bionic didn't implement dl_iterate_phdr until API 21. After
   // API 21, dl_iterate_phdr exists, but dl_unwind_find_exidx is much faster.
   #define _LIBUNWIND_USE_DL_UNWIND_FIND_EXIDX 1
+#elif defined(_AIX)
+// The traceback table at the end of each function is used for unwinding.
+#define _LIBUNWIND_SUPPORT_TBTAB_UNWIND 1
 #else
   // Assume an ELF system with a dl_iterate_phdr function.
   #define _LIBUNWIND_USE_DL_ITERATE_PHDR 1
@@ -57,7 +60,7 @@
   #define _LIBUNWIND_EXPORT
   #define _LIBUNWIND_HIDDEN
 #else
-  #if !defined(__ELF__) && !defined(__MACH__)
+  #if !defined(__ELF__) && !defined(__MACH__) && !defined(_AIX)
     #define _LIBUNWIND_EXPORT __declspec(dllexport)
     #define _LIBUNWIND_HIDDEN
   #else
@@ -80,7 +83,7 @@
   __asm__(".globl " SYMBOL_NAME(aliasname));                                   \
   __asm__(SYMBOL_NAME(aliasname) " = " SYMBOL_NAME(name));                     \
   _LIBUNWIND_ALIAS_VISIBILITY(SYMBOL_NAME(aliasname))
-#elif defined(__ELF__)
+#elif defined(__ELF__) || defined(_AIX)
 #define _LIBUNWIND_WEAK_ALIAS(name, aliasname)                                 \
   extern "C" _LIBUNWIND_EXPORT __typeof(name) aliasname                        \
       __attribute__((weak, alias(#name)));
@@ -105,17 +108,14 @@
 #define _LIBUNWIND_BUILD_SJLJ_APIS
 #endif
 
-#if defined(__i386__) || defined(__x86_64__) || defined(__ppc__) || defined(__ppc64__) || defined(__powerpc64__)
+#if defined(__i386__) || defined(__x86_64__) || defined(__powerpc__)
 #define _LIBUNWIND_SUPPORT_FRAME_APIS
 #endif
 
-#if defined(__i386__) || defined(__x86_64__) ||                                \
-    defined(__ppc__) || defined(__ppc64__) || defined(__powerpc64__) ||        \
-    (!defined(__APPLE__) && defined(__arm__)) ||                               \
-    defined(__aarch64__) ||                                                    \
-    defined(__mips__) ||                                                       \
-    defined(__riscv) ||                                                        \
-    defined(__hexagon__)
+#if defined(__i386__) || defined(__x86_64__) || defined(__powerpc__) ||        \
+    (!defined(__APPLE__) && defined(__arm__)) || defined(__aarch64__) ||       \
+    defined(__mips__) || defined(__riscv) || defined(__hexagon__) ||           \
+    defined(__sparc__) || defined(__s390x__)
 #if !defined(_LIBUNWIND_BUILD_SJLJ_APIS)
 #define _LIBUNWIND_BUILD_ZERO_COST_APIS
 #endif
@@ -144,31 +144,17 @@
 #define _LIBUNWIND_REMEMBER_CLEANUP_NEEDED
 #endif
 
-#ifdef __CHERI_PURE_CAPABILITY__
-#define _LIBUNWIND_FMT_PTR "%-#p"
-#else
-#define _LIBUNWIND_FMT_PTR "%p"
-#endif
-
 #if defined(NDEBUG) && defined(_LIBUNWIND_IS_BAREMETAL)
 #define _LIBUNWIND_ABORT(msg)                                                  \
   do {                                                                         \
     abort();                                                                   \
   } while (0)
-#define _LIBUNWIND_ABORT_FMT(fmt, msg, ...) _LIBUNWIND_ABORT(msg)
 #else
 #define _LIBUNWIND_ABORT(msg)                                                  \
   do {                                                                         \
     fprintf(stderr, "libunwind: %s - %s\n", __func__, msg);                    \
     fflush(stderr);                                                            \
-    __builtin_trap(); abort();                                                 \
-  } while (0)
-#define _LIBUNWIND_ABORT_FMT(fmt, ...)                                         \
-  do {                                                                         \
-    fprintf(stderr, "libunwind: %s %s:%d - " fmt "\n", __func__, __FILE__,     \
-            __LINE__, __VA_ARGS__);                                            \
-    fflush(stderr);                                                            \
-    __builtin_trap(); abort();                                                 \
+    abort();                                                                   \
   } while (0)
 #endif
 
@@ -193,28 +179,6 @@
     } while (0)
 #endif
 
-#ifdef __CHERI_PURE_CAPABILITY__
-static inline uintptr_t assert_pointer_in_bounds(uintptr_t value) {
-  if (!__builtin_cheri_tag_get((void*)value)) {
-    _LIBUNWIND_ABORT_FMT("Untagged value " _LIBUNWIND_FMT_PTR
-                         " used for dwarf section", (void*)value);
-  } else if (__builtin_cheri_offset_get((void*)value) >=
-             __builtin_cheri_length_get((void*)value)) {
-    _LIBUNWIND_ABORT_FMT("Out-of-bounds value " _LIBUNWIND_FMT_PTR
-                         " used for dwarf section", (void*)value);
-  }
-  return value;
-}
-#else
-static inline uintptr_t assert_pointer_in_bounds(uintptr_t value) {
-  return value;
-}
-#endif
-
-#if !__has_extension(cheri_casts)
-#define __cheri_addr /* nothing */
-#endif
-
 // Macros that define away in non-Debug builds
 #ifdef NDEBUG
   #define _LIBUNWIND_DEBUG_LOG(msg, ...)
@@ -223,17 +187,13 @@ static inline uintptr_t assert_pointer_in_bounds(uintptr_t value) {
   #define _LIBUNWIND_TRACING_DWARF (0)
   #define _LIBUNWIND_TRACE_UNWINDING(msg, ...)
   #define _LIBUNWIND_TRACE_DWARF(...)
-  #define CHERI_DBG(...) (void)0
 #else
   #ifdef __cplusplus
     extern "C" {
   #endif
-    extern  bool logAPIs();
-    extern  bool logUnwinding();
-    extern  bool logDWARF();
-  #ifdef __CHERI_PURE_CAPABILITY__
-    extern  bool logCHERI();
-  #endif
+    extern  bool logAPIs(void);
+    extern  bool logUnwinding(void);
+    extern  bool logDWARF(void);
   #ifdef __cplusplus
     }
   #endif
@@ -255,15 +215,6 @@ static inline uintptr_t assert_pointer_in_bounds(uintptr_t value) {
       if (logDWARF())                                                          \
         fprintf(stderr, __VA_ARGS__);                                          \
     } while (0)
-  #ifndef __CHERI_PURE_CAPABILITY__
-    #define CHERI_DBG(...) (void)0
-  #else
-    #define CHERI_DBG(...)                                                     \
-      do {                                                                     \
-        if (logCHERI())                                                        \
-          fprintf(stderr, __VA_ARGS__);                                        \
-      } while (0)
-  #endif
 #endif
 
 #ifdef __cplusplus
@@ -286,18 +237,5 @@ struct check_fit {
 };
 #undef COMP_OP
 #endif // __cplusplus
-
-static inline uintptr_t pcc_address(uintptr_t a)
-{
-#ifdef __CHERI_PURE_CAPABILITY__
-  if (__builtin_cheri_tag_get((void*)a))
-    return a;
-  void *pcc = __builtin_cheri_program_counter_get();
-  pcc = __builtin_cheri_offset_set(pcc, (long)__builtin_cheri_address_get((void*)a));
-  return (uintptr_t)pcc;
-#else
-  return a;
-#endif
-}
 
 #endif // LIBUNWIND_CONFIG_H

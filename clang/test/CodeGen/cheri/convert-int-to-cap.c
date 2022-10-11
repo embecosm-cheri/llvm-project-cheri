@@ -23,10 +23,10 @@ extern "C" {
 // TODO: could split this into a Sema+CodeGen test, but having both here is easier
 
 // CHECK-LABEL: define {{[^@]+}}@test_long_to_capptr
-// CHECK-SAME: (i64 signext [[L:%.*]]) #0
+// CHECK-SAME: (i64 noundef signext [[L:%.*]]) #0
 // CHECK-NEXT:  entry:
-// CHECK-NEXT:    [[TMP0:%.*]] = inttoptr i64 [[L]] to i8 addrspace(200)*
-// CHECK-NEXT:    ret i8 addrspace(200)* [[TMP0]]
+// CHECK-NEXT:    [[TMP0:%.*]] = inttoptr i64 [[L]] to ptr addrspace(200)
+// CHECK-NEXT:    ret ptr addrspace(200) [[TMP0]]
 //
 char *__capability test_long_to_capptr(long l) {
   return (char *__capability)l;
@@ -37,9 +37,9 @@ char *__capability test_long_to_capptr(long l) {
 }
 
 // CHECK-LABEL: define {{[^@]+}}@test_intcap_to_capptr
-// CHECK-SAME: (i8 addrspace(200)* [[L:%.*]]) #0
+// CHECK-SAME: (ptr addrspace(200) noundef [[L:%.*]]) #0
 // CHECK-NEXT:  entry:
-// CHECK-NEXT:    ret i8 addrspace(200)* [[L]]
+// CHECK-NEXT:    ret ptr addrspace(200) [[L]]
 //
 char *__capability test_intcap_to_capptr(__intcap l) {
   return (char *__capability)l;
@@ -49,10 +49,10 @@ char *__capability test_intcap_to_capptr(__intcap l) {
 }
 
 // CHECK-LABEL: define {{[^@]+}}@test_ptr_to_capptr_default
-// CHECK-SAME: (i8* [[P:%.*]]) #0
+// CHECK-SAME: (ptr noundef [[P:%.*]]) #0
 // CHECK-NEXT:  entry:
-// CHECK-NEXT:    [[TMP0:%.*]] = addrspacecast i8* [[P]] to i8 addrspace(200)*
-// CHECK-NEXT:    ret i8 addrspace(200)* [[TMP0]]
+// CHECK-NEXT:    [[TMP0:%.*]] = addrspacecast ptr [[P]] to ptr addrspace(200)
+// CHECK-NEXT:    ret ptr addrspace(200) [[TMP0]]
 //
 char *__capability test_ptr_to_capptr_default(char *p) {
   return (char *__capability)p;
@@ -66,7 +66,7 @@ char *__capability test_ptr_to_capptr_default(char *p) {
 // CHECK-LABEL: define {{[^@]+}}@test_signed_literal_to_capptr_default
 // CHECK-SAME: () #0
 // CHECK-NEXT:  entry:
-// CHECK-NEXT:    ret i8 addrspace(200)* inttoptr (i64 1 to i8 addrspace(200)*)
+// CHECK-NEXT:    ret ptr addrspace(200) inttoptr (i64 1 to ptr addrspace(200))
 //
 char *__capability test_signed_literal_to_capptr_default(void) {
   return (char *__capability)1;
@@ -78,10 +78,10 @@ char *__capability test_signed_literal_to_capptr_default(void) {
 
 #ifdef __cplusplus
 // CXX-CHECK-LABEL: define {{[^@]+}}@test_ptr_to_capptr_reinterpret_cast
-// CXX-CHECK-SAME: (i8* [[P:%.*]]) #0
+// CXX-CHECK-SAME: (ptr noundef [[P:%.*]]) #0
 // CXX-CHECK-NEXT:  entry:
-// CXX-CHECK-NEXT:    [[TMP0:%.*]] = addrspacecast i8* [[P]] to i8 addrspace(200)*
-// CXX-CHECK-NEXT:    ret i8 addrspace(200)* [[TMP0]]
+// CXX-CHECK-NEXT:    [[TMP0:%.*]] = addrspacecast ptr [[P]] to ptr addrspace(200)
+// CXX-CHECK-NEXT:    ret ptr addrspace(200) [[TMP0]]
 //
 char *__capability test_ptr_to_capptr_reinterpret_cast(char *p) {
   return reinterpret_cast<char * __capability>(p);
@@ -94,10 +94,10 @@ char *__capability test_ptr_to_capptr_reinterpret_cast(char *p) {
 #endif
 
 // CHECK-LABEL: define {{[^@]+}}@test_ptr_to_capptr_tocap
-// CHECK-SAME: (i8* [[P:%.*]]) #0
+// CHECK-SAME: (ptr noundef [[P:%.*]]) #0
 // CHECK-NEXT:  entry:
-// CHECK-NEXT:    [[TMP0:%.*]] = addrspacecast i8* [[P]] to i8 addrspace(200)*
-// CHECK-NEXT:    ret i8 addrspace(200)* [[TMP0]]
+// CHECK-NEXT:    [[TMP0:%.*]] = addrspacecast ptr [[P]] to ptr addrspace(200)
+// CHECK-NEXT:    ret ptr addrspace(200) [[TMP0]]
 //
 char *__capability test_ptr_to_capptr_tocap(char *p) {
   return (__cheri_tocap char *__capability)p;
@@ -107,11 +107,11 @@ char *__capability test_ptr_to_capptr_tocap(char *p) {
 }
 
 // CHECK-LABEL: define {{[^@]+}}@test_ptr_to_capptr_via_addr_intcap
-// CHECK-SAME: (i8* [[P:%.*]]) #0
+// CHECK-SAME: (ptr noundef [[P:%.*]]) #0
 // CHECK-NEXT:  entry:
-// CHECK-NEXT:    [[TMP0:%.*]] = ptrtoint i8* [[P]] to i64
-// CHECK-NEXT:    [[TMP1:%.*]] = getelementptr i8, i8 addrspace(200)* null, i64 [[TMP0]]
-// CHECK-NEXT:    ret i8 addrspace(200)* [[TMP1]]
+// CHECK-NEXT:    [[TMP0:%.*]] = ptrtoint ptr [[P]] to i64
+// CHECK-NEXT:    [[TMP1:%.*]] = getelementptr i8, ptr addrspace(200) null, i64 [[TMP0]]
+// CHECK-NEXT:    ret ptr addrspace(200) [[TMP1]]
 //
 char *__capability test_ptr_to_capptr_via_addr_intcap(char *p) {
   return (char *__capability)(__cheri_addr __intcap)p;
@@ -122,11 +122,11 @@ char *__capability test_ptr_to_capptr_via_addr_intcap(char *p) {
 }
 
 // CHECK-LABEL: define {{[^@]+}}@test_ptr_to_intcap_default
-// CHECK-SAME: (i8* [[P:%.*]]) #0
+// CHECK-SAME: (ptr noundef [[P:%.*]]) #0
 // CHECK-NEXT:  entry:
-// CHECK-NEXT:    [[TMP0:%.*]] = ptrtoint i8* [[P]] to i64
-// CHECK-NEXT:    [[TMP1:%.*]] = getelementptr i8, i8 addrspace(200)* null, i64 [[TMP0]]
-// CHECK-NEXT:    ret i8 addrspace(200)* [[TMP1]]
+// CHECK-NEXT:    [[TMP0:%.*]] = ptrtoint ptr [[P]] to i64
+// CHECK-NEXT:    [[TMP1:%.*]] = getelementptr i8, ptr addrspace(200) null, i64 [[TMP0]]
+// CHECK-NEXT:    ret ptr addrspace(200) [[TMP1]]
 //
 __intcap test_ptr_to_intcap_default(char *p) {
   return (__intcap)p;
@@ -136,10 +136,10 @@ __intcap test_ptr_to_intcap_default(char *p) {
 }
 
 // CHECK-LABEL: define {{[^@]+}}@test_ptr_to_intcap_tocap
-// CHECK-SAME: (i8* [[P:%.*]]) #0
+// CHECK-SAME: (ptr noundef [[P:%.*]]) #0
 // CHECK-NEXT:  entry:
-// CHECK-NEXT:    [[TMP0:%.*]] = addrspacecast i8* [[P]] to i8 addrspace(200)*
-// CHECK-NEXT:    ret i8 addrspace(200)* [[TMP0]]
+// CHECK-NEXT:    [[TMP0:%.*]] = addrspacecast ptr [[P]] to ptr addrspace(200)
+// CHECK-NEXT:    ret ptr addrspace(200) [[TMP0]]
 //
 __intcap test_ptr_to_intcap_tocap(char *p) {
   return (__cheri_tocap __intcap)p;
@@ -149,11 +149,11 @@ __intcap test_ptr_to_intcap_tocap(char *p) {
 }
 
 // CHECK-LABEL: define {{[^@]+}}@test_ptr_to_intcap_addr
-// CHECK-SAME: (i8* [[P:%.*]]) #0
+// CHECK-SAME: (ptr noundef [[P:%.*]]) #0
 // CHECK-NEXT:  entry:
-// CHECK-NEXT:    [[TMP0:%.*]] = ptrtoint i8* [[P]] to i64
-// CHECK-NEXT:    [[TMP1:%.*]] = getelementptr i8, i8 addrspace(200)* null, i64 [[TMP0]]
-// CHECK-NEXT:    ret i8 addrspace(200)* [[TMP1]]
+// CHECK-NEXT:    [[TMP0:%.*]] = ptrtoint ptr [[P]] to i64
+// CHECK-NEXT:    [[TMP1:%.*]] = getelementptr i8, ptr addrspace(200) null, i64 [[TMP0]]
+// CHECK-NEXT:    ret ptr addrspace(200) [[TMP1]]
 //
 __intcap test_ptr_to_intcap_addr(char *p) {
   return (__cheri_addr __intcap)p;

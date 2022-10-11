@@ -84,9 +84,9 @@ template <class Params>
 class SizeClassAllocator64 {
  public:
   using AddressSpaceView = typename Params::AddressSpaceView;
-  static const vaddr kSpaceBeg = Params::kSpaceBeg;
-  static const usize kSpaceSize = Params::kSpaceSize;
-  static const usize kMetadataSize = Params::kMetadataSize;
+  static const uptr kSpaceBeg = Params::kSpaceBeg;
+  static const uptr kSpaceSize = Params::kSpaceSize;
+  static const uptr kMetadataSize = Params::kMetadataSize;
   typedef typename Params::SizeClassMap SizeClassMap;
   typedef typename Params::MapUnmapCallback MapUnmapCallback;
 
@@ -161,12 +161,12 @@ class SizeClassAllocator64 {
   void ForceReleaseToOS() {
     MemoryMapperT memory_mapper(*this);
     for (uptr class_id = 1; class_id < kNumClasses; class_id++) {
-      BlockingMutexLock l(&GetRegionInfo(class_id)->mutex);
+      Lock l(&GetRegionInfo(class_id)->mutex);
       MaybeReleaseToOS(&memory_mapper, class_id, true /*force*/);
     }
   }
 
-  static bool CanAllocate(usize size, usize alignment) {
+  static bool CanAllocate(uptr size, uptr alignment) {
     return size <= SizeClassMap::kMaxSize &&
       alignment <= SizeClassMap::kMaxSize;
   }
@@ -178,7 +178,7 @@ class SizeClassAllocator64 {
     uptr region_beg = GetRegionBeginBySizeClass(class_id);
     CompactPtrT *free_array = GetFreeArray(region_beg);
 
-    BlockingMutexLock l(&region->mutex);
+    Lock l(&region->mutex);
     uptr old_num_chunks = region->num_freed_chunks;
     uptr new_num_freed_chunks = old_num_chunks + n_chunks;
     // Failure to allocate free array space while releasing memory is non
@@ -204,7 +204,7 @@ class SizeClassAllocator64 {
     uptr region_beg = GetRegionBeginBySizeClass(class_id);
     CompactPtrT *free_array = GetFreeArray(region_beg);
 
-    BlockingMutexLock l(&region->mutex);
+    Lock l(&region->mutex);
 #if SANITIZER_WINDOWS
     /* On Windows unmapping of memory during __sanitizer_purge_allocator is
     explicit and immediate, so unmapped regions must be explicitly mapped back
@@ -239,17 +239,17 @@ class SizeClassAllocator64 {
 
   uptr GetRegionBegin(const void *p) {
     if (kUsingConstantSpaceBeg)
-      return RoundDownTo(reinterpret_cast<uptr>(p), kRegionSize);
+      return reinterpret_cast<uptr>(p) & ~(kRegionSize - 1);
     uptr space_beg = SpaceBeg();
-    return RoundDownTo(reinterpret_cast<uptr>(p) - space_beg, kRegionSize) +
+    return ((reinterpret_cast<uptr>(p)  - space_beg) & ~(kRegionSize - 1)) +
         space_beg;
   }
 
-  uptr GetRegionBeginBySizeClass(usize class_id) const {
+  uptr GetRegionBeginBySizeClass(uptr class_id) const {
     return SpaceBeg() + kRegionSize * class_id;
   }
 
-  usize GetSizeClass(const void *p) {
+  uptr GetSizeClass(const void *p) {
     if (kUsingConstantSpaceBeg && (kSpaceBeg % kSpaceSize) == 0)
       return ((reinterpret_cast<uptr>(p)) / kRegionSize) % kNumClassesRounded;
     return ((reinterpret_cast<uptr>(p) - SpaceBeg()) / kRegionSize) %
@@ -271,17 +271,19 @@ class SizeClassAllocator64 {
     return nullptr;
   }
 
-  usize GetActuallyAllocatedSize(void *p) {
+  uptr GetActuallyAllocatedSize(void *p) {
     CHECK(PointerIsMine(p));
     return ClassIdToSize(GetSizeClass(p));
   }
 
-  static usize ClassID(usize size) { return SizeClassMap::ClassID(size); }
+  static uptr ClassID(uptr size) { return SizeClassMap::ClassID(size); }
 
   void *GetMetaData(const void *p) {
     CHECK(kMetadataSize);
     uptr class_id = GetSizeClass(p);
     uptr size = ClassIdToSize(class_id);
+    if (!size)
+      return nullptr;
     uptr chunk_idx = GetChunkIdx(reinterpret_cast<uptr>(p), size);
     uptr region_beg = GetRegionBeginBySizeClass(class_id);
     return reinterpret_cast<void *>(GetMetadataEnd(region_beg) -
@@ -300,9 +302,8 @@ class SizeClassAllocator64 {
     UnmapWithCallbackOrDie((uptr)address_range.base(), address_range.size());
   }
 
-  static void FillMemoryProfile(uptr start, usize rss, bool file, usize *stats,
-                           usize stats_size) {
-    for (uptr class_id = 0; class_id < stats_size; class_id++)
+  static void FillMemoryProfile(uptr start, uptr rss, bool file, uptr *stats) {
+    for (uptr class_id = 0; class_id < kNumClasses; class_id++)
       if (stats[class_id] == start)
         stats[class_id] = rss;
   }
@@ -315,7 +316,7 @@ class SizeClassAllocator64 {
     Printf(
         "%s %02zd (%6zd): mapped: %6zdK allocs: %7zd frees: %7zd inuse: %6zd "
         "num_freed_chunks %7zd avail: %6zd rss: %6zdK releases: %6zd "
-        "last released: %6zdK region: 0x%zx\n",
+        "last released: %6lldK region: 0x%zx\n",
         region->exhausted ? "F" : " ", class_id, ClassIdToSize(class_id),
         region->mapped_user >> 10, region->stats.n_allocated,
         region->stats.n_freed, in_use, region->num_freed_chunks, avail_chunks,
@@ -325,10 +326,10 @@ class SizeClassAllocator64 {
   }
 
   void PrintStats() {
-    usize rss_stats[kNumClasses];
+    uptr rss_stats[kNumClasses];
     for (uptr class_id = 0; class_id < kNumClasses; class_id++)
       rss_stats[class_id] = SpaceBeg() + kRegionSize * class_id;
-    GetMemoryProfile(FillMemoryProfile, rss_stats, kNumClasses);
+    GetMemoryProfile(FillMemoryProfile, rss_stats);
 
     uptr total_mapped = 0;
     uptr total_rss = 0;
@@ -353,13 +354,13 @@ class SizeClassAllocator64 {
 
   // ForceLock() and ForceUnlock() are needed to implement Darwin malloc zone
   // introspection API.
-  void ForceLock() NO_THREAD_SAFETY_ANALYSIS {
+  void ForceLock() SANITIZER_NO_THREAD_SAFETY_ANALYSIS {
     for (uptr i = 0; i < kNumClasses; i++) {
       GetRegionInfo(i)->mutex.Lock();
     }
   }
 
-  void ForceUnlock() NO_THREAD_SAFETY_ANALYSIS {
+  void ForceUnlock() SANITIZER_NO_THREAD_SAFETY_ANALYSIS {
     for (int i = (int)kNumClasses - 1; i >= 0; i--) {
       GetRegionInfo(i)->mutex.Unlock();
     }
@@ -370,7 +371,7 @@ class SizeClassAllocator64 {
   void ForEachChunk(ForEachChunkCallback callback, void *arg) {
     for (uptr class_id = 1; class_id < kNumClasses; class_id++) {
       RegionInfo *region = GetRegionInfo(class_id);
-      usize chunk_size = ClassIdToSize(class_id);
+      uptr chunk_size = ClassIdToSize(class_id);
       uptr region_beg = SpaceBeg() + class_id * kRegionSize;
       uptr region_allocated_user_size =
           AddressSpaceView::Load(region)->allocated_user;
@@ -383,18 +384,18 @@ class SizeClassAllocator64 {
     }
   }
 
-  static usize ClassIdToSize(uptr class_id) {
+  static uptr ClassIdToSize(uptr class_id) {
     return SizeClassMap::Size(class_id);
   }
 
-  static usize AdditionalSize() {
+  static uptr AdditionalSize() {
     return RoundUpTo(sizeof(RegionInfo) * kNumClassesRounded,
                      GetPageSizeCached());
   }
 
   typedef SizeClassMap SizeClassMapT;
-  static const usize kNumClasses = SizeClassMap::kNumClasses;
-  static const usize kNumClassesRounded = SizeClassMap::kNumClassesRounded;
+  static const uptr kNumClasses = SizeClassMap::kNumClasses;
+  static const uptr kNumClassesRounded = SizeClassMap::kNumClassesRounded;
 
   // A packed array of counters. Each counter occupies 2^n bits, enough to store
   // counter's max_value. Ctor will try to allocate the required buffer via
@@ -413,13 +414,13 @@ class SizeClassAllocator64 {
       constexpr u64 kMaxCounterBits = sizeof(*buffer) * 8ULL;
       // Rounding counter storage size up to the power of two allows for using
       // bit shifts calculating particular counter's index and offset.
-      u64 counter_size_bits =
+      uptr counter_size_bits =
           RoundUpToPowerOfTwo(MostSignificantSetBitIndex(max_value) + 1);
       CHECK_LE(counter_size_bits, kMaxCounterBits);
       counter_size_bits_log = Log2(counter_size_bits);
       counter_mask = ~0ULL >> (kMaxCounterBits - counter_size_bits);
 
-      usize packing_ratio = kMaxCounterBits >> counter_size_bits_log;
+      uptr packing_ratio = kMaxCounterBits >> counter_size_bits_log;
       CHECK_GT(packing_ratio, 0);
       packing_ratio_log = Log2(packing_ratio);
       bit_offset_mask = packing_ratio - 1;
@@ -436,23 +437,23 @@ class SizeClassAllocator64 {
       return n;
     }
 
-    u64 Get(usize i) const {
+    uptr Get(uptr i) const {
       DCHECK_LT(i, n);
-      usize index = i >> packing_ratio_log;
-      usize bit_offset = (i & bit_offset_mask) << counter_size_bits_log;
+      uptr index = i >> packing_ratio_log;
+      uptr bit_offset = (i & bit_offset_mask) << counter_size_bits_log;
       return (buffer[index] >> bit_offset) & counter_mask;
     }
 
-    void Inc(usize i) const {
+    void Inc(uptr i) const {
       DCHECK_LT(Get(i), counter_mask);
-      usize index = i >> packing_ratio_log;
-      usize bit_offset = (i & bit_offset_mask) << counter_size_bits_log;
+      uptr index = i >> packing_ratio_log;
+      uptr bit_offset = (i & bit_offset_mask) << counter_size_bits_log;
       buffer[index] += 1ULL << bit_offset;
     }
 
-    void IncRange(usize from, usize to) const {
+    void IncRange(uptr from, uptr to) const {
       DCHECK_LE(from, to);
-      for (usize i = from; i <= to; i++)
+      for (uptr i = from; i <= to; i++)
         Inc(i);
     }
 
@@ -521,7 +522,7 @@ class SizeClassAllocator64 {
 
     // Figure out the number of chunks per page and whether we can take a fast
     // path (the number of chunks per page is the same for all pages).
-    usize full_pages_chunk_count_max;
+    uptr full_pages_chunk_count_max;
     bool same_chunk_count_per_page;
     if (chunk_size <= page_size && page_size % chunk_size == 0) {
       // Same number of chunks per page, no cross overs.
@@ -557,9 +558,9 @@ class SizeClassAllocator64 {
     if (!counters.IsAllocated())
       return;
 
-    const usize chunk_size_scaled = chunk_size >> kCompactPtrScale;
-    const usize page_size_scaled = page_size >> kCompactPtrScale;
-    const usize page_size_scaled_log = Log2(page_size_scaled);
+    const uptr chunk_size_scaled = chunk_size >> kCompactPtrScale;
+    const uptr page_size_scaled = page_size >> kCompactPtrScale;
+    const uptr page_size_scaled_log = Log2(page_size_scaled);
 
     // Iterate over free chunks and count how many free chunks affect each
     // allocated page.
@@ -621,12 +622,12 @@ class SizeClassAllocator64 {
 
   ReservedAddressRange address_range;
 
-  static const usize kRegionSize = kSpaceSize / kNumClassesRounded;
+  static const uptr kRegionSize = kSpaceSize / kNumClassesRounded;
   // FreeArray is the array of free-d chunks (stored as 4-byte offsets).
-  // In the worst case it may reguire kRegionSize/SizeClassMap::kMinSize
+  // In the worst case it may require kRegionSize/SizeClassMap::kMinSize
   // elements, but in reality this will not happen. For simplicity we
   // dedicate 1/8 of the region's virtual space to FreeArray.
-  static const usize kFreeArraySize = kRegionSize / 8;
+  static const uptr kFreeArraySize = kRegionSize / 8;
 
   static const bool kUsingConstantSpaceBeg = kSpaceBeg != ~(uptr)0;
   uptr NonConstSpaceBeg;
@@ -665,7 +666,7 @@ class SizeClassAllocator64 {
   };
 
   struct ALIGNED(SANITIZER_CACHE_LINE_SIZE) RegionInfo {
-    BlockingMutex mutex;
+    Mutex mutex;
     uptr num_freed_chunks;  // Number of elements in the freearray.
     uptr mapped_free_array;  // Bytes mapped for freearray.
     uptr allocated_user;  // Bytes allocated for user memory.
@@ -689,7 +690,7 @@ class SizeClassAllocator64 {
     return region_beg + kRegionSize - kFreeArraySize;
   }
 
-  uptr GetChunkIdx(uptr chunk, usize size) const {
+  uptr GetChunkIdx(uptr chunk, uptr size) const {
     if (!kUsingConstantSpaceBeg)
       chunk -= SpaceBeg();
 
@@ -705,7 +706,7 @@ class SizeClassAllocator64 {
     return reinterpret_cast<CompactPtrT *>(GetMetadataEnd(region_beg));
   }
 
-  bool MapWithCallback(uptr beg, usize size, const char *name) {
+  bool MapWithCallback(uptr beg, uptr size, const char *name) {
     if (PremappedHeap)
       return beg >= NonConstSpaceBeg &&
              beg + size <= NonConstSpaceBeg + kSpaceSize;
@@ -717,7 +718,7 @@ class SizeClassAllocator64 {
     return true;
   }
 
-  void MapWithCallbackOrDie(uptr beg, usize size, const char *name) {
+  void MapWithCallbackOrDie(uptr beg, uptr size, const char *name) {
     if (PremappedHeap) {
       CHECK_GE(beg, NonConstSpaceBeg);
       CHECK_LE(beg + size, NonConstSpaceBeg + kSpaceSize);
@@ -727,7 +728,7 @@ class SizeClassAllocator64 {
     MapUnmapCallback().OnMap(beg, size);
   }
 
-  void UnmapWithCallbackOrDie(uptr beg, usize size) {
+  void UnmapWithCallbackOrDie(uptr beg, uptr size) {
     if (PremappedHeap)
       return;
     MapUnmapCallback().OnUnmap(beg, size);

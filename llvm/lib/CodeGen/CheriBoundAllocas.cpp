@@ -168,7 +168,7 @@ public:
       Align ForcedAlignment;
       PointerType *AllocaTy = AI->getType();
       assert(isCheriPointer(AllocaTy, &DL));
-      Type *AllocationTy = AllocaTy->getElementType();
+      Type *AllocationTy = AI->getAllocatedType();
       Value *ArraySize = B.CreateZExtOrTrunc(AI->getArraySize(), SizeTy);
 
       // Create a new (AS 0) alloca
@@ -183,7 +183,7 @@ public:
           ForcedAlignment = TLI->getAlignmentForPreciseBounds(AllocaSize);
         }
       }
-      AI->setAlignment(max(MaybeAlign(AI->getAlignment()), ForcedAlignment));
+      AI->setAlignment(std::max(AI->getAlign(), ForcedAlignment));
       // Only set bounds for allocas that escape this function
       bool NeedBounds = true;
       // Always set bounds if the function has the optnone attribute

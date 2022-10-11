@@ -25,24 +25,24 @@ namespace __sanitizer {
 template<typename Node> class QuarantineCache;
 
 struct QuarantineBatch {
-  static const usize kSize = 1021;
+  static const uptr kSize = 1021;
   QuarantineBatch *next;
-  usize size;
-  usize count;
+  uptr size;
+  uptr count;
   void *batch[kSize];
 
-  void init(void *ptr, usize size) {
+  void init(void *ptr, uptr size) {
     count = 1;
     batch[0] = ptr;
     this->size = size + sizeof(QuarantineBatch);  // Account for the batch size.
   }
 
   // The total size of quarantined nodes recorded in this batch.
-  usize quarantined_size() const {
+  uptr quarantined_size() const {
     return size - sizeof(QuarantineBatch);
   }
 
-  void push_back(void *ptr, usize size) {
+  void push_back(void *ptr, uptr size) {
     CHECK_LT(count, kSize);
     batch[count++] = ptr;
     this->size += size;
@@ -56,7 +56,7 @@ struct QuarantineBatch {
     CHECK_LE(count + from->count, kSize);
     CHECK_GE(size, sizeof(QuarantineBatch));
 
-    for (usize i = 0; i < from->count; ++i)
+    for (uptr i = 0; i < from->count; ++i)
       batch[count + i] = from->batch[i];
     count += from->count;
     size += from->quarantined_size();
@@ -70,7 +70,7 @@ COMPILER_CHECK(sizeof(QuarantineBatch) <= (1 << 13));  // 8Kb.
 
 // The callback interface is:
 // void Callback::Recycle(Node *ptr);
-// void *cb.Allocate(usize size);
+// void *cb.Allocate(uptr size);
 // void cb.Deallocate(void *ptr);
 template<typename Callback, typename Node>
 class Quarantine {
@@ -81,7 +81,7 @@ class Quarantine {
       : cache_(LINKER_INITIALIZED) {
   }
 
-  void Init(usize size, usize cache_size) {
+  void Init(uptr size, uptr cache_size) {
     // Thread local quarantine size can be zero only when global quarantine size
     // is zero (it allows us to perform just one atomic read per Put() call).
     CHECK((size == 0 && cache_size == 0) || cache_size != 0);
@@ -94,13 +94,13 @@ class Quarantine {
     recycle_mutex_.Init();
   }
 
-  usize GetSize() const { return atomic_load_relaxed(&max_size_); }
-  usize GetCacheSize() const {
+  uptr GetSize() const { return atomic_load_relaxed(&max_size_); }
+  uptr GetCacheSize() const {
     return atomic_load_relaxed(&max_cache_size_);
   }
 
-  void Put(Cache *c, Callback cb, Node *ptr, usize size) {
-    usize cache_size = GetCacheSize();
+  void Put(Cache *c, Callback cb, Node *ptr, uptr size) {
+    uptr cache_size = GetCacheSize();
     if (cache_size) {
       c->Enqueue(cb, ptr, size);
     } else {
@@ -140,17 +140,17 @@ class Quarantine {
  private:
   // Read-only data.
   char pad0_[kCacheLineSize];
-  atomic_size_t max_size_;
-  atomic_size_t min_size_;
-  atomic_size_t max_cache_size_;
+  atomic_uintptr_t max_size_;
+  atomic_uintptr_t min_size_;
+  atomic_uintptr_t max_cache_size_;
   char pad1_[kCacheLineSize];
   StaticSpinMutex cache_mutex_;
   StaticSpinMutex recycle_mutex_;
   Cache cache_;
   char pad2_[kCacheLineSize];
 
-  void NOINLINE Recycle(usize min_size, Callback cb) REQUIRES(recycle_mutex_)
-      RELEASE(recycle_mutex_) {
+  void NOINLINE Recycle(uptr min_size, Callback cb)
+      SANITIZER_REQUIRES(recycle_mutex_) SANITIZER_RELEASE(recycle_mutex_) {
     Cache tmp;
     {
       SpinMutexLock l(&cache_mutex_);
@@ -159,13 +159,13 @@ class Quarantine {
       // by them is counted against quarantine limit) can overcome the actual
       // user's quarantined chunks, which diminishes the purpose of the
       // quarantine.
-      usize cache_size = cache_.Size();
-      usize overhead_size = cache_.OverheadSize();
+      uptr cache_size = cache_.Size();
+      uptr overhead_size = cache_.OverheadSize();
       CHECK_GE(cache_size, overhead_size);
       // Do the merge only when overhead exceeds this predefined limit (might
       // require some tuning). It saves us merge attempt when the batch list
       // quarantine is unlikely to contain batches suitable for merge.
-      const usize kOverheadThresholdPercents = 100;
+      const uptr kOverheadThresholdPercents = 100;
       if (cache_size > overhead_size &&
           overhead_size * (100 + kOverheadThresholdPercents) >
               cache_size * kOverheadThresholdPercents) {
@@ -183,11 +183,11 @@ class Quarantine {
 
   void NOINLINE DoRecycle(Cache *c, Callback cb) {
     while (QuarantineBatch *b = c->DequeueBatch()) {
-      const usize kPrefetch = 16;
+      const uptr kPrefetch = 16;
       CHECK(kPrefetch <= ARRAY_SIZE(b->batch));
-      for (usize i = 0; i < kPrefetch; i++)
+      for (uptr i = 0; i < kPrefetch; i++)
         PREFETCH(b->batch[i]);
-      for (usize i = 0, count = b->count; i < count; i++) {
+      for (uptr i = 0, count = b->count; i < count; i++) {
         if (i + kPrefetch < count)
           PREFETCH(b->batch[i + kPrefetch]);
         cb.Recycle((Node*)b->batch[i]);
@@ -210,16 +210,16 @@ class QuarantineCache {
   }
 
   // Total memory used, including internal accounting.
-  usize Size() const {
+  uptr Size() const {
     return atomic_load_relaxed(&size_);
   }
 
   // Memory used for internal accounting.
-  usize OverheadSize() const {
+  uptr OverheadSize() const {
     return list_.size() * sizeof(QuarantineBatch);
   }
 
-  void Enqueue(Callback cb, void *ptr, usize size) {
+  void Enqueue(Callback cb, void *ptr, uptr size) {
     if (list_.empty() || list_.back()->count == QuarantineBatch::kSize) {
       QuarantineBatch *b = (QuarantineBatch *)cb.Allocate(sizeof(*b));
       CHECK(b);
@@ -253,7 +253,7 @@ class QuarantineCache {
   }
 
   void MergeBatches(QuarantineCache *to_deallocate) {
-    usize extracted_size = 0;
+    uptr extracted_size = 0;
     QuarantineBatch *current = list_.front();
     while (current && current->next) {
       if (current->can_merge(current->next)) {
@@ -275,20 +275,20 @@ class QuarantineCache {
   }
 
   void PrintStats() const {
-    usize batch_count = 0;
-    usize total_overhead_bytes = 0;
-    usize total_bytes = 0;
-    usize total_quarantine_chunks = 0;
+    uptr batch_count = 0;
+    uptr total_overhead_bytes = 0;
+    uptr total_bytes = 0;
+    uptr total_quarantine_chunks = 0;
     for (List::ConstIterator it = list_.begin(); it != list_.end(); ++it) {
       batch_count++;
       total_bytes += (*it).size;
       total_overhead_bytes += (*it).size - (*it).quarantined_size();
       total_quarantine_chunks += (*it).count;
     }
-    usize quarantine_chunks_capacity = batch_count * QuarantineBatch::kSize;
+    uptr quarantine_chunks_capacity = batch_count * QuarantineBatch::kSize;
     int chunks_usage_percent = quarantine_chunks_capacity == 0 ?
         0 : total_quarantine_chunks * 100 / quarantine_chunks_capacity;
-    usize total_quarantined_bytes = total_bytes - total_overhead_bytes;
+    uptr total_quarantined_bytes = total_bytes - total_overhead_bytes;
     int memory_overhead_percent = total_quarantined_bytes == 0 ?
         0 : total_overhead_bytes * 100 / total_quarantined_bytes;
     Printf("Global quarantine stats: batches: %zd; bytes: %zd (user: %zd); "
@@ -303,12 +303,12 @@ class QuarantineCache {
   typedef IntrusiveList<QuarantineBatch> List;
 
   List list_;
-  atomic_size_t size_;
+  atomic_uintptr_t size_;
 
-  void SizeAdd(usize add) {
+  void SizeAdd(uptr add) {
     atomic_store_relaxed(&size_, Size() + add);
   }
-  void SizeSub(usize sub) {
+  void SizeSub(uptr sub) {
     atomic_store_relaxed(&size_, Size() - sub);
   }
 };

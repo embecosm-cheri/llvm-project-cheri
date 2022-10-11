@@ -21,12 +21,11 @@ namespace __sanitizer {
 
 // Parsing helpers, 'str' is searched for delimiter(s) and a string or uptr
 // is extracted. When extracting a string, a newly allocated (using
-// InternalAlloc) and null-terminataed buffer is returned. They return a pointer
+// InternalAlloc) and null-terminated buffer is returned. They return a pointer
 // to the next characted after the found delimiter.
 const char *ExtractToken(const char *str, const char *delims, char **result);
 const char *ExtractInt(const char *str, const char *delims, int *result);
-const char *ExtractUSize(const char *str, const char *delims, usize *result);
-const char *ExtractSSize(const char *str, const char *delims, ssize *result);
+const char *ExtractUptr(const char *str, const char *delims, uptr *result);
 const char *ExtractTokenUpToDelimiter(const char *str, const char *delimiter,
                                       char **result);
 
@@ -50,17 +49,17 @@ class SymbolizerTool {
   // The |stack| parameter is inout. It is pre-filled with the address,
   // module base and module offset values and is to be used to construct
   // other stack frames.
-  virtual bool SymbolizePC(vaddr addr, SymbolizedStack *stack) {
+  virtual bool SymbolizePC(uptr addr, SymbolizedStack *stack) {
     UNIMPLEMENTED();
   }
 
   // The |info| parameter is inout. It is pre-filled with the module base
   // and module offset values.
-  virtual bool SymbolizeData(vaddr addr, DataInfo *info) {
+  virtual bool SymbolizeData(uptr addr, DataInfo *info) {
     UNIMPLEMENTED();
   }
 
-  virtual bool SymbolizeFrame(vaddr addr, FrameInfo *info) {
+  virtual bool SymbolizeFrame(uptr addr, FrameInfo *info) {
     return false;
   }
 
@@ -70,11 +69,6 @@ class SymbolizerTool {
   virtual const char *Demangle(const char *name) {
     return nullptr;
   }
-
-  // Called during the LateInitialize phase of Sanitizer initialization.
-  // Usually this is a safe place to call code that might need to use user
-  // memory allocators.
-  virtual void LateInitialize() {}
 
  protected:
   ~SymbolizerTool() {}
@@ -92,16 +86,17 @@ class SymbolizerProcess {
   ~SymbolizerProcess() {}
 
   /// The maximum number of arguments required to invoke a tool process.
-  static const unsigned kArgVMax = 6;
+  static const unsigned kArgVMax = 16;
 
   // Customizable by subclasses.
   virtual bool StartSymbolizerSubprocess();
-  virtual bool ReadFromSymbolizer(char *buffer, usize max_length);
+  virtual bool ReadFromSymbolizer();
   // Return the environment to run the symbolizer in.
   virtual char **GetEnvP() { return GetEnviron(); }
+  InternalMmapVector<char> &GetBuff() { return buffer_; }
 
  private:
-  virtual bool ReachedEndOfOutput(const char *buffer, usize length) const {
+  virtual bool ReachedEndOfOutput(const char *buffer, uptr length) const {
     UNIMPLEMENTED();
   }
 
@@ -113,18 +108,17 @@ class SymbolizerProcess {
 
   bool Restart();
   const char *SendCommandImpl(const char *command);
-  bool WriteToSymbolizer(const char *buffer, usize length);
+  bool WriteToSymbolizer(const char *buffer, uptr length);
 
   const char *path_;
   fd_t input_fd_;
   fd_t output_fd_;
 
-  static const usize kBufferSize = 16 * 1024;
-  char buffer_[kBufferSize];
+  InternalMmapVector<char> buffer_;
 
-  static const usize kMaxTimesRestarted = 5;
+  static const uptr kMaxTimesRestarted = 5;
   static const int kSymbolizerStartupTimeMillis = 10;
-  usize times_restarted_;
+  uptr times_restarted_;
   bool failed_to_start_;
   bool reported_invalid_path_;
   bool use_posix_spawn_;
@@ -138,17 +132,17 @@ class LLVMSymbolizer final : public SymbolizerTool {
  public:
   explicit LLVMSymbolizer(const char *path, LowLevelAllocator *allocator);
 
-  bool SymbolizePC(vaddr addr, SymbolizedStack *stack) override;
-  bool SymbolizeData(vaddr addr, DataInfo *info) override;
-  bool SymbolizeFrame(vaddr addr, FrameInfo *info) override;
+  bool SymbolizePC(uptr addr, SymbolizedStack *stack) override;
+  bool SymbolizeData(uptr addr, DataInfo *info) override;
+  bool SymbolizeFrame(uptr addr, FrameInfo *info) override;
 
  private:
   const char *FormatAndSendCommand(const char *command_prefix,
-                                   const char *module_name, usize module_offset,
+                                   const char *module_name, uptr module_offset,
                                    ModuleArch arch);
 
   LLVMSymbolizerProcess *symbolizer_process_;
-  static const usize kBufferSize = 16 * 1024;
+  static const uptr kBufferSize = 16 * 1024;
   char buffer_[kBufferSize];
 };
 

@@ -7,11 +7,10 @@ typedef struct _ns_dtab {
  nss_method method;
 } ns_dtab;
 
-// CHECK-LABEL: define {{[^@]+}}@compat_setgrent() addrspace(200) #0
+// CHECK-LABEL: @compat_setgrent(
 // CHECK-NEXT:  entry:
 // CHECK-NEXT:    [[DTAB:%.*]] = alloca [1 x %struct._ns_dtab], align 16, addrspace(200)
-// CHECK-NEXT:    [[TMP0:%.*]] = bitcast [1 x %struct._ns_dtab] addrspace(200)* [[DTAB]] to i8 addrspace(200)*
-// CHECK-NEXT:    call void @llvm.memcpy.p200i8.p200i8.i64(i8 addrspace(200)* align 16 [[TMP0]], i8 addrspace(200)* align 16 bitcast ([1 x %struct._ns_dtab] addrspace(200)* @__const.compat_setgrent.dtab to i8 addrspace(200)*), i64 32, i1 false)
+// CHECK-NEXT:    call void @llvm.memcpy.p200.p200.i64(ptr addrspace(200) align 16 [[DTAB]], ptr addrspace(200) align 16 @__const.compat_setgrent.dtab, i64 32, i1 false)
 // CHECK-NEXT:    ret void
 //
 void compat_setgrent(void)

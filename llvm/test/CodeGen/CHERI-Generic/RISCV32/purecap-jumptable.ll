@@ -7,16 +7,16 @@
 define void @below_threshold(i32 %in, i32 addrspace(200)* %out) nounwind {
 ; CHECK-LABEL: below_threshold:
 ; CHECK:       # %bb.0: # %entry
-; CHECK-NEXT:    addi a2, zero, 2
+; CHECK-NEXT:    li a2, 2
 ; CHECK-NEXT:    beq a0, a2, .LBB0_3
 ; CHECK-NEXT:  # %bb.1: # %entry
-; CHECK-NEXT:    addi a2, zero, 1
+; CHECK-NEXT:    li a2, 1
 ; CHECK-NEXT:    bne a0, a2, .LBB0_5
 ; CHECK-NEXT:  # %bb.2: # %bb1
-; CHECK-NEXT:    addi a0, zero, 4
+; CHECK-NEXT:    li a0, 4
 ; CHECK-NEXT:    j .LBB0_4
 ; CHECK-NEXT:  .LBB0_3: # %bb2
-; CHECK-NEXT:    addi a0, zero, 3
+; CHECK-NEXT:    li a0, 3
 ; CHECK-NEXT:  .LBB0_4: # %exit
 ; CHECK-NEXT:    csw a0, 0(ca1)
 ; CHECK-NEXT:  .LBB0_5: # %exit
@@ -41,31 +41,31 @@ exit:
 define void @above_threshold_mips(i32 %in, i32 addrspace(200)* %out) nounwind {
 ; CHECK-LABEL: above_threshold_mips:
 ; CHECK:       # %bb.0: # %entry
-; CHECK-NEXT:    addi a2, zero, 2
+; CHECK-NEXT:    li a2, 2
 ; CHECK-NEXT:    blt a2, a0, .LBB1_4
 ; CHECK-NEXT:  # %bb.1: # %entry
-; CHECK-NEXT:    addi a2, zero, 1
+; CHECK-NEXT:    li a2, 1
 ; CHECK-NEXT:    beq a0, a2, .LBB1_7
 ; CHECK-NEXT:  # %bb.2: # %entry
-; CHECK-NEXT:    addi a2, zero, 2
+; CHECK-NEXT:    li a2, 2
 ; CHECK-NEXT:    bne a0, a2, .LBB1_10
 ; CHECK-NEXT:  # %bb.3: # %bb2
-; CHECK-NEXT:    addi a0, zero, 3
+; CHECK-NEXT:    li a0, 3
 ; CHECK-NEXT:    j .LBB1_9
 ; CHECK-NEXT:  .LBB1_4: # %entry
-; CHECK-NEXT:    addi a2, zero, 3
+; CHECK-NEXT:    li a2, 3
 ; CHECK-NEXT:    beq a0, a2, .LBB1_8
 ; CHECK-NEXT:  # %bb.5: # %entry
-; CHECK-NEXT:    addi a2, zero, 4
+; CHECK-NEXT:    li a2, 4
 ; CHECK-NEXT:    bne a0, a2, .LBB1_10
 ; CHECK-NEXT:  # %bb.6: # %bb4
-; CHECK-NEXT:    addi a0, zero, 1
+; CHECK-NEXT:    li a0, 1
 ; CHECK-NEXT:    j .LBB1_9
 ; CHECK-NEXT:  .LBB1_7: # %bb1
-; CHECK-NEXT:    addi a0, zero, 4
+; CHECK-NEXT:    li a0, 4
 ; CHECK-NEXT:    j .LBB1_9
 ; CHECK-NEXT:  .LBB1_8: # %bb3
-; CHECK-NEXT:    addi a0, zero, 2
+; CHECK-NEXT:    li a0, 2
 ; CHECK-NEXT:  .LBB1_9: # %exit
 ; CHECK-NEXT:    csw a0, 0(ca1)
 ; CHECK-NEXT:  .LBB1_10: # %exit
@@ -96,43 +96,43 @@ exit:
 define void @above_threshold_all(i32 %in, i32 addrspace(200)* %out) nounwind {
 ; CHECK-LABEL: above_threshold_all:
 ; CHECK:       # %bb.0: # %entry
-; CHECK-NEXT:    addi a2, zero, 3
+; CHECK-NEXT:    li a2, 3
 ; CHECK-NEXT:    blt a2, a0, .LBB2_5
 ; CHECK-NEXT:  # %bb.1: # %entry
-; CHECK-NEXT:    addi a2, zero, 1
+; CHECK-NEXT:    li a2, 1
 ; CHECK-NEXT:    beq a0, a2, .LBB2_9
 ; CHECK-NEXT:  # %bb.2: # %entry
-; CHECK-NEXT:    addi a2, zero, 2
+; CHECK-NEXT:    li a2, 2
 ; CHECK-NEXT:    beq a0, a2, .LBB2_10
 ; CHECK-NEXT:  # %bb.3: # %entry
-; CHECK-NEXT:    addi a2, zero, 3
+; CHECK-NEXT:    li a2, 3
 ; CHECK-NEXT:    bne a0, a2, .LBB2_14
 ; CHECK-NEXT:  # %bb.4: # %bb3
-; CHECK-NEXT:    addi a0, zero, 2
+; CHECK-NEXT:    li a0, 2
 ; CHECK-NEXT:    j .LBB2_13
 ; CHECK-NEXT:  .LBB2_5: # %entry
-; CHECK-NEXT:    addi a2, zero, 4
+; CHECK-NEXT:    li a2, 4
 ; CHECK-NEXT:    beq a0, a2, .LBB2_11
 ; CHECK-NEXT:  # %bb.6: # %entry
-; CHECK-NEXT:    addi a2, zero, 5
+; CHECK-NEXT:    li a2, 5
 ; CHECK-NEXT:    beq a0, a2, .LBB2_12
 ; CHECK-NEXT:  # %bb.7: # %entry
-; CHECK-NEXT:    addi a2, zero, 6
+; CHECK-NEXT:    li a2, 6
 ; CHECK-NEXT:    bne a0, a2, .LBB2_14
 ; CHECK-NEXT:  # %bb.8: # %bb6
-; CHECK-NEXT:    addi a0, zero, 200
+; CHECK-NEXT:    li a0, 200
 ; CHECK-NEXT:    j .LBB2_13
 ; CHECK-NEXT:  .LBB2_9: # %bb1
-; CHECK-NEXT:    addi a0, zero, 4
+; CHECK-NEXT:    li a0, 4
 ; CHECK-NEXT:    j .LBB2_13
 ; CHECK-NEXT:  .LBB2_10: # %bb2
-; CHECK-NEXT:    addi a0, zero, 3
+; CHECK-NEXT:    li a0, 3
 ; CHECK-NEXT:    j .LBB2_13
 ; CHECK-NEXT:  .LBB2_11: # %bb4
-; CHECK-NEXT:    addi a0, zero, 1
+; CHECK-NEXT:    li a0, 1
 ; CHECK-NEXT:    j .LBB2_13
 ; CHECK-NEXT:  .LBB2_12: # %bb5
-; CHECK-NEXT:    addi a0, zero, 100
+; CHECK-NEXT:    li a0, 100
 ; CHECK-NEXT:  .LBB2_13: # %exit
 ; CHECK-NEXT:    csw a0, 0(ca1)
 ; CHECK-NEXT:  .LBB2_14: # %exit

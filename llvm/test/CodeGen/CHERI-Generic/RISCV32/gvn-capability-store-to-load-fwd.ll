@@ -38,7 +38,6 @@ define i32 @first_i32_store_to_load_fwd(i8 addrspace(200)* %arg) local_unnamed_a
 ; CHECK-NEXT:    store i8 addrspace(200)* [[ARG]], i8 addrspace(200)* addrspace(200)* [[AS_CAP]], align 8
 ; CHECK-NEXT:    [[RESULT:%.*]] = load i32, i32 addrspace(200)* [[FIELD]], align 4
 ; CHECK-NEXT:    ret i32 [[RESULT]]
-;
   %stackval = alloca %struct.addrinfo, align 8, addrspace(200)
   %field = getelementptr inbounds %struct.addrinfo, %struct.addrinfo addrspace(200)* %stackval, i64 0, i32 0
   %as_cap = bitcast %struct.addrinfo addrspace(200)* %stackval to i8 addrspace(200)* addrspace(200)*
@@ -52,7 +51,8 @@ define i32 @second_i32_store_to_load_fwd(i8 addrspace(200)* %arg) local_unnamed_
 ; ASM:       # %bb.0:
 ; ASM-NEXT:    cincoffset csp, csp, -48
 ; ASM-NEXT:    csc ca0, 0(csp)
-; ASM-NEXT:    clw a0, 4(csp)
+; ASM-NEXT:    cincoffset ca0, csp, 0
+; ASM-NEXT:    clw a0, 4(ca0)
 ; ASM-NEXT:    cincoffset csp, csp, 48
 ; ASM-NEXT:    cret
 ; CHECK-LABEL: define {{[^@]+}}@second_i32_store_to_load_fwd
@@ -63,7 +63,6 @@ define i32 @second_i32_store_to_load_fwd(i8 addrspace(200)* %arg) local_unnamed_
 ; CHECK-NEXT:    store i8 addrspace(200)* [[ARG]], i8 addrspace(200)* addrspace(200)* [[AS_CAP]], align 8
 ; CHECK-NEXT:    [[RESULT:%.*]] = load i32, i32 addrspace(200)* [[FIELD]], align 4
 ; CHECK-NEXT:    ret i32 [[RESULT]]
-;
   %stackval = alloca %struct.addrinfo, align 8, addrspace(200)
   %field = getelementptr inbounds %struct.addrinfo, %struct.addrinfo addrspace(200)* %stackval, i64 0, i32 1
   %as_cap = bitcast %struct.addrinfo addrspace(200)* %stackval to i8 addrspace(200)* addrspace(200)*
@@ -87,7 +86,6 @@ define i32 @third_i32_store_to_load_fwd(i8 addrspace(200)* %arg) local_unnamed_a
 ; CHECK-NEXT:    [[AS_CAP:%.*]] = bitcast [[STRUCT_ADDRINFO]] addrspace(200)* [[STACKVAL]] to i8 addrspace(200)* addrspace(200)*
 ; CHECK-NEXT:    store i8 addrspace(200)* [[ARG]], i8 addrspace(200)* addrspace(200)* [[AS_CAP]], align 8
 ; CHECK-NEXT:    ret i32 undef
-;
   %stackval = alloca %struct.addrinfo, align 8, addrspace(200)
   %field = getelementptr inbounds %struct.addrinfo, %struct.addrinfo addrspace(200)* %stackval, i64 0, i32 2
   %as_cap = bitcast %struct.addrinfo addrspace(200)* %stackval to i8 addrspace(200)* addrspace(200)*
@@ -111,7 +109,6 @@ define i32 @fourth_i32_store_to_load_fwd(i8 addrspace(200)* %arg) local_unnamed_
 ; CHECK-NEXT:    [[AS_CAP:%.*]] = bitcast [[STRUCT_ADDRINFO]] addrspace(200)* [[STACKVAL]] to i8 addrspace(200)* addrspace(200)*
 ; CHECK-NEXT:    store i8 addrspace(200)* [[ARG]], i8 addrspace(200)* addrspace(200)* [[AS_CAP]], align 8
 ; CHECK-NEXT:    ret i32 undef
-;
   %stackval = alloca %struct.addrinfo, align 8, addrspace(200)
   %field = getelementptr inbounds %struct.addrinfo, %struct.addrinfo addrspace(200)* %stackval, i64 0, i32 3
   %as_cap = bitcast %struct.addrinfo addrspace(200)* %stackval to i8 addrspace(200)* addrspace(200)*

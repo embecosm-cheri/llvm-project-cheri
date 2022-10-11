@@ -6,84 +6,76 @@
 // CHECK-IL32PC64-LABEL: @callee(
 // CHECK-IL32PC64-NEXT:  entry:
 // CHECK-IL32PC64-NEXT:    [[N_ADDR:%.*]] = alloca i32, align 4, addrspace(200)
-// CHECK-IL32PC64-NEXT:    [[AP:%.*]] = alloca i8 addrspace(200)*, align 8, addrspace(200)
-// CHECK-IL32PC64-NEXT:    [[RET:%.*]] = alloca i8 addrspace(200)*, align 8, addrspace(200)
-// CHECK-IL32PC64-NEXT:    store i32 [[N:%.*]], i32 addrspace(200)* [[N_ADDR]], align 4
-// CHECK-IL32PC64-NEXT:    [[AP1:%.*]] = bitcast i8 addrspace(200)* addrspace(200)* [[AP]] to i8 addrspace(200)*
-// CHECK-IL32PC64-NEXT:    call void @llvm.va_start.p200i8(i8 addrspace(200)* [[AP1]])
+// CHECK-IL32PC64-NEXT:    [[AP:%.*]] = alloca ptr addrspace(200), align 8, addrspace(200)
+// CHECK-IL32PC64-NEXT:    [[RET:%.*]] = alloca ptr addrspace(200), align 8, addrspace(200)
+// CHECK-IL32PC64-NEXT:    store i32 [[N:%.*]], ptr addrspace(200) [[N_ADDR]], align 4
+// CHECK-IL32PC64-NEXT:    call void @llvm.va_start.p200(ptr addrspace(200) [[AP]])
 // CHECK-IL32PC64-NEXT:    br label [[FOR_COND:%.*]]
 // CHECK-IL32PC64:       for.cond:
-// CHECK-IL32PC64-NEXT:    [[TMP0:%.*]] = load i32, i32 addrspace(200)* [[N_ADDR]], align 4
+// CHECK-IL32PC64-NEXT:    [[TMP0:%.*]] = load i32, ptr addrspace(200) [[N_ADDR]], align 4
 // CHECK-IL32PC64-NEXT:    [[CMP:%.*]] = icmp sgt i32 [[TMP0]], 0
 // CHECK-IL32PC64-NEXT:    br i1 [[CMP]], label [[FOR_BODY:%.*]], label [[FOR_END:%.*]]
 // CHECK-IL32PC64:       for.body:
-// CHECK-IL32PC64-NEXT:    [[ARGP_CUR:%.*]] = load i8 addrspace(200)*, i8 addrspace(200)* addrspace(200)* [[AP]], align 8
-// CHECK-IL32PC64-NEXT:    [[ARGP_NEXT:%.*]] = getelementptr inbounds i8, i8 addrspace(200)* [[ARGP_CUR]], i32 4
-// CHECK-IL32PC64-NEXT:    store i8 addrspace(200)* [[ARGP_NEXT]], i8 addrspace(200)* addrspace(200)* [[AP]], align 8
-// CHECK-IL32PC64-NEXT:    [[TMP1:%.*]] = bitcast i8 addrspace(200)* [[ARGP_CUR]] to i32 addrspace(200)*
-// CHECK-IL32PC64-NEXT:    [[TMP2:%.*]] = load i32, i32 addrspace(200)* [[TMP1]], align 4
+// CHECK-IL32PC64-NEXT:    [[ARGP_CUR:%.*]] = load ptr addrspace(200), ptr addrspace(200) [[AP]], align 8
+// CHECK-IL32PC64-NEXT:    [[ARGP_NEXT:%.*]] = getelementptr inbounds i8, ptr addrspace(200) [[ARGP_CUR]], i32 4
+// CHECK-IL32PC64-NEXT:    store ptr addrspace(200) [[ARGP_NEXT]], ptr addrspace(200) [[AP]], align 8
+// CHECK-IL32PC64-NEXT:    [[TMP1:%.*]] = load i32, ptr addrspace(200) [[ARGP_CUR]], align 4
 // CHECK-IL32PC64-NEXT:    br label [[FOR_INC:%.*]]
 // CHECK-IL32PC64:       for.inc:
-// CHECK-IL32PC64-NEXT:    [[TMP3:%.*]] = load i32, i32 addrspace(200)* [[N_ADDR]], align 4
-// CHECK-IL32PC64-NEXT:    [[DEC:%.*]] = add nsw i32 [[TMP3]], -1
-// CHECK-IL32PC64-NEXT:    store i32 [[DEC]], i32 addrspace(200)* [[N_ADDR]], align 4
-// CHECK-IL32PC64-NEXT:    br label [[FOR_COND]]
+// CHECK-IL32PC64-NEXT:    [[TMP2:%.*]] = load i32, ptr addrspace(200) [[N_ADDR]], align 4
+// CHECK-IL32PC64-NEXT:    [[DEC:%.*]] = add nsw i32 [[TMP2]], -1
+// CHECK-IL32PC64-NEXT:    store i32 [[DEC]], ptr addrspace(200) [[N_ADDR]], align 4
+// CHECK-IL32PC64-NEXT:    br label [[FOR_COND]], !llvm.loop [[LOOP4:![0-9]+]]
 // CHECK-IL32PC64:       for.end:
-// CHECK-IL32PC64-NEXT:    [[ARGP_CUR2:%.*]] = load i8 addrspace(200)*, i8 addrspace(200)* addrspace(200)* [[AP]], align 8
-// CHECK-IL32PC64-NEXT:    [[TMP4:%.*]] = call i32 @llvm.cheri.cap.address.get.i32(i8 addrspace(200)* [[ARGP_CUR2]])
-// CHECK-IL32PC64-NEXT:    [[TMP5:%.*]] = add i32 [[TMP4]], 7
-// CHECK-IL32PC64-NEXT:    [[TMP6:%.*]] = and i32 [[TMP5]], -8
-// CHECK-IL32PC64-NEXT:    [[TMP7:%.*]] = call i8 addrspace(200)* @llvm.cheri.cap.address.set.i32(i8 addrspace(200)* [[ARGP_CUR2]], i32 [[TMP6]])
-// CHECK-IL32PC64-NEXT:    [[ARGP_NEXT3:%.*]] = getelementptr inbounds i8, i8 addrspace(200)* [[TMP7]], i32 8
-// CHECK-IL32PC64-NEXT:    store i8 addrspace(200)* [[ARGP_NEXT3]], i8 addrspace(200)* addrspace(200)* [[AP]], align 8
-// CHECK-IL32PC64-NEXT:    [[TMP8:%.*]] = bitcast i8 addrspace(200)* [[TMP7]] to i8 addrspace(200)* addrspace(200)*
-// CHECK-IL32PC64-NEXT:    [[TMP9:%.*]] = load i8 addrspace(200)*, i8 addrspace(200)* addrspace(200)* [[TMP8]], align 8
-// CHECK-IL32PC64-NEXT:    store i8 addrspace(200)* [[TMP9]], i8 addrspace(200)* addrspace(200)* [[RET]], align 8
-// CHECK-IL32PC64-NEXT:    [[AP4:%.*]] = bitcast i8 addrspace(200)* addrspace(200)* [[AP]] to i8 addrspace(200)*
-// CHECK-IL32PC64-NEXT:    call void @llvm.va_end.p200i8(i8 addrspace(200)* [[AP4]])
-// CHECK-IL32PC64-NEXT:    [[TMP10:%.*]] = load i8 addrspace(200)*, i8 addrspace(200)* addrspace(200)* [[RET]], align 8
-// CHECK-IL32PC64-NEXT:    ret i8 addrspace(200)* [[TMP10]]
+// CHECK-IL32PC64-NEXT:    [[ARGP_CUR1:%.*]] = load ptr addrspace(200), ptr addrspace(200) [[AP]], align 8
+// CHECK-IL32PC64-NEXT:    [[TMP3:%.*]] = call i32 @llvm.cheri.cap.address.get.i32(ptr addrspace(200) [[ARGP_CUR1]])
+// CHECK-IL32PC64-NEXT:    [[TMP4:%.*]] = add i32 [[TMP3]], 7
+// CHECK-IL32PC64-NEXT:    [[TMP5:%.*]] = and i32 [[TMP4]], -8
+// CHECK-IL32PC64-NEXT:    [[TMP6:%.*]] = call ptr addrspace(200) @llvm.cheri.cap.address.set.i32(ptr addrspace(200) [[ARGP_CUR1]], i32 [[TMP5]])
+// CHECK-IL32PC64-NEXT:    [[ARGP_NEXT2:%.*]] = getelementptr inbounds i8, ptr addrspace(200) [[TMP6]], i32 8
+// CHECK-IL32PC64-NEXT:    store ptr addrspace(200) [[ARGP_NEXT2]], ptr addrspace(200) [[AP]], align 8
+// CHECK-IL32PC64-NEXT:    [[TMP7:%.*]] = load ptr addrspace(200), ptr addrspace(200) [[TMP6]], align 8
+// CHECK-IL32PC64-NEXT:    store ptr addrspace(200) [[TMP7]], ptr addrspace(200) [[RET]], align 8
+// CHECK-IL32PC64-NEXT:    call void @llvm.va_end.p200(ptr addrspace(200) [[AP]])
+// CHECK-IL32PC64-NEXT:    [[TMP8:%.*]] = load ptr addrspace(200), ptr addrspace(200) [[RET]], align 8
+// CHECK-IL32PC64-NEXT:    ret ptr addrspace(200) [[TMP8]]
 //
 // CHECK-L64PC128-LABEL: @callee(
 // CHECK-L64PC128-NEXT:  entry:
 // CHECK-L64PC128-NEXT:    [[N_ADDR:%.*]] = alloca i32, align 4, addrspace(200)
-// CHECK-L64PC128-NEXT:    [[AP:%.*]] = alloca i8 addrspace(200)*, align 16, addrspace(200)
-// CHECK-L64PC128-NEXT:    [[RET:%.*]] = alloca i8 addrspace(200)*, align 16, addrspace(200)
-// CHECK-L64PC128-NEXT:    store i32 [[N:%.*]], i32 addrspace(200)* [[N_ADDR]], align 4
-// CHECK-L64PC128-NEXT:    [[AP1:%.*]] = bitcast i8 addrspace(200)* addrspace(200)* [[AP]] to i8 addrspace(200)*
-// CHECK-L64PC128-NEXT:    call void @llvm.va_start.p200i8(i8 addrspace(200)* [[AP1]])
+// CHECK-L64PC128-NEXT:    [[AP:%.*]] = alloca ptr addrspace(200), align 16, addrspace(200)
+// CHECK-L64PC128-NEXT:    [[RET:%.*]] = alloca ptr addrspace(200), align 16, addrspace(200)
+// CHECK-L64PC128-NEXT:    store i32 [[N:%.*]], ptr addrspace(200) [[N_ADDR]], align 4
+// CHECK-L64PC128-NEXT:    call void @llvm.va_start.p200(ptr addrspace(200) [[AP]])
 // CHECK-L64PC128-NEXT:    br label [[FOR_COND:%.*]]
 // CHECK-L64PC128:       for.cond:
-// CHECK-L64PC128-NEXT:    [[TMP0:%.*]] = load i32, i32 addrspace(200)* [[N_ADDR]], align 4
+// CHECK-L64PC128-NEXT:    [[TMP0:%.*]] = load i32, ptr addrspace(200) [[N_ADDR]], align 4
 // CHECK-L64PC128-NEXT:    [[CMP:%.*]] = icmp sgt i32 [[TMP0]], 0
 // CHECK-L64PC128-NEXT:    br i1 [[CMP]], label [[FOR_BODY:%.*]], label [[FOR_END:%.*]]
 // CHECK-L64PC128:       for.body:
-// CHECK-L64PC128-NEXT:    [[ARGP_CUR:%.*]] = load i8 addrspace(200)*, i8 addrspace(200)* addrspace(200)* [[AP]], align 16
-// CHECK-L64PC128-NEXT:    [[ARGP_NEXT:%.*]] = getelementptr inbounds i8, i8 addrspace(200)* [[ARGP_CUR]], i64 8
-// CHECK-L64PC128-NEXT:    store i8 addrspace(200)* [[ARGP_NEXT]], i8 addrspace(200)* addrspace(200)* [[AP]], align 16
-// CHECK-L64PC128-NEXT:    [[TMP1:%.*]] = bitcast i8 addrspace(200)* [[ARGP_CUR]] to i32 addrspace(200)*
-// CHECK-L64PC128-NEXT:    [[TMP2:%.*]] = load i32, i32 addrspace(200)* [[TMP1]], align 8
+// CHECK-L64PC128-NEXT:    [[ARGP_CUR:%.*]] = load ptr addrspace(200), ptr addrspace(200) [[AP]], align 16
+// CHECK-L64PC128-NEXT:    [[ARGP_NEXT:%.*]] = getelementptr inbounds i8, ptr addrspace(200) [[ARGP_CUR]], i64 8
+// CHECK-L64PC128-NEXT:    store ptr addrspace(200) [[ARGP_NEXT]], ptr addrspace(200) [[AP]], align 16
+// CHECK-L64PC128-NEXT:    [[TMP1:%.*]] = load i32, ptr addrspace(200) [[ARGP_CUR]], align 8
 // CHECK-L64PC128-NEXT:    br label [[FOR_INC:%.*]]
 // CHECK-L64PC128:       for.inc:
-// CHECK-L64PC128-NEXT:    [[TMP3:%.*]] = load i32, i32 addrspace(200)* [[N_ADDR]], align 4
-// CHECK-L64PC128-NEXT:    [[DEC:%.*]] = add nsw i32 [[TMP3]], -1
-// CHECK-L64PC128-NEXT:    store i32 [[DEC]], i32 addrspace(200)* [[N_ADDR]], align 4
-// CHECK-L64PC128-NEXT:    br label [[FOR_COND]]
+// CHECK-L64PC128-NEXT:    [[TMP2:%.*]] = load i32, ptr addrspace(200) [[N_ADDR]], align 4
+// CHECK-L64PC128-NEXT:    [[DEC:%.*]] = add nsw i32 [[TMP2]], -1
+// CHECK-L64PC128-NEXT:    store i32 [[DEC]], ptr addrspace(200) [[N_ADDR]], align 4
+// CHECK-L64PC128-NEXT:    br label [[FOR_COND]], !llvm.loop [[LOOP4:![0-9]+]]
 // CHECK-L64PC128:       for.end:
-// CHECK-L64PC128-NEXT:    [[ARGP_CUR2:%.*]] = load i8 addrspace(200)*, i8 addrspace(200)* addrspace(200)* [[AP]], align 16
-// CHECK-L64PC128-NEXT:    [[TMP4:%.*]] = call i64 @llvm.cheri.cap.address.get.i64(i8 addrspace(200)* [[ARGP_CUR2]])
-// CHECK-L64PC128-NEXT:    [[TMP5:%.*]] = add i64 [[TMP4]], 15
-// CHECK-L64PC128-NEXT:    [[TMP6:%.*]] = and i64 [[TMP5]], -16
-// CHECK-L64PC128-NEXT:    [[TMP7:%.*]] = call i8 addrspace(200)* @llvm.cheri.cap.address.set.i64(i8 addrspace(200)* [[ARGP_CUR2]], i64 [[TMP6]])
-// CHECK-L64PC128-NEXT:    [[ARGP_NEXT3:%.*]] = getelementptr inbounds i8, i8 addrspace(200)* [[TMP7]], i64 16
-// CHECK-L64PC128-NEXT:    store i8 addrspace(200)* [[ARGP_NEXT3]], i8 addrspace(200)* addrspace(200)* [[AP]], align 16
-// CHECK-L64PC128-NEXT:    [[TMP8:%.*]] = bitcast i8 addrspace(200)* [[TMP7]] to i8 addrspace(200)* addrspace(200)*
-// CHECK-L64PC128-NEXT:    [[TMP9:%.*]] = load i8 addrspace(200)*, i8 addrspace(200)* addrspace(200)* [[TMP8]], align 16
-// CHECK-L64PC128-NEXT:    store i8 addrspace(200)* [[TMP9]], i8 addrspace(200)* addrspace(200)* [[RET]], align 16
-// CHECK-L64PC128-NEXT:    [[AP4:%.*]] = bitcast i8 addrspace(200)* addrspace(200)* [[AP]] to i8 addrspace(200)*
-// CHECK-L64PC128-NEXT:    call void @llvm.va_end.p200i8(i8 addrspace(200)* [[AP4]])
-// CHECK-L64PC128-NEXT:    [[TMP10:%.*]] = load i8 addrspace(200)*, i8 addrspace(200)* addrspace(200)* [[RET]], align 16
-// CHECK-L64PC128-NEXT:    ret i8 addrspace(200)* [[TMP10]]
+// CHECK-L64PC128-NEXT:    [[ARGP_CUR1:%.*]] = load ptr addrspace(200), ptr addrspace(200) [[AP]], align 16
+// CHECK-L64PC128-NEXT:    [[TMP3:%.*]] = call i64 @llvm.cheri.cap.address.get.i64(ptr addrspace(200) [[ARGP_CUR1]])
+// CHECK-L64PC128-NEXT:    [[TMP4:%.*]] = add i64 [[TMP3]], 15
+// CHECK-L64PC128-NEXT:    [[TMP5:%.*]] = and i64 [[TMP4]], -16
+// CHECK-L64PC128-NEXT:    [[TMP6:%.*]] = call ptr addrspace(200) @llvm.cheri.cap.address.set.i64(ptr addrspace(200) [[ARGP_CUR1]], i64 [[TMP5]])
+// CHECK-L64PC128-NEXT:    [[ARGP_NEXT2:%.*]] = getelementptr inbounds i8, ptr addrspace(200) [[TMP6]], i64 16
+// CHECK-L64PC128-NEXT:    store ptr addrspace(200) [[ARGP_NEXT2]], ptr addrspace(200) [[AP]], align 16
+// CHECK-L64PC128-NEXT:    [[TMP7:%.*]] = load ptr addrspace(200), ptr addrspace(200) [[TMP6]], align 16
+// CHECK-L64PC128-NEXT:    store ptr addrspace(200) [[TMP7]], ptr addrspace(200) [[RET]], align 16
+// CHECK-L64PC128-NEXT:    call void @llvm.va_end.p200(ptr addrspace(200) [[AP]])
+// CHECK-L64PC128-NEXT:    [[TMP8:%.*]] = load ptr addrspace(200), ptr addrspace(200) [[RET]], align 16
+// CHECK-L64PC128-NEXT:    ret ptr addrspace(200) [[TMP8]]
 //
 void *callee(int n, ...) {
 	__builtin_va_list ap;
@@ -102,19 +94,19 @@ void *callee(int n, ...) {
 
 // CHECK-IL32PC64-LABEL: @caller(
 // CHECK-IL32PC64-NEXT:  entry:
-// CHECK-IL32PC64-NEXT:    [[P_ADDR:%.*]] = alloca i8 addrspace(200)*, align 8, addrspace(200)
-// CHECK-IL32PC64-NEXT:    store i8 addrspace(200)* [[P:%.*]], i8 addrspace(200)* addrspace(200)* [[P_ADDR]], align 8
-// CHECK-IL32PC64-NEXT:    [[TMP0:%.*]] = load i8 addrspace(200)*, i8 addrspace(200)* addrspace(200)* [[P_ADDR]], align 8
-// CHECK-IL32PC64-NEXT:    [[CALL:%.*]] = call i8 addrspace(200)* (i32, ...) @callee(i32 4, i32 1, i32 2, i32 3, i8 addrspace(200)* [[TMP0]])
-// CHECK-IL32PC64-NEXT:    ret i8 addrspace(200)* [[CALL]]
+// CHECK-IL32PC64-NEXT:    [[P_ADDR:%.*]] = alloca ptr addrspace(200), align 8, addrspace(200)
+// CHECK-IL32PC64-NEXT:    store ptr addrspace(200) [[P:%.*]], ptr addrspace(200) [[P_ADDR]], align 8
+// CHECK-IL32PC64-NEXT:    [[TMP0:%.*]] = load ptr addrspace(200), ptr addrspace(200) [[P_ADDR]], align 8
+// CHECK-IL32PC64-NEXT:    [[CALL:%.*]] = call ptr addrspace(200) (i32, ...) @callee(i32 noundef 4, i32 noundef 1, i32 noundef 2, i32 noundef 3, ptr addrspace(200) noundef [[TMP0]])
+// CHECK-IL32PC64-NEXT:    ret ptr addrspace(200) [[CALL]]
 //
 // CHECK-L64PC128-LABEL: @caller(
 // CHECK-L64PC128-NEXT:  entry:
-// CHECK-L64PC128-NEXT:    [[P_ADDR:%.*]] = alloca i8 addrspace(200)*, align 16, addrspace(200)
-// CHECK-L64PC128-NEXT:    store i8 addrspace(200)* [[P:%.*]], i8 addrspace(200)* addrspace(200)* [[P_ADDR]], align 16
-// CHECK-L64PC128-NEXT:    [[TMP0:%.*]] = load i8 addrspace(200)*, i8 addrspace(200)* addrspace(200)* [[P_ADDR]], align 16
-// CHECK-L64PC128-NEXT:    [[CALL:%.*]] = call i8 addrspace(200)* (i32, ...) @callee(i32 signext 4, i32 signext 1, i32 signext 2, i32 signext 3, i8 addrspace(200)* [[TMP0]])
-// CHECK-L64PC128-NEXT:    ret i8 addrspace(200)* [[CALL]]
+// CHECK-L64PC128-NEXT:    [[P_ADDR:%.*]] = alloca ptr addrspace(200), align 16, addrspace(200)
+// CHECK-L64PC128-NEXT:    store ptr addrspace(200) [[P:%.*]], ptr addrspace(200) [[P_ADDR]], align 16
+// CHECK-L64PC128-NEXT:    [[TMP0:%.*]] = load ptr addrspace(200), ptr addrspace(200) [[P_ADDR]], align 16
+// CHECK-L64PC128-NEXT:    [[CALL:%.*]] = call ptr addrspace(200) (i32, ...) @callee(i32 noundef signext 4, i32 noundef signext 1, i32 noundef signext 2, i32 noundef signext 3, ptr addrspace(200) noundef [[TMP0]])
+// CHECK-L64PC128-NEXT:    ret ptr addrspace(200) [[CALL]]
 //
 void *caller(void *p) {
 	return callee(4, 1, 2, 3, p);

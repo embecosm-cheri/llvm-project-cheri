@@ -22,23 +22,10 @@ declare i8 addrspace(200)* @llvm.cheri.cap.bounds.set.i64(i8 addrspace(200)*, i6
 declare i8 addrspace(200)* @llvm.cheri.cap.offset.increment.i64(i8 addrspace(200)*, i64)
 
 define i8 @testBoundsSetAlias() {
-; CHECK-LABEL: Function: testBoundsSetAlias: 5 pointers, 1 call sites
-; CHECK-DAG:   MustAlias:	%struct.A addrspace(200)* %a, i8 addrspace(200)* %a.bitcast
-; CHECK-DAG:   PartialAlias (off 8):	%struct.A addrspace(200)* %a, i8 addrspace(200)* %n
-; CHECK-DAG:   NoAlias:	i8 addrspace(200)* %a.bitcast, i8 addrspace(200)* %n
-; CHECK-DAG:   MayAlias:	%struct.A addrspace(200)* %a, i8 addrspace(200)* %a.laundered
-; CHECK-DAG:   MayAlias:	i8 addrspace(200)* %a.bitcast, i8 addrspace(200)* %a.laundered
-; CHECK-DAG:   MayAlias:	i8 addrspace(200)* %a.laundered, i8 addrspace(200)* %n
-; CHECK-DAG:   MayAlias:	%struct.A addrspace(200)* %a, i8 addrspace(200)* %n.laundered
-; CHECK-DAG:   NoAlias:	i8 addrspace(200)* %a.bitcast, i8 addrspace(200)* %n.laundered
-; CHECK-DAG:   MayAlias:	i8 addrspace(200)* %n, i8 addrspace(200)* %n.laundered
-; CHECK-DAG:   NoAlias:	i8 addrspace(200)* %a.laundered, i8 addrspace(200)* %n.laundered
-; CHECK-DAG:   NoModRef:  Ptr: %struct.A addrspace(200)* %a	<->  %a.laundered = call i8 addrspace(200)* @llvm.cheri.cap.bounds.set.i64(i8 addrspace(200)* nonnull %a.bitcast, i64 4)
-; CHECK-DAG:   NoModRef:  Ptr: i8 addrspace(200)* %a.bitcast	<->  %a.laundered = call i8 addrspace(200)* @llvm.cheri.cap.bounds.set.i64(i8 addrspace(200)* nonnull %a.bitcast, i64 4)
-; CHECK-DAG:   NoModRef:  Ptr: i8 addrspace(200)* %n	<->  %a.laundered = call i8 addrspace(200)* @llvm.cheri.cap.bounds.set.i64(i8 addrspace(200)* nonnull %a.bitcast, i64 4)
-; CHECK-DAG:   NoModRef:  Ptr: i8 addrspace(200)* %a.laundered	<->  %a.laundered = call i8 addrspace(200)* @llvm.cheri.cap.bounds.set.i64(i8 addrspace(200)* nonnull %a.bitcast, i64 4)
-; CHECK-DAG:   NoModRef:  Ptr: i8 addrspace(200)* %n.laundered	<->  %a.laundered = call i8 addrspace(200)* @llvm.cheri.cap.bounds.set.i64(i8 addrspace(200)* nonnull %a.bitcast, i64 4)
-
+; CHECK-LABEL: Function: testBoundsSetAlias: 2 pointers, 1 call sites
+; CHECK-DAG:     MayAlias:	i8 addrspace(200)* %n, i8 addrspace(200)* %n.laundered
+; CHECK-DAG:     NoModRef:  Ptr: i8* %n        <->  %a.laundered = call i8 addrspace(200)* @llvm.cheri.cap.bounds.set.i64(i8 addrspace(200)* nonnull %a.bitcast, i64 4)
+; CHECK-DAG:     NoModRef:  Ptr: i8* %n.laundered      <->  %a.laundered = call i8 addrspace(200)* @llvm.cheri.cap.bounds.set.i64(i8 addrspace(200)* nonnull %a.bitcast, i64 4)
 entry:
   %a = alloca %struct.A, align 8, addrspace(200)
   %a.bitcast = bitcast %struct.A addrspace(200)* %a to i8 addrspace(200)*
@@ -56,17 +43,8 @@ entry:
 }
 
 define i8 @testIncOffsetAlias() {
-; CHECK-LABEL: Function: testIncOffsetAlias: 5 pointers, 0 call sites
-; CHECK-DAG:     MustAlias:	%struct.A addrspace(200)* %a, i8 addrspace(200)* %a.bitcast
-; CHECK-DAG:     PartialAlias (off 8):	%struct.A addrspace(200)* %a, i8 addrspace(200)* %n
-; CHECK-DAG:     NoAlias:	i8 addrspace(200)* %a.bitcast, i8 addrspace(200)* %n
-; CHECK-DAG:     PartialAlias (off 4):	%struct.A addrspace(200)* %a, i8 addrspace(200)* %a.laundered
-; CHECK-DAG:     NoAlias:	i8 addrspace(200)* %a.bitcast, i8 addrspace(200)* %a.laundered
-; CHECK-DAG:     NoAlias:	i8 addrspace(200)* %a.laundered, i8 addrspace(200)* %n
-; CHECK-DAG:     NoAlias:	%struct.A addrspace(200)* %a, i8 addrspace(200)* %n.laundered
-; CHECK-DAG:     NoAlias:	i8 addrspace(200)* %a.bitcast, i8 addrspace(200)* %n.laundered
+; CHECK-LABEL: Function: testIncOffsetAlias: 2 pointers, 0 call sites
 ; CHECK-DAG:     NoAlias:	i8 addrspace(200)* %n, i8 addrspace(200)* %n.laundered
-; CHECK-DAG:     NoAlias:	i8 addrspace(200)* %a.laundered, i8 addrspace(200)* %n.laundered
 entry:
   %a = alloca %struct.A, align 8, addrspace(200)
   %a.bitcast = bitcast %struct.A addrspace(200)* %a to i8 addrspace(200)*
@@ -84,17 +62,8 @@ entry:
 }
 
 define i8 @testIncOffsetZeroAlias() {
-; CHECK-LABEL: Function: testIncOffsetZeroAlias: 5 pointers, 0 call sites
-; CHECK-DAG:  MustAlias:	%struct.A addrspace(200)* %a, i8 addrspace(200)* %a.bitcast
-; CHECK-DAG:  PartialAlias (off 8):	%struct.A addrspace(200)* %a, i8 addrspace(200)* %n
-; CHECK-DAG:  NoAlias:	i8 addrspace(200)* %a.bitcast, i8 addrspace(200)* %n
-; CHECK-DAG:  MustAlias:	%struct.A addrspace(200)* %a, i8 addrspace(200)* %a.laundered
-; CHECK-DAG:  MustAlias:	i8 addrspace(200)* %a.bitcast, i8 addrspace(200)* %a.laundered
-; CHECK-DAG:  NoAlias:	i8 addrspace(200)* %a.laundered, i8 addrspace(200)* %n
-; CHECK-DAG:  PartialAlias (off 8):	%struct.A addrspace(200)* %a, i8 addrspace(200)* %n.laundered
-; CHECK-DAG:  NoAlias:	i8 addrspace(200)* %a.bitcast, i8 addrspace(200)* %n.laundered
-; CHECK-DAG:  MustAlias:	i8 addrspace(200)* %n, i8 addrspace(200)* %n.laundered
-; CHECK-DAG:  NoAlias:	i8 addrspace(200)* %a.laundered, i8 addrspace(200)* %n.laundered
+; CHECK-LABEL: Function: testIncOffsetZeroAlias: 2 pointers, 0 call sites
+; CHECK-DAG:     MustAlias:	i8 addrspace(200)* %n, i8 addrspace(200)* %n.laundered
 entry:
   %a = alloca %struct.A, align 8, addrspace(200)
   %a.bitcast = bitcast %struct.A addrspace(200)* %a to i8 addrspace(200)*

@@ -32,11 +32,11 @@ class LLVM_LIBRARY_VISIBILITY MipsTargetInfo : public TargetInfo {
     if (ABI == "o32") {
       Layout = "m:m-p:32:32-i8:8:32-i16:16:32-i64:64-n32-S64";
       if (IsCHERI)
-        llvm::report_fatal_error("Cannot use CHERI with " + ABI + " ABI");
+        llvm::report_fatal_error(Twine("Cannot use CHERI with ") + ABI + " ABI");
     } else if (ABI == "n32") {
       Layout = "m:e-p:32:32-i8:8:32-i16:16:32-i64:64-n32:64-S128";
       if (IsCHERI)
-        llvm::report_fatal_error("Cannot use CHERI with " + ABI + " ABI");
+        llvm::report_fatal_error(Twine("Cannot use CHERI with ") + ABI + " ABI");
     } else if (ABI == "n64") {
       if (IsCHERI) {
         if (CapSize == 64) {
@@ -135,7 +135,7 @@ public:
     if (CapSize == -1) {
       CapSize = TripleCapSize;
     } else if (TripleCapSize != -1 && CapSize != TripleCapSize) {
-      llvm::report_fatal_error("CPU flag " + Opts.CPU +
+      llvm::report_fatal_error(Twine("CPU flag ") + Opts.CPU +
                                " is incompatible with triple " +
                                getTriple().str());
     }
@@ -153,7 +153,7 @@ public:
       if (CapSize > 0) {
         SuitableAlign = CapSize;
         DefaultAlignForAttributeAligned =
-            std::max(DefaultAlignForAttributeAligned, (unsigned short)CapSize);
+            std::max(DefaultAlignForAttributeAligned, (unsigned char)CapSize);
       }
       if (Triple.isMIPS32())
         llvm::report_fatal_error("Cannot use CHERI with MIPS32 triple");
@@ -491,7 +491,7 @@ public:
       assert(CapSize > 0);
       SuitableAlign = std::max(SuitableAlign, (unsigned short)CapSize);
       DefaultAlignForAttributeAligned =
-          std::max(DefaultAlignForAttributeAligned, (unsigned short)CapSize);
+          std::max(DefaultAlignForAttributeAligned, (unsigned char)CapSize);
     }
 
     setDataLayout();
@@ -574,7 +574,7 @@ public:
   unsigned getUnwindWordWidth() const override;
 
   bool validateTarget(DiagnosticsEngine &Diags) const override;
-  bool hasExtIntType() const override { return true; }
+  bool hasBitIntType() const override { return true; }
 };
 } // namespace targets
 } // namespace clang

@@ -8,6 +8,6 @@ struct a {
 void c(void) {
   struct a first;
   struct a second;
-  // CHECK: bitcast %struct.a addrspace(200)* %second to i8 addrspace(200)*
+  // CHECK: %ptr = getelementptr inbounds %struct.a, ptr addrspace(200) %first, i32 0, i32 0
   first.ptr = (__cheri_tocap void *)&second;
 }

@@ -37,10 +37,10 @@ define i32 @caller(i32 zeroext %n) nounwind {
 ; RV32IXCHERI-NEXT:    ccall callee
 ; RV32IXCHERI-NEXT:    mv a0, s2
 ; RV32IXCHERI-NEXT:    cincoffset csp, cs0, -64
-; RV32IXCHERI-NEXT:    clc cs2, 32(csp) # 8-byte Folded Reload
-; RV32IXCHERI-NEXT:    clc cs1, 40(csp) # 8-byte Folded Reload
-; RV32IXCHERI-NEXT:    clc cs0, 48(csp) # 8-byte Folded Reload
 ; RV32IXCHERI-NEXT:    clc cra, 56(csp) # 8-byte Folded Reload
+; RV32IXCHERI-NEXT:    clc cs0, 48(csp) # 8-byte Folded Reload
+; RV32IXCHERI-NEXT:    clc cs1, 40(csp) # 8-byte Folded Reload
+; RV32IXCHERI-NEXT:    clc cs2, 32(csp) # 8-byte Folded Reload
 ; RV32IXCHERI-NEXT:    cincoffset csp, csp, 64
 ; RV32IXCHERI-NEXT:    cret
 ;
@@ -73,10 +73,10 @@ define i32 @caller(i32 zeroext %n) nounwind {
 ; RV64IXCHERI-NEXT:    ccall callee
 ; RV64IXCHERI-NEXT:    mv a0, s2
 ; RV64IXCHERI-NEXT:    cincoffset csp, cs0, -128
-; RV64IXCHERI-NEXT:    clc cs2, 64(csp) # 16-byte Folded Reload
-; RV64IXCHERI-NEXT:    clc cs1, 80(csp) # 16-byte Folded Reload
-; RV64IXCHERI-NEXT:    clc cs0, 96(csp) # 16-byte Folded Reload
 ; RV64IXCHERI-NEXT:    clc cra, 112(csp) # 16-byte Folded Reload
+; RV64IXCHERI-NEXT:    clc cs0, 96(csp) # 16-byte Folded Reload
+; RV64IXCHERI-NEXT:    clc cs1, 80(csp) # 16-byte Folded Reload
+; RV64IXCHERI-NEXT:    clc cs2, 64(csp) # 16-byte Folded Reload
 ; RV64IXCHERI-NEXT:    cincoffset csp, csp, 128
 ; RV64IXCHERI-NEXT:    cret
   %1 = alloca i8, align 64, addrspace(200)

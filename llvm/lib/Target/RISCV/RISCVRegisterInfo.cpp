@@ -14,12 +14,14 @@
 #include "RISCV.h"
 #include "RISCVMachineFunctionInfo.h"
 #include "RISCVSubtarget.h"
+#include "llvm/BinaryFormat/Dwarf.h"
 #include "llvm/CodeGen/MachineFrameInfo.h"
 #include "llvm/CodeGen/MachineFunction.h"
 #include "llvm/CodeGen/MachineInstrBuilder.h"
 #include "llvm/CodeGen/RegisterScavenging.h"
 #include "llvm/CodeGen/TargetFrameLowering.h"
 #include "llvm/CodeGen/TargetInstrInfo.h"
+#include "llvm/IR/DebugInfoMetadata.h"
 #include "llvm/Support/ErrorHandling.h"
 
 #define GET_REGINFO_TARGET_DESC
@@ -126,11 +128,11 @@ BitVector RISCVRegisterInfo::getReservedRegs(const MachineFunction &MF) const {
   markSuperRegs(Reserved, RISCV::VTYPE);
   markSuperRegs(Reserved, RISCV::VXSAT);
   markSuperRegs(Reserved, RISCV::VXRM);
+  markSuperRegs(Reserved, RISCV::VLENB); // vlenb (constant)
 
   // Floating point environment registers.
   markSuperRegs(Reserved, RISCV::FRM);
   markSuperRegs(Reserved, RISCV::FFLAGS);
-  markSuperRegs(Reserved, RISCV::FCSR);
 
   assert(checkAllSuperRegsMarked(Reserved));
   return Reserved;
@@ -142,7 +144,7 @@ bool RISCVRegisterInfo::isAsmClobberable(const MachineFunction &MF,
 }
 
 bool RISCVRegisterInfo::isConstantPhysReg(MCRegister PhysReg) const {
-  return PhysReg == RISCV::X0 || PhysReg == RISCV::C0;
+  return PhysReg == RISCV::X0 || PhysReg == RISCV::VLENB || PhysReg == RISCV::C0;
 }
 
 const uint32_t *RISCVRegisterInfo::getNoPreservedMask() const {
@@ -151,7 +153,7 @@ const uint32_t *RISCVRegisterInfo::getNoPreservedMask() const {
 
 // Frame indexes representing locations of CSRs which are given a fixed location
 // by save/restore libcalls.
-static const std::map<unsigned, int> FixedCSRFIMap = {
+static const std::pair<unsigned, int> FixedCSRFIMap[] = {
   {/*ra*/  RISCV::X1,   -1},
   {/*s0*/  RISCV::X8,   -2},
   {/*s1*/  RISCV::X9,   -3},
@@ -174,8 +176,9 @@ bool RISCVRegisterInfo::hasReservedSpillSlot(const MachineFunction &MF,
   if (!RVFI->useSaveRestoreLibCalls(MF))
     return false;
 
-  auto FII = FixedCSRFIMap.find(Reg);
-  if (FII == FixedCSRFIMap.end())
+  const auto *FII =
+      llvm::find_if(FixedCSRFIMap, [&](auto P) { return P.first == Reg; });
+  if (FII == std::end(FixedCSRFIMap))
     return false;
 
   FrameIdx = FII->second;
@@ -198,7 +201,7 @@ void RISCVRegisterInfo::eliminateFrameIndex(MachineBasicBlock::iterator II,
   Register FrameReg;
   StackOffset Offset =
       getFrameLowering(MF)->getFrameIndexReference(MF, FrameIndex, FrameReg);
-  bool IsRVVSpill = TII->isRVVSpill(MI, /*CheckFIs*/ false);
+  bool IsRVVSpill = RISCV::isRVVSpill(MI);
   if (!IsRVVSpill)
     Offset += StackOffset::getFixed(MI.getOperand(FIOperandNum + 1).getImm());
 
@@ -313,7 +316,7 @@ void RISCVRegisterInfo::eliminateFrameIndex(MachineBasicBlock::iterator II,
       MI.getOperand(FIOperandNum + 1).ChangeToImmediate(Offset.getFixed());
   }
 
-  auto ZvlssegInfo = TII->isRVVSpillForZvlsseg(MI.getOpcode());
+  auto ZvlssegInfo = RISCV::isRVVSpillForZvlsseg(MI.getOpcode());
   if (ZvlssegInfo) {
     Register VL = MRI.createVirtualRegister(&RISCV::GPRRegClass);
     BuildMI(MBB, II, DL, TII->get(RISCV::PseudoReadVLENB), VL);
@@ -371,4 +374,36 @@ RISCVRegisterInfo::getLargestLegalSuperClass(const TargetRegisterClass *RC,
   if (RC == &RISCV::VMV0RegClass)
     return &RISCV::VRRegClass;
   return RC;
+}
+
+void RISCVRegisterInfo::getOffsetOpcodes(const StackOffset &Offset,
+                                         SmallVectorImpl<uint64_t> &Ops) const {
+  // VLENB is the length of a vector register in bytes. We use <vscale x 8 x i8>
+  // to represent one vector register. The dwarf offset is
+  // VLENB * scalable_offset / 8.
+  assert(Offset.getScalable() % 8 == 0 && "Invalid frame offset");
+
+  // Add fixed-sized offset using existing DIExpression interface.
+  DIExpression::appendOffset(Ops, Offset.getFixed());
+
+  unsigned VLENB = getDwarfRegNum(RISCV::VLENB, true);
+  int64_t VLENBSized = Offset.getScalable() / 8;
+  if (VLENBSized > 0) {
+    Ops.push_back(dwarf::DW_OP_constu);
+    Ops.push_back(VLENBSized);
+    Ops.append({dwarf::DW_OP_bregx, VLENB, 0ULL});
+    Ops.push_back(dwarf::DW_OP_mul);
+    Ops.push_back(dwarf::DW_OP_plus);
+  } else if (VLENBSized < 0) {
+    Ops.push_back(dwarf::DW_OP_constu);
+    Ops.push_back(-VLENBSized);
+    Ops.append({dwarf::DW_OP_bregx, VLENB, 0ULL});
+    Ops.push_back(dwarf::DW_OP_mul);
+    Ops.push_back(dwarf::DW_OP_minus);
+  }
+}
+
+unsigned
+RISCVRegisterInfo::getRegisterCostTableIndex(const MachineFunction &MF) const {
+  return MF.getSubtarget<RISCVSubtarget>().hasStdExtC() ? 1 : 0;
 }

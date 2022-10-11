@@ -7,8 +7,8 @@ void fn(void);
 
 foo f = fn;
 foo g = &fn;
-// CHECK: @f = addrspace(200) global void () addrspace(200)* @fn, align 16
-// CHECK: @g = addrspace(200) global void () addrspace(200)* @fn, align 16
+// CHECK: @f = addrspace(200) global ptr addrspace(200) @fn, align 16
+// CHECK: @g = addrspace(200) global ptr addrspace(200) @fn, align 16
 
 // ASM-LABEL: f:
 // ASM-NEXT: .chericap	fn

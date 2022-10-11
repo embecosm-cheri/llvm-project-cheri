@@ -10,8 +10,8 @@
 void *frameaddr(void) {
   // https://github.com/CTSRD-CHERI/clang/issues/200
   // CHECK-LABEL: @frameaddr
-  // N64: call i8* @llvm.frameaddress.p0i8(i32 0)
-  // PURECAP: call i8 addrspace(200)* @llvm.frameaddress.p200i8(i32 0)
+  // N64: call ptr @llvm.frameaddress.p0(i32 0)
+  // PURECAP: call ptr addrspace(200) @llvm.frameaddress.p200(i32 0)
   void *b = __builtin_frame_address(0);
 
   // ASM-LABEL: frameaddr:
@@ -27,8 +27,8 @@ void *frameaddr(void) {
 void *retaddr(void) {
   // Also check that we do the right thing for __builtin_return_address()
   // CHECK-LABEL: @retaddr
-  // N64: call i8* @llvm.returnaddress.p0i8(i32 0)
-  // PURECAP: call i8 addrspace(200)* @llvm.returnaddress.p200i8(i32 0)
+  // N64: call ptr @llvm.returnaddress.p0(i32 0)
+  // PURECAP: call ptr addrspace(200) @llvm.returnaddress.p200(i32 0)
   void *b = __builtin_return_address(0);
 
   // ASM-LABEL: retaddr:

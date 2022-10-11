@@ -16,8 +16,6 @@ so it's just a single ptrace call for lldb-server.
 
 class TestGdbRemoteMemoryTagging(gdbremote_testcase.GdbRemoteTestCaseBase):
 
-    mydir = TestBase.compute_mydir(__file__)
-
     def check_memtags_response(self, packet_name, body, expected):
         self.test_sequence.add_log_lines(["read packet: ${}:{}#00".format(packet_name, body),
                                           "send packet: ${}#00".format(expected),
@@ -105,13 +103,20 @@ class TestGdbRemoteMemoryTagging(gdbremote_testcase.GdbRemoteTestCaseBase):
         self.check_tag_read("{:x},10:".format(buf_address), "E03")
         # Types we don't support
         self.check_tag_read("{:x},10:FF".format(buf_address), "E01")
+        # Types can also be negative, -1 in this case.
+        # So this is E01 for not supported, instead of E03 for invalid formatting.
+        self.check_tag_read("{:x},10:FFFFFFFF".format(buf_address), "E01")
         # (even if the length of the read is zero)
         self.check_tag_read("{:x},0:FF".format(buf_address), "E01")
-        self.check_tag_read("{:x},10:-1".format(buf_address), "E01")
-        self.check_tag_read("{:x},10:+20".format(buf_address), "E01")
         # Invalid type format
         self.check_tag_read("{:x},10:cat".format(buf_address), "E03")
         self.check_tag_read("{:x},10:?11".format(buf_address), "E03")
+        # Type is signed but in packet as raw bytes, no +/-.
+        self.check_tag_read("{:x},10:-1".format(buf_address), "E03")
+        self.check_tag_read("{:x},10:+20".format(buf_address), "E03")
+        # We do use a uint64_t for unpacking but that's just an implementation
+        # detail. Any value > 32 bit is invalid.
+        self.check_tag_read("{:x},10:123412341".format(buf_address), "E03")
 
         # Valid packets
 

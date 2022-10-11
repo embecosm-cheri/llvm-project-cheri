@@ -31,12 +31,6 @@ namespace llvm {
 Triple TargetTriple;
 }
 
-static cl::opt<bool>
-    ForceMiscompilationDebug("force-miscompilation-debug",
-                             cl::desc("Don't fall back to crash debugging if "
-                                      "miscompilation debugging failed"),
-                             cl::init(false));
-
 DiscardTemp::~DiscardTemp() {
   if (SaveTemps) {
     if (Error E = File.keep())
@@ -219,31 +213,23 @@ Error BugDriver::run() {
   // Diff the output of the raw program against the reference output.  If it
   // matches, then we assume there is a miscompilation bug and try to
   // diagnose it.
-  WithColor(outs(), HighlightColor::Remark)
-      << "*** Checking the code generator...\n";
+  outs() << "*** Checking the code generator...\n";
   Expected<bool> Diff = diffProgram(*Program, "", "", false);
   if (Error E = Diff.takeError()) {
     errs() << toString(std::move(E));
     return debugCodeGeneratorCrash();
   }
   if (!*Diff) {
-    WithColor(outs(), HighlightColor::Remark)
-        << "\n*** Output matches: Debugging miscompilation!\n";
+    outs() << "\n*** Output matches: Debugging miscompilation!\n";
     if (Error E = debugMiscompilation()) {
       errs() << toString(std::move(E));
-      if (ForceMiscompilationDebug)
-        return make_error<StringError>(
-            "*** Requested miscompilation debugging but cannot continue!\n",
-            inconvertibleErrorCode());
       return debugCodeGeneratorCrash();
     }
     return Error::success();
   }
 
-  WithColor(outs(), HighlightColor::Warning)
-      << "\n*** Input program does not match reference diff!\n";
-  WithColor(outs(), HighlightColor::Remark)
-      << "Debugging code generator problem!\n";
+  outs() << "\n*** Input program does not match reference diff!\n";
+  outs() << "Debugging code generator problem!\n";
   if (Error E = debugCodeGenerator()) {
     errs() << toString(std::move(E));
     return debugCodeGeneratorCrash();
