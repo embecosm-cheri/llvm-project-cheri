@@ -15,7 +15,7 @@ void *x;
 int *y;
 
 // Check that unions containing capabilities are passed as capabilities.
-// CHECK: foo(i8 addrspace(200)*
+// CHECK: foo(ptr addrspace(200)
 int *foo(union u1 m)
 {
 	if (m.field == x)
@@ -25,7 +25,7 @@ int *foo(union u1 m)
 	return m.field;
 }
 
-// CHECK: bar(i8 addrspace(200)*
+// CHECK: bar(ptr addrspace(200)
 int *bar(union u2 m)
 {
 	if (m.y.z == x)

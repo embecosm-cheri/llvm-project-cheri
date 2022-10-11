@@ -93,6 +93,11 @@ bool FileExists(const char *filename) {
   return ::GetFileAttributesA(filename) != INVALID_FILE_ATTRIBUTES;
 }
 
+bool DirExists(const char *path) {
+  auto attr = ::GetFileAttributesA(path);
+  return (attr != INVALID_FILE_ATTRIBUTES) && (attr & FILE_ATTRIBUTE_DIRECTORY);
+}
+
 uptr internal_getpid() {
   return GetProcessId(GetCurrentProcess());
 }
@@ -126,7 +131,12 @@ void GetThreadStackTopAndBottom(bool at_initialization, uptr *stack_top,
 }
 #endif  // #if !SANITIZER_GO
 
-void *MmapOrDie(usize size, const char *mem_type, bool raw_report) {
+bool ErrorIsOOM(error_t err) {
+  // TODO: This should check which `err`s correspond to OOM.
+  return false;
+}
+
+void *MmapOrDie(uptr size, const char *mem_type, bool raw_report) {
   void *rv = VirtualAlloc(0, size, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
   if (rv == 0)
     ReportMmapFailureAndDie(size, mem_type, "allocate",
@@ -134,7 +144,7 @@ void *MmapOrDie(usize size, const char *mem_type, bool raw_report) {
   return rv;
 }
 
-void UnmapOrDie(void *addr, usize size) {
+void UnmapOrDie(void *addr, uptr size) {
   if (!size || !addr)
     return;
 
@@ -154,7 +164,7 @@ void UnmapOrDie(void *addr, usize size) {
   }
 }
 
-static void *ReturnNullptrOnOOMOrDie(usize size, const char *mem_type,
+static void *ReturnNullptrOnOOMOrDie(uptr size, const char *mem_type,
                                      const char *mmap_type) {
   error_t last_error = GetLastError();
   if (last_error == ERROR_NOT_ENOUGH_MEMORY)
@@ -162,7 +172,7 @@ static void *ReturnNullptrOnOOMOrDie(usize size, const char *mem_type,
   ReportMmapFailureAndDie(size, mem_type, mmap_type, last_error);
 }
 
-void *MmapOrDieOnFatalError(usize size, const char *mem_type) {
+void *MmapOrDieOnFatalError(uptr size, const char *mem_type) {
   void *rv = VirtualAlloc(0, size, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
   if (rv == 0)
     return ReturnNullptrOnOOMOrDie(size, mem_type, "allocate");
@@ -170,7 +180,7 @@ void *MmapOrDieOnFatalError(usize size, const char *mem_type) {
 }
 
 // We want to map a chunk of address space aligned to 'alignment'.
-void *MmapAlignedOrDieOnFatalError(usize size, usize alignment,
+void *MmapAlignedOrDieOnFatalError(uptr size, uptr alignment,
                                    const char *mem_type) {
   CHECK(IsPowerOfTwo(size));
   CHECK(IsPowerOfTwo(alignment));
@@ -224,7 +234,18 @@ void *MmapAlignedOrDieOnFatalError(usize size, usize alignment,
   return (void *)mapped_addr;
 }
 
-bool MmapFixedNoReserve(uptr fixed_addr, usize size, const char *name) {
+// ZeroMmapFixedRegion zero's out a region of memory previously returned from a
+// call to one of the MmapFixed* helpers. On non-windows systems this would be
+// done with another mmap, but on windows remapping is not an option.
+// VirtualFree(DECOMMIT)+VirtualAlloc(RECOMMIT) would also be a way to zero the
+// memory, but we can't do this atomically, so instead we fall back to using
+// internal_memset.
+bool ZeroMmapFixedRegion(uptr fixed_addr, uptr size) {
+  internal_memset((void*) fixed_addr, 0, size);
+  return true;
+}
+
+bool MmapFixedNoReserve(uptr fixed_addr, uptr size, const char *name) {
   // FIXME: is this really "NoReserve"? On Win32 this does not matter much,
   // but on Win64 it does.
   (void)name;  // unsupported
@@ -246,14 +267,14 @@ bool MmapFixedNoReserve(uptr fixed_addr, usize size, const char *name) {
   return true;
 }
 
-bool MmapFixedSuperNoReserve(uptr fixed_addr, usize size, const char *name) {
+bool MmapFixedSuperNoReserve(uptr fixed_addr, uptr size, const char *name) {
   // FIXME: Windows support large pages too. Might be worth checking
   return MmapFixedNoReserve(fixed_addr, size, name);
 }
 
 // Memory space mapped by 'MmapFixedOrDie' must have been reserved by
 // 'MmapFixedNoAccess'.
-void *MmapFixedOrDie(uptr fixed_addr, usize size, const char *name) {
+void *MmapFixedOrDie(uptr fixed_addr, uptr size, const char *name) {
   void *p = VirtualAlloc((LPVOID)fixed_addr, size,
       MEM_COMMIT, PAGE_READWRITE);
   if (p == 0) {
@@ -267,16 +288,16 @@ void *MmapFixedOrDie(uptr fixed_addr, usize size, const char *name) {
 
 // Uses fixed_addr for now.
 // Will use offset instead once we've implemented this function for real.
-uptr ReservedAddressRange::Map(uptr fixed_addr, usize size, const char *name) {
+uptr ReservedAddressRange::Map(uptr fixed_addr, uptr size, const char *name) {
   return reinterpret_cast<uptr>(MmapFixedOrDieOnFatalError(fixed_addr, size));
 }
 
-uptr ReservedAddressRange::MapOrDie(uptr fixed_addr, usize size,
+uptr ReservedAddressRange::MapOrDie(uptr fixed_addr, uptr size,
                                     const char *name) {
   return reinterpret_cast<uptr>(MmapFixedOrDie(fixed_addr, size));
 }
 
-void ReservedAddressRange::Unmap(uptr addr, usize size) {
+void ReservedAddressRange::Unmap(uptr addr, uptr size) {
   // Only unmap if it covers the entire range.
   CHECK((addr == reinterpret_cast<uptr>(base_)) && (size == size_));
   // We unmap the whole range, just null out the base.
@@ -285,7 +306,7 @@ void ReservedAddressRange::Unmap(uptr addr, usize size) {
   UnmapOrDie(reinterpret_cast<void*>(addr), size);
 }
 
-void *MmapFixedOrDieOnFatalError(uptr fixed_addr, usize size, const char *name) {
+void *MmapFixedOrDieOnFatalError(uptr fixed_addr, uptr size, const char *name) {
   void *p = VirtualAlloc((LPVOID)fixed_addr, size,
       MEM_COMMIT, PAGE_READWRITE);
   if (p == 0) {
@@ -297,12 +318,12 @@ void *MmapFixedOrDieOnFatalError(uptr fixed_addr, usize size, const char *name) 
   return p;
 }
 
-void *MmapNoReserveOrDie(usize size, const char *mem_type) {
+void *MmapNoReserveOrDie(uptr size, const char *mem_type) {
   // FIXME: make this really NoReserve?
   return MmapOrDie(size, mem_type);
 }
 
-uptr ReservedAddressRange::Init(usize size, const char *name, uptr fixed_addr) {
+uptr ReservedAddressRange::Init(uptr size, const char *name, uptr fixed_addr) {
   base_ = fixed_addr ? MmapFixedNoAccess(fixed_addr, size) : MmapNoAccess(size);
   size_ = size;
   name_ = name;
@@ -311,7 +332,7 @@ uptr ReservedAddressRange::Init(usize size, const char *name, uptr fixed_addr) {
 }
 
 
-void *MmapFixedNoAccess(uptr fixed_addr, usize size, const char *name) {
+void *MmapFixedNoAccess(uptr fixed_addr, uptr size, const char *name) {
   (void)name; // unsupported
   void *res = VirtualAlloc((LPVOID)fixed_addr, size,
                            MEM_RESERVE, PAGE_NOACCESS);
@@ -322,7 +343,7 @@ void *MmapFixedNoAccess(uptr fixed_addr, usize size, const char *name) {
   return res;
 }
 
-void *MmapNoAccess(usize size) {
+void *MmapNoAccess(uptr size) {
   void *res = VirtualAlloc(nullptr, size, MEM_RESERVE, PAGE_NOACCESS);
   if (res == 0)
     Report("WARNING: %s failed to "
@@ -331,9 +352,14 @@ void *MmapNoAccess(usize size) {
   return res;
 }
 
-bool MprotectNoAccess(uptr addr, usize size) {
+bool MprotectNoAccess(uptr addr, uptr size) {
   DWORD old_protection;
   return VirtualProtect((LPVOID)addr, size, PAGE_NOACCESS, &old_protection);
+}
+
+bool MprotectReadOnly(uptr addr, uptr size) {
+  DWORD old_protection;
+  return VirtualProtect((LPVOID)addr, size, PAGE_READONLY, &old_protection);
 }
 
 void ReleaseMemoryPagesToOS(uptr beg, uptr end) {
@@ -345,11 +371,11 @@ void ReleaseMemoryPagesToOS(uptr beg, uptr end) {
   UnmapOrDie((void *)beg, end_aligned - beg_aligned);
 }
 
-void SetShadowRegionHugePageMode(uptr addr, usize size) {
+void SetShadowRegionHugePageMode(uptr addr, uptr size) {
   // FIXME: probably similar to ReleaseMemoryToOS.
 }
 
-bool DontDumpShadowMemory(uptr addr, usize length) {
+bool DontDumpShadowMemory(uptr addr, uptr length) {
   // This is almost useless on 32-bits.
   // FIXME: add madvise-analog when we move to 64-bits.
   return true;
@@ -371,7 +397,7 @@ uptr MapDynamicShadow(uptr shadow_size_bytes, uptr shadow_scale,
   return shadow_start;
 }
 
-uptr FindAvailableMemoryRange(usize size, usize alignment, uptr left_padding,
+uptr FindAvailableMemoryRange(uptr size, uptr alignment, uptr left_padding,
                               uptr *largest_gap_found,
                               uptr *max_occupied_addr) {
   uptr address = 0;
@@ -410,7 +436,7 @@ void *MapFileToMemory(const char *file_name, uptr *buff_size) {
   UNIMPLEMENTED();
 }
 
-void *MapWritableFileToMemory(void *addr, usize size, fd_t fd, OFF_T offset) {
+void *MapWritableFileToMemory(void *addr, uptr size, fd_t fd, OFF_T offset) {
   UNIMPLEMENTED();
 }
 
@@ -512,7 +538,7 @@ void ReExec() {
   UNIMPLEMENTED();
 }
 
-void PlatformPrepareForSandboxing(__sanitizer_sandbox_arguments *args) {}
+void PlatformPrepareForSandboxing(void *args) {}
 
 bool StackSizeIsUnlimited() {
   UNIMPLEMENTED();
@@ -563,6 +589,10 @@ u64 MonotonicNanoTime() { return NanoTime(); }
 
 void Abort() {
   internal__exit(3);
+}
+
+bool CreateDir(const char *pathname) {
+  return CreateDirectoryA(pathname, nullptr) != 0;
 }
 
 #if !SANITIZER_GO
@@ -802,7 +832,7 @@ void internal__exit(int exitcode) {
   BUILTIN_UNREACHABLE();
 }
 
-uptr internal_ftruncate(fd_t fd, usize size) {
+uptr internal_ftruncate(fd_t fd, uptr size) {
   UNIMPLEMENTED();
 }
 
@@ -827,27 +857,6 @@ void FutexWake(atomic_uint32_t *p, u32 count) {
     WakeByAddressAll(p);
 }
 
-// ---------------------- BlockingMutex ---------------- {{{1
-
-BlockingMutex::BlockingMutex() {
-  CHECK(sizeof(SRWLOCK) <= sizeof(opaque_storage_));
-  internal_memset(this, 0, sizeof(*this));
-}
-
-void BlockingMutex::Lock() {
-  AcquireSRWLockExclusive((PSRWLOCK)opaque_storage_);
-  CHECK_EQ(owner_, 0);
-  owner_ = GetThreadSelf();
-}
-
-void BlockingMutex::Unlock() {
-  CheckLocked();
-  owner_ = 0;
-  ReleaseSRWLockExclusive((PSRWLOCK)opaque_storage_);
-}
-
-void BlockingMutex::CheckLocked() const { CHECK_EQ(owner_, GetThreadSelf()); }
-
 uptr GetTlsSize() {
   return 0;
 }
@@ -855,8 +864,8 @@ uptr GetTlsSize() {
 void InitTlsSize() {
 }
 
-void GetThreadStackAndTls(bool main, uptr *stk_addr, usize *stk_size,
-                          uptr *tls_addr, usize *tls_size) {
+void GetThreadStackAndTls(bool main, uptr *stk_addr, uptr *stk_size,
+                          uptr *tls_addr, uptr *tls_size) {
 #if SANITIZER_GO
   *stk_addr = 0;
   *stk_size = 0;
@@ -872,7 +881,7 @@ void GetThreadStackAndTls(bool main, uptr *stk_addr, usize *stk_size,
 #endif
 }
 
-void ReportFile::Write(const char *buffer, usize length) {
+void ReportFile::Write(const char *buffer, uptr length) {
   SpinMutexLock l(mu);
   ReopenIfNecessary();
   if (!WriteToFile(fd, buffer, length)) {
@@ -928,7 +937,7 @@ bool IsHandledDeadlyException(DWORD exceptionCode) {
   return false;
 }
 
-bool IsAccessibleMemoryRange(uptr beg, usize size) {
+bool IsAccessibleMemoryRange(uptr beg, uptr size) {
   SYSTEM_INFO si;
   GetNativeSystemInfo(&si);
   uptr page_size = si.dwPageSize;
@@ -962,13 +971,18 @@ void SignalContext::InitPcSpBp() {
   CONTEXT *context_record = (CONTEXT *)context;
 
   pc = (uptr)exception_record->ExceptionAddress;
-#ifdef _WIN64
+#  if SANITIZER_WINDOWS64
+#    if SANITIZER_ARM64
+  bp = (uptr)context_record->Fp;
+  sp = (uptr)context_record->Sp;
+#    else
   bp = (uptr)context_record->Rbp;
   sp = (uptr)context_record->Rsp;
-#else
+#    endif
+#  else
   bp = (uptr)context_record->Ebp;
   sp = (uptr)context_record->Esp;
-#endif
+#  endif
 }
 
 uptr SignalContext::GetAddress() const {
@@ -990,7 +1004,7 @@ SignalContext::WriteFlag SignalContext::GetWriteFlag() const {
 
   // The write flag is only available for access violation exceptions.
   if (exception_record->ExceptionCode != EXCEPTION_ACCESS_VIOLATION)
-    return SignalContext::UNKNOWN;
+    return SignalContext::Unknown;
 
   // The contents of this array are documented at
   // https://docs.microsoft.com/en-us/windows/win32/api/winnt/ns-winnt-exception_record
@@ -998,13 +1012,13 @@ SignalContext::WriteFlag SignalContext::GetWriteFlag() const {
   // second element is the faulting address.
   switch (exception_record->ExceptionInformation[0]) {
     case 0:
-      return SignalContext::READ;
+      return SignalContext::Read;
     case 1:
-      return SignalContext::WRITE;
+      return SignalContext::Write;
     case 8:
-      return SignalContext::UNKNOWN;
+      return SignalContext::Unknown;
   }
-  return SignalContext::UNKNOWN;
+  return SignalContext::Unknown;
 }
 
 void SignalContext::DumpAllRegisters(void *context) {
@@ -1058,7 +1072,7 @@ const char *SignalContext::Describe() const {
   return "unknown exception";
 }
 
-usize ReadBinaryName(/*out*/char *buf, usize buf_len) {
+uptr ReadBinaryName(/*out*/char *buf, uptr buf_len) {
   if (buf_len == 0)
     return 0;
 
@@ -1079,7 +1093,7 @@ usize ReadBinaryName(/*out*/char *buf, usize buf_len) {
   return binary_name_len;
 }
 
-usize ReadLongProcessName(/*out*/char *buf, usize buf_len) {
+uptr ReadLongProcessName(/*out*/char *buf, uptr buf_len) {
   return ReadBinaryName(buf, buf_len);
 }
 
@@ -1089,10 +1103,6 @@ void CheckVMASize() {
 
 void InitializePlatformEarly() {
   // Do nothing.
-}
-
-void MaybeReexec() {
-  // No need to re-exec on Windows.
 }
 
 void CheckASLR() {
@@ -1131,14 +1141,14 @@ bool IsProcessRunning(pid_t pid) {
 int WaitForProcess(pid_t pid) { return -1; }
 
 // FIXME implement on this platform.
-void GetMemoryProfile(fill_profile_f cb, usize *stats, uptr stats_size) { }
+void GetMemoryProfile(fill_profile_f cb, uptr *stats) {}
 
 void CheckNoDeepBind(const char *filename, int flag) {
   // Do nothing.
 }
 
 // FIXME: implement on this platform.
-bool GetRandom(void *buffer, usize length, bool blocking) {
+bool GetRandom(void *buffer, uptr length, bool blocking) {
   UNIMPLEMENTED();
 }
 

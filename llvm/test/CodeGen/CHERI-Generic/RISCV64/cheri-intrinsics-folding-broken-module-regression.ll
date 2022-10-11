@@ -3,7 +3,7 @@
 ; This used to create a broken function.
 ; FIXME: the getoffset+add sequence should be folded to an increment
 ; REQUIRES: mips-registered-target
-; RUN: opt -mtriple=riscv64 --relocation-model=pic -target-abi l64pc128d -mattr=+xcheri,+cap-mode,+f,+d -S -instcombine -O3 %s -o - | FileCheck %s
+; RUN: opt -mtriple=riscv64 --relocation-model=pic -target-abi l64pc128d -mattr=+xcheri,+cap-mode,+f,+d -S -passes='default<O3>,instcombine' %s -o - | FileCheck %s
 ; RUN: opt -mtriple=riscv64 --relocation-model=pic -target-abi l64pc128d -mattr=+xcheri,+cap-mode,+f,+d -S -O3 %s | llc -mtriple=riscv64 --relocation-model=pic -target-abi l64pc128d -mattr=+xcheri,+cap-mode,+f,+d -O3 -o - | FileCheck %s --check-prefix ASM
 target datalayout = "e-m:e-pf200:128:128:128:64-p:64:64-i64:64-i128:128-n64-S128-A200-P200-G200"
 
@@ -40,7 +40,6 @@ define void @g(i64 %x, i64 %y) addrspace(200) nounwind {
 ; CHECK-NEXT:    [[TMP11:%.*]] = tail call i8 addrspace(200)* @llvm.cheri.cap.offset.set.i64(i8 addrspace(200)* bitcast (i64 addrspace(200)* @d to i8 addrspace(200)*), i64 [[ADD1]])
 ; CHECK-NEXT:    store i8 addrspace(200)* [[TMP11]], i8 addrspace(200)* addrspace(200)* @e, align 32
 ; CHECK-NEXT:    ret void
-;
   %x.addr = alloca i64, align 4, addrspace(200)
   %y.addr = alloca i64, align 4, addrspace(200)
   store i64 %x, i64 addrspace(200)* %x.addr, align 4

@@ -15,7 +15,6 @@
 
 #include "BugDriver.h"
 #include "llvm/Support/FileSystem.h"
-#include "llvm/Support/WithColor.h"
 #include "llvm/Support/raw_ostream.h"
 #include <random>
 using namespace llvm;
@@ -38,7 +37,7 @@ BugDriver::runManyPasses(const std::vector<std::string> &AllPasses) {
 
   std::mt19937 randomness(std::random_device{}());
   unsigned num = 1;
-  while (1) {
+  while (true) {
     //
     // Step 1: Randomize the order of the optimizer passes.
     //
@@ -76,8 +75,7 @@ BugDriver::runManyPasses(const std::vector<std::string> &AllPasses) {
     // Step 4: Run the program and compare its output to the reference
     // output (created above).
     //
-    WithColor(outs(), HighlightColor::Remark)
-        << "*** Checking if passes caused miscompliation:\n";
+    outs() << "*** Checking if passes caused miscompliation:\n";
     Expected<bool> Diff = diffProgram(*Program, Filename, "", false);
     if (Error E = Diff.takeError()) {
       errs() << toString(std::move(E));

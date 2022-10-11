@@ -84,7 +84,7 @@ ReduceMiscompilingPasses::doTest(std::vector<std::string> &Prefix,
   if (Error E = Diff.takeError())
     return std::move(E);
   if (*Diff) {
-    WithColor(outs(), raw_ostream::RED, true) << " nope.\n";
+    outs() << " nope.\n";
     if (Suffix.empty()) {
       errs() << BD.getToolName() << ": I'm confused: the test fails when "
              << "no passes are run, nondeterministic program?\n";
@@ -92,8 +92,7 @@ ReduceMiscompilingPasses::doTest(std::vector<std::string> &Prefix,
     }
     return KeepSuffix; // Miscompilation detected!
   }
-  WithColor(outs(), raw_ostream::GREEN, true)
-      << " yup.\n"; // No miscompilation!
+  outs() << " yup.\n"; // No miscompilation!
 
   if (Prefix.empty())
     return NoFailure;
@@ -126,12 +125,11 @@ ReduceMiscompilingPasses::doTest(std::vector<std::string> &Prefix,
   if (Error E = Diff.takeError())
     return std::move(E);
   if (*Diff) {
-    WithColor(outs(), raw_ostream::RED, true) << " nope.\n";
+    outs() << " nope.\n";
     sys::fs::remove(BitcodeResult);
     return KeepPrefix;
   }
-  WithColor(outs(), raw_ostream::GREEN, true)
-      << " yup.\n"; // No miscompilation!
+  outs() << " yup.\n"; // No miscompilation!
 
   // Ok, so now we know that the prefix passes work, try running the suffix
   // passes on the result of the prefix passes.
@@ -173,13 +171,12 @@ ReduceMiscompilingPasses::doTest(std::vector<std::string> &Prefix,
   if (Error E = Diff.takeError())
     return std::move(E);
   if (*Diff) {
-    WithColor(outs(), raw_ostream::RED, true) << " nope.\n";
+    outs() << " nope.\n";
     return KeepSuffix;
   }
 
   // Otherwise, we must not be running the bad pass anymore.
-  WithColor(outs(), raw_ostream::GREEN, true)
-      << " yup.\n"; // No miscompilation!
+  outs() << " yup.\n"; // No miscompilation!
   // Restore orig program & free test.
   BD.setNewProgram(std::move(OriginalInput));
   return NoFailure;
@@ -311,7 +308,7 @@ ExtractLoops(BugDriver &BD,
                                       std::unique_ptr<Module>),
              std::vector<Function *> &MiscompiledFunctions) {
   bool MadeChange = false;
-  while (1) {
+  while (true) {
     if (BugpointIsInterrupted)
       return MadeChange;
 
@@ -527,15 +524,7 @@ ReduceMiscompiledBlocks::TestFuncs(const std::vector<BasicBlock *> &BBs) {
   if (std::unique_ptr<Module> New =
           BD.extractMappedBlocksFromModule(BBsOnClone, ToOptimize.get())) {
     Expected<bool> Ret = TestFn(BD, std::move(New), std::move(ToNotOptimize));
-    if (Error E = Ret.takeError())
-      return std::move(E);
-    if (!*Ret) {
-      outs() << "*** Block extraction masked the problem.  Undoing.\n";
-      BD.setNewProgram(std::move(Orig)); // failed
-      return false;
-    }
-    BD.setNewProgram(std::move(New));
-    assert(Ret);
+    BD.setNewProgram(std::move(Orig));
     return Ret;
   }
   BD.setNewProgram(std::move(Orig));
@@ -646,26 +635,11 @@ static Expected<std::vector<Function *>> DebugAMiscompilation(
       return std::move(E);
     }
   }
-  WithColor(outs(), HighlightColor::Note)
-      << "\n*** The following function"
-      << (MiscompiledFunctions.size() == 1 ? " is" : "s are")
-      << " being miscompiled: ";
+  outs() << "\n*** The following function"
+         << (MiscompiledFunctions.size() == 1 ? " is" : "s are")
+         << " being miscompiled: ";
   PrintFunctionList(MiscompiledFunctions);
   outs() << '\n';
-
-  // Output a bunch of bitcode files for the user...
-  outs() << "Outputting reduced bitcode files which expose the problem:\n";
-  ValueToValueMapTy VMap;
-  Module *ToNotOptimize = CloneModule(BD.getProgram(), VMap).release();
-  Module *ToOptimize =
-      SplitFunctionsOutOfModule(ToNotOptimize, MiscompiledFunctions, VMap)
-          .release();
-  outs() << "  Non-optimized portion: ";
-  BD.EmitProgressBitcode(*ToNotOptimize, "funcs-tonotoptimize", true);
-  delete ToNotOptimize; // Delete hacked module.
-  outs() << "  Portion that is input to optimizer: ";
-  BD.EmitProgressBitcode(*ToOptimize, "funcs-tooptimize");
-  delete ToOptimize; // Delete hacked module.
 
   // See if we can rip any loops out of the miscompiled functions and still
   // trigger the problem.
@@ -686,17 +660,13 @@ static Expected<std::vector<Function *>> DebugAMiscompilation(
       if (Error E = Ret.takeError())
         return std::move(E);
 
-      WithColor(outs(), HighlightColor::Note)
-          << "\n*** The following function"
-          << (MiscompiledFunctions.size() == 1 ? " is" : "s are")
-          << " being miscompiled: ";
+      outs() << "\n*** The following function"
+             << (MiscompiledFunctions.size() == 1 ? " is" : "s are")
+             << " being miscompiled: ";
       PrintFunctionList(MiscompiledFunctions);
       outs() << '\n';
     }
   }
-
-  if (!DisableBlockExtraction)
-    WithColor::warning() << "ExtractBlocks is broken for custom executors!";
 
   if (!BugpointIsInterrupted && !DisableBlockExtraction) {
     Expected<bool> Ret = ExtractBlocks(BD, TestFn, MiscompiledFunctions);
@@ -713,10 +683,9 @@ static Expected<std::vector<Function *>> DebugAMiscompilation(
       if (Error E = Ret.takeError())
         return std::move(E);
 
-      WithColor(outs(), HighlightColor::Note)
-          << "\n*** The following function"
-          << (MiscompiledFunctions.size() == 1 ? " is" : "s are")
-          << " being miscompiled: ";
+      outs() << "\n*** The following function"
+             << (MiscompiledFunctions.size() == 1 ? " is" : "s are")
+             << " being miscompiled: ";
       PrintFunctionList(MiscompiledFunctions);
       outs() << '\n';
     }
@@ -737,27 +706,23 @@ static Expected<bool> TestOptimizer(BugDriver &BD, std::unique_ptr<Module> Test,
   std::unique_ptr<Module> Optimized =
       BD.runPassesOn(Test.get(), BD.getPassesToRun());
   if (!Optimized) {
-    WithColor(errs(), HighlightColor::Error)
-        << " Error running this sequence of passes on the input program!\n";
+    errs() << " Error running this sequence of passes"
+           << " on the input program!\n";
     BD.EmitProgressBitcode(*Test, "pass-error", false);
     BD.setNewProgram(std::move(Test));
     if (Error E = BD.debugOptimizerCrash())
       return std::move(E);
     return false;
   }
-  WithColor(outs(), raw_ostream::GREEN, true) << "done.\n";
+  outs() << "done.\n";
 
-  WithColor(outs(), HighlightColor::Remark)
-      << "  Checking to see if the merged program executes correctly: ";
+  outs() << "  Checking to see if the merged program executes correctly: ";
   bool Broken;
   auto Result = testMergedProgram(BD, *Optimized, *Safe, Broken);
   if (Error E = Result.takeError())
     return std::move(E);
   if (auto New = std::move(*Result)) {
-    if (Broken)
-      WithColor(outs(), raw_ostream::RED, true) << " nope.\n";
-    else
-      WithColor(outs(), raw_ostream::GREEN, true) << " yup.\n";
+    outs() << (Broken ? " nope.\n" : " yup.\n");
     // Delete the original and set the new program.
     BD.setNewProgram(std::move(New));
   }
@@ -782,10 +747,9 @@ Error BugDriver::debugMiscompilation() {
           inconvertibleErrorCode());
   }
 
-  WithColor(outs(), HighlightColor::Note)
-      << "\n*** Found miscompiling pass"
-      << (getPassesToRun().size() == 1 ? "" : "es") << ": "
-      << getPassesString(getPassesToRun()) << '\n';
+  outs() << "\n*** Found miscompiling pass"
+         << (getPassesToRun().size() == 1 ? "" : "es") << ": "
+         << getPassesString(getPassesToRun()) << '\n';
   EmitProgressBitcode(*Program, "passinput");
 
   Expected<std::vector<Function *>> MiscompiledFunctions =
@@ -866,11 +830,8 @@ CleanupAndPrepareModules(BugDriver &BD, std::unique_ptr<Module> Test,
   // Add the resolver to the Safe module.
   // Prototype: void *getPointerToNamedFunction(const char* Name)
   FunctionCallee resolverFunc = Safe->getOrInsertFunction(
-      "getPointerToNamedFunction",
-      Type::getInt8PtrTy(Safe->getContext(),
-                         Safe->getDataLayout().getGlobalsAddressSpace()),
-      Type::getInt8PtrTy(Safe->getContext(),
-                         Safe->getDataLayout().getGlobalsAddressSpace()));
+      "getPointerToNamedFunction", Type::getInt8PtrTy(Safe->getContext()),
+      Type::getInt8PtrTy(Safe->getContext()));
 
   // Use the function we just added to get addresses of functions we need.
   for (Module::iterator F = Safe->begin(), E = Safe->end(); F != E; ++F) {
@@ -935,9 +896,7 @@ CleanupAndPrepareModules(BugDriver &BD, std::unique_ptr<Module> Test,
 
           // Cast the result from the resolver to correctly-typed function.
           CastInst *CastedResolver = new BitCastInst(
-              Resolver,
-              PointerType::get(F->getFunctionType(),
-                               Safe->getDataLayout().getProgramAddressSpace()),
+              Resolver, PointerType::getUnqual(F->getFunctionType()),
               "resolverCast", LookupBB);
 
           // Save the value in our cache.

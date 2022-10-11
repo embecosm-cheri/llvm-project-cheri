@@ -1,5 +1,4 @@
-! RUN: %S/test_errors.sh %s %t %flang_fc1
-! REQUIRES: shell
+! RUN: %python %S/test_errors.py %s %flang_fc1
 module m
   abstract interface
     subroutine foo
@@ -58,7 +57,7 @@ module m
     integer :: i
   contains
     !ERROR: 'proc' must be an abstract interface or a procedure with an explicit interface
-    !ERROR: Procedure component 'p1' has invalid interface 'proc'
+    !ERROR: Procedure component 'p1' must have NOPASS attribute or explicit interface
     procedure(proc), deferred :: p1
   end type t1
 

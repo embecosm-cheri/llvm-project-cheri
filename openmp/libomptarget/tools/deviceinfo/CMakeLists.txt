@@ -11,14 +11,15 @@
 ##===----------------------------------------------------------------------===##
 
 libomptarget_say("Building the llvm-omp-device-info tool")
-libomptarget_say("llvm-omp-device-info using plugins ${LIBOMPTARGET_TESTED_PLUGINS}")
 
-add_llvm_tool(llvm-omp-device-info llvm-omp-device-info.cpp)
+add_openmp_tool(llvm-omp-device-info llvm-omp-device-info.cpp)
 
 llvm_update_compile_flags(llvm-omp-device-info)
 
+target_include_directories(llvm-omp-device-info PRIVATE
+  ${LIBOMPTARGET_INCLUDE_DIR}
+)
 target_link_libraries(llvm-omp-device-info PRIVATE
   omp
   omptarget
-  ${LIBOMPTARGET_TESTED_PLUGINS}
 )

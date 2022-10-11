@@ -79,12 +79,12 @@ def CheriAtomicMemOpOperand : AsmOperandClass {
   let Name = "CheriAtomicMemOpOperand";
   let RenderMethod = "addRegOperands";
   let PredicateMethod = "isGPCR";
-  let ParserMethod = "parseAtomicMemOp";
+  let ParserMethod = "parseZeroOffsetMemOp";
 }
 
 def GPCRMemAtomic : RegisterOperand<GPCR> {
   let ParserMatchClass = CheriAtomicMemOpOperand;
-  let PrintMethod = "printAtomicMemOp";
+  let PrintMethod = "printZeroOffsetMemOp";
 }
 
 // A 9-bit unsigned immediate where the least significant four bits are zero.
@@ -176,7 +176,7 @@ class CheriStoreCond_r<bits<5> op, string opcodestr, RegisterClass rs2Class,
 let hasSideEffects = 0, mayLoad = 1, mayStore = 0 in
 class LR_C_r<bit aq, bit rl, bits<3> funct3, string opcodestr>
     : RVInstRAtomic<0b00010, aq, rl, funct3, OPC_AMO,
-                    (outs GPCR:$rd), (ins GPRMemAtomic:$rs1),
+                    (outs GPCR:$rd), (ins GPRMemZeroOffset:$rs1),
                     opcodestr, "$rd, $rs1"> {
   let rs2 = 0;
 }
@@ -192,7 +192,7 @@ let hasSideEffects = 0, mayLoad = 1, mayStore = 1 in
 class AMO_C_rr<bits<5> funct5, bit aq, bit rl, bits<3> funct3, string opcodestr,
                RegisterClass rdClass>
     : RVInstRAtomic<funct5, aq, rl, funct3, OPC_AMO,
-                    (outs rdClass:$rd), (ins GPRMemAtomic:$rs1, GPCR:$rs2),
+                    (outs rdClass:$rd), (ins GPRMemZeroOffset:$rs1, GPCR:$rs2),
                     opcodestr, "$rd, $rs2, $rs1">;
 
 multiclass AMO_C_rr_aq_rl<string clenstr, bits<5> funct5, bits<3> funct3,
@@ -463,41 +463,41 @@ def CLoadTags : Cheri_r<0x12, "cloadtags", GPR, GPCRMemAtomic>;
 //===----------------------------------------------------------------------===//
 
 let Predicates = [HasCheri] in {
-def LB_DDC  : CheriLoad_r<0b00000, "lb.ddc",  GPR, GPRMemAtomic>;
-def LH_DDC  : CheriLoad_r<0b00001, "lh.ddc",  GPR, GPRMemAtomic>;
-def LW_DDC  : CheriLoad_r<0b00010, "lw.ddc",  GPR, GPRMemAtomic>;
-def LBU_DDC : CheriLoad_r<0b00100, "lbu.ddc", GPR, GPRMemAtomic>;
-def LHU_DDC : CheriLoad_r<0b00101, "lhu.ddc", GPR, GPRMemAtomic>;
+def LB_DDC  : CheriLoad_r<0b00000, "lb.ddc",  GPR, GPRMemZeroOffset>;
+def LH_DDC  : CheriLoad_r<0b00001, "lh.ddc",  GPR, GPRMemZeroOffset>;
+def LW_DDC  : CheriLoad_r<0b00010, "lw.ddc",  GPR, GPRMemZeroOffset>;
+def LBU_DDC : CheriLoad_r<0b00100, "lbu.ddc", GPR, GPRMemZeroOffset>;
+def LHU_DDC : CheriLoad_r<0b00101, "lhu.ddc", GPR, GPRMemZeroOffset>;
 }
 
 let Predicates = [HasCheri, IsRV64] in {
-def LWU_DDC : CheriLoad_r<0b00110, "lwu.ddc", GPR, GPRMemAtomic>;
-def LD_DDC  : CheriLoad_r<0b00011, "ld.ddc",  GPR, GPRMemAtomic>;
+def LWU_DDC : CheriLoad_r<0b00110, "lwu.ddc", GPR, GPRMemZeroOffset>;
+def LD_DDC  : CheriLoad_r<0b00011, "ld.ddc",  GPR, GPRMemZeroOffset>;
 }
 
 let DecoderNamespace = "RISCV32Only_",
     Predicates = [HasCheri, IsRV32] in
-def LC_DDC_64  : CheriLoad_r<0b00011, "lc.ddc", GPCR, GPRMemAtomic>;
+def LC_DDC_64  : CheriLoad_r<0b00011, "lc.ddc", GPCR, GPRMemZeroOffset>;
 
 let Predicates = [HasCheri, IsRV64] in
-def LC_DDC_128 : CheriLoad_r<0b10111, "lc.ddc", GPCR, GPRMemAtomic>;
+def LC_DDC_128 : CheriLoad_r<0b10111, "lc.ddc", GPCR, GPRMemZeroOffset>;
 
 let Predicates = [HasCheri] in {
-def SB_DDC  : CheriStore_r<0b00000, "sb.ddc", GPR, GPRMemAtomic>;
-def SH_DDC  : CheriStore_r<0b00001, "sh.ddc", GPR, GPRMemAtomic>;
-def SW_DDC  : CheriStore_r<0b00010, "sw.ddc", GPR, GPRMemAtomic>;
+def SB_DDC  : CheriStore_r<0b00000, "sb.ddc", GPR, GPRMemZeroOffset>;
+def SH_DDC  : CheriStore_r<0b00001, "sh.ddc", GPR, GPRMemZeroOffset>;
+def SW_DDC  : CheriStore_r<0b00010, "sw.ddc", GPR, GPRMemZeroOffset>;
 }
 
 let Predicates = [HasCheri, IsRV64] in {
-def SD_DDC  : CheriStore_r<0b00011, "sd.ddc", GPR, GPRMemAtomic>;
+def SD_DDC  : CheriStore_r<0b00011, "sd.ddc", GPR, GPRMemZeroOffset>;
 }
 
 let DecoderNamespace = "RISCV32Only_",
     Predicates = [HasCheri, IsRV32] in
-def SC_DDC_64  : CheriStore_r<0b00011, "sc.ddc", GPCR, GPRMemAtomic>;
+def SC_DDC_64  : CheriStore_r<0b00011, "sc.ddc", GPCR, GPRMemZeroOffset>;
 
 let Predicates = [HasCheri, IsRV64] in
-def SC_DDC_128 : CheriStore_r<0b00100, "sc.ddc", GPCR, GPRMemAtomic>;
+def SC_DDC_128 : CheriStore_r<0b00100, "sc.ddc", GPCR, GPRMemZeroOffset>;
 
 let Predicates = [HasCheri] in {
 def LB_CAP  : CheriLoad_r<0b01000, "lb.cap",  GPR, GPCRMemAtomic>;
@@ -537,20 +537,20 @@ let Predicates = [HasCheri, IsRV64] in
 def SC_CAP_128 : CheriStore_r<0b01100, "sc.cap", GPCR, GPCRMemAtomic>;
 
 let Predicates = [HasCheri, HasStdExtA] in {
-def LR_B_DDC  : CheriLoad_r<0b10000, "lr.b.ddc",  GPR, GPRMemAtomic>;
-def LR_H_DDC  : CheriLoad_r<0b10001, "lr.h.ddc",  GPR, GPRMemAtomic>;
-def LR_W_DDC  : CheriLoad_r<0b10010, "lr.w.ddc",  GPR, GPRMemAtomic>;
+def LR_B_DDC  : CheriLoad_r<0b10000, "lr.b.ddc",  GPR, GPRMemZeroOffset>;
+def LR_H_DDC  : CheriLoad_r<0b10001, "lr.h.ddc",  GPR, GPRMemZeroOffset>;
+def LR_W_DDC  : CheriLoad_r<0b10010, "lr.w.ddc",  GPR, GPRMemZeroOffset>;
 }
 
 let Predicates = [HasCheri, HasStdExtA, IsRV64] in
-def LR_D_DDC  : CheriLoad_r<0b10011, "lr.d.ddc",  GPR, GPRMemAtomic>;
+def LR_D_DDC  : CheriLoad_r<0b10011, "lr.d.ddc",  GPR, GPRMemZeroOffset>;
 
 let DecoderNamespace = "RISCV32Only_",
     Predicates = [HasCheri, HasStdExtA, IsRV32] in
-def LR_C_DDC_64  : CheriLoad_r<0b10011, "lr.c.ddc", GPCR, GPRMemAtomic>;
+def LR_C_DDC_64  : CheriLoad_r<0b10011, "lr.c.ddc", GPCR, GPRMemZeroOffset>;
 
 let Predicates = [HasCheri, HasStdExtA, IsRV64] in
-def LR_C_DDC_128 : CheriLoad_r<0b10100, "lr.c.ddc", GPCR, GPRMemAtomic>;
+def LR_C_DDC_128 : CheriLoad_r<0b10100, "lr.c.ddc", GPCR, GPRMemZeroOffset>;
 
 let Predicates = [HasCheri, HasStdExtA] in {
 def LR_B_CAP  : CheriLoad_r<0b11000, "lr.b.cap",  GPR, GPCRMemAtomic>;
@@ -569,20 +569,20 @@ let Predicates = [HasCheri, HasStdExtA, IsRV64] in
 def LR_C_CAP_128 : CheriLoad_r<0b11100, "lr.c.cap", GPCR, GPCRMemAtomic>;
 
 let Predicates = [HasCheri, HasStdExtA] in {
-def SC_B_DDC  : CheriStoreCond_r<0b10000, "sc.b.ddc",  GPR, GPRMemAtomic>;
-def SC_H_DDC  : CheriStoreCond_r<0b10001, "sc.h.ddc",  GPR, GPRMemAtomic>;
-def SC_W_DDC  : CheriStoreCond_r<0b10010, "sc.w.ddc",  GPR, GPRMemAtomic>;
+def SC_B_DDC  : CheriStoreCond_r<0b10000, "sc.b.ddc",  GPR, GPRMemZeroOffset>;
+def SC_H_DDC  : CheriStoreCond_r<0b10001, "sc.h.ddc",  GPR, GPRMemZeroOffset>;
+def SC_W_DDC  : CheriStoreCond_r<0b10010, "sc.w.ddc",  GPR, GPRMemZeroOffset>;
 }
 
 let Predicates = [HasCheri, HasStdExtA, IsRV64] in
-def SC_D_DDC  : CheriStoreCond_r<0b10011, "sc.d.ddc",  GPR, GPRMemAtomic>;
+def SC_D_DDC  : CheriStoreCond_r<0b10011, "sc.d.ddc",  GPR, GPRMemZeroOffset>;
 
 let DecoderNamespace = "RISCV32Only_",
     Predicates = [HasCheri, HasStdExtA, IsRV32] in
-def SC_C_DDC_64  : CheriStoreCond_r<0b10011, "sc.c.ddc", GPCR, GPRMemAtomic>;
+def SC_C_DDC_64  : CheriStoreCond_r<0b10011, "sc.c.ddc", GPCR, GPRMemZeroOffset>;
 
 let Predicates = [HasCheri, HasStdExtA, IsRV64] in
-def SC_C_DDC_128 : CheriStoreCond_r<0b10100, "sc.c.ddc", GPCR, GPRMemAtomic>;
+def SC_C_DDC_128 : CheriStoreCond_r<0b10100, "sc.c.ddc", GPCR, GPRMemZeroOffset>;
 
 let Predicates = [HasCheri, HasStdExtA] in {
 def SC_B_CAP  : CheriStoreCond_r<0b11000, "sc.b.cap",  GPR, GPCRMemAtomic>;
@@ -1169,10 +1169,14 @@ def : PatGpcrGpcr<int_cheri_cap_conditional_seal, CCSeal>;
 def : PatGpcr<int_cheri_cap_seal_entry, CSealEntry>;
 
 // TODO: Make this rematerialisable like MIPS
+
 def : PatGpcrGpr<int_cheri_bounded_stack_cap, CSetBounds>;
 def : PatGpcrUimm12<int_cheri_bounded_stack_cap, CSetBoundsImm>;
 def : PatGpcrGpr<int_cheri_bounded_stack_cap_dynamic, CSetBounds>;
 def : PatGpcrUimm12<int_cheri_bounded_stack_cap_dynamic, CSetBoundsImm>;
+
+def : Pat<(CapFI64 GPCR:$rs1), (CIncOffsetImm GPCR:$rs1, 0)>;
+def : Pat<(CapFI128 GPCR:$rs1), (CIncOffsetImm GPCR:$rs1, 0)>;
 
 /// Pointer-Arithmetic Instructions
 
@@ -1202,7 +1206,7 @@ def : Pat<(int_cheri_cap_from_pointer (CLenVT (int_cheri_ddc_get)), GPR:$rs2),
 
 def : Pat<(int_cheri_cap_from_pointer DDC, (XLenVT 0)), (CLenVT (COPY C0))>;
 def : Pat<(inttoptr (XLenVT 0)), (CLenVT (COPY C0))>;
-def : Pat<(ptrtoint C0), (XLenVT (COPY X0))>;
+// def : Pat<(ptrtoint C0), (XLenVT (COPY X0))>;
 
 /// Pointer-Comparison Instructions
 
@@ -1295,7 +1299,7 @@ def  : CheriSetCCPatGpcrGpcr<setgt, (SLT node:$rs2, node:$rs1)>;
 def  : CheriSetCCPatGpcrGpcr<setge, (XORI (SLT node:$rs1, node:$rs2), 1)>;
 def  : CheriSetCCPatGpcrGpcr<setle, (XORI (SLT node:$rs2, node:$rs1), 1)>;
 
-def Select_GPCR_Using_CC_GPR : SelectCC_rrirr<GPCR, GPR>;
+defm Select_GPCR : SelectCC_GPR_rrirr<GPCR>;
 
 /// Control-Flow Instructions
 

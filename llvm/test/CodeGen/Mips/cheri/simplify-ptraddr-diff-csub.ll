@@ -21,8 +21,8 @@ entry:
 ; INSTCOMBINE:      define i64 @cap_subtract_with_vaddr_cast(i8 addrspace(200)* %first, i8 addrspace(200)* %second) addrspace(200) #1 {
 ; INSTCOMBINE-NEXT: entry:
 ; INSTCOMBINE-NEXT:  %sub = call addrspace(200) i64 @llvm.cheri.cap.diff.i64(i8 addrspace(200)* %first, i8 addrspace(200)* %second)
-; INSTCOMBINE-NEXT:  %div = lshr i64 %sub, 4
-; INSTCOMBINE-NEXT:  ret i64 %div
+; INSTCOMBINE-NEXT:  %div1 = lshr i64 %sub, 4
+; INSTCOMBINE-NEXT:  ret i64 %div1
 ; INSTCOMBINE-NEXT:}
 
 

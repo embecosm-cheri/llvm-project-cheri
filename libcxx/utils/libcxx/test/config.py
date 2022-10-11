@@ -59,8 +59,6 @@ def intMacroValue(token):
 class Configuration(object):
     # pylint: disable=redefined-outer-name
     def __init__(self, lit_config, config):
-        if sys.version_info < (3, 3):
-            raise RuntimeError("Cannot run tests with python < 3.3")
         self.lit_config = lit_config
         self.config = config
         self.cxx = None
@@ -72,20 +70,10 @@ class Configuration(object):
         self.cxx_library_root = None
         self.cxx_runtime_root = None
         self.abi_library_root = None
-        # Whether to link only the ABI library and not libc++. This is used
-        # for testing libunwind
-        self.abi_library_only = False
         self.link_shared = self.get_lit_bool('enable_shared', default=True)
-        self.force_static_executable = self.get_lit_bool('force_static_executable', default=False)
-        if self.link_shared and self.force_static_executable:
-            lit_config.fatal('Cannot set both enable_shared and force_static_executable!')
         self.debug_build = self.get_lit_bool('debug_build',   default=False)
         self.exec_env = dict()
-        # increase timeouts when running on a slow test host (such as QEMU full
-        # sytem emulation for a different architecture)
-        self.slow_test_host = self.get_lit_bool('slow_test_host', default=False)
         self.use_clang_verify = False
-        self.default_cxx_abi_library = None
 
     def get_lit_conf(self, name, default=None):
         val = self.lit_config.params.get(name, None)
@@ -93,8 +81,6 @@ class Configuration(object):
             val = getattr(self.config, name, None)
             if val is None:
                 val = default
-        if val == "" and default is not None:
-            val = default
         return val
 
     def get_lit_bool(self, name, default=None, env_var=None):
@@ -147,7 +133,6 @@ class Configuration(object):
         self.configure_env()
         self.configure_coverage()
         self.configure_substitutions()
-        self.configure_features()
 
         libcxx.test.newconfig.configure(
             libcxx.test.params.DEFAULT_PARAMETERS,
@@ -173,15 +158,6 @@ class Configuration(object):
         self.lit_config.note("Running against the C++ Library at {}".format(self.cxx_runtime_root))
         self.lit_config.note("Linking against the ABI Library at {}".format(self.abi_library_root))
         self.lit_config.note("Running against the ABI Library at {}".format(self.abi_runtime_root))
-        sys.stderr.flush()  # Force flushing to avoid broken output on Windows
-
-    def get_test_format(self):
-        from libcxx.test.format import LibcxxTestFormat
-        return LibcxxTestFormat(
-            self.cxx,
-            self.use_clang_verify,
-            self.executor,
-            exec_env=self.exec_env)
 
     def configure_cxx(self):
         # Gather various compiler parameters.
@@ -245,16 +221,6 @@ class Configuration(object):
             else:
                 self.libcxx_obj_root = self.project_obj_root
 
-    def configure_features(self):
-        if self.target_info.is_windows():
-            if self.cxx_stdlib_under_test == 'libc++':
-                # LIBCXX-WINDOWS-FIXME is the feature name used to XFAIL the
-                # initial Windows failures until they can be properly diagnosed
-                # and fixed. This allows easier detection of new test failures
-                # and regressions. Note: New failures should not be suppressed
-                # using this feature. (Also see llvm.org/PR32730)
-                self.config.available_features.add('LIBCXX-WINDOWS-FIXME')
-
     def configure_compile_flags(self):
         self.configure_default_compile_flags()
         # Configure extra flags
@@ -311,11 +277,6 @@ class Configuration(object):
 
     def configure_compile_flags_header_includes(self):
         support_path = os.path.join(self.libcxx_src_root, 'test', 'support')
-        if self.cxx_stdlib_under_test != 'libstdc++' and \
-           not self.target_info.is_windows() and \
-           not self.target_info.is_zos():
-            self.cxx.compile_flags += [
-                '-include', os.path.join(support_path, 'nasty_macros.h')]
         if self.cxx_stdlib_under_test == 'msvc':
             self.cxx.compile_flags += [
                 '-include', os.path.join(support_path,
@@ -340,32 +301,18 @@ class Configuration(object):
         if triple is not None:
             cxx_target_headers = os.path.join(path, triple, cxx, version)
             if os.path.isdir(cxx_target_headers):
-                self.cxx.compile_flags += ['-I' + cxx_target_headers]
-        self.cxx.compile_flags += ['-I' + cxx_headers]
+                self.cxx.compile_flags += ['-I', cxx_target_headers]
+        self.cxx.compile_flags += ['-I', cxx_headers]
         if self.libcxx_obj_root is not None:
             cxxabi_headers = os.path.join(self.libcxx_obj_root, 'include',
                                           'c++build')
             if os.path.isdir(cxxabi_headers):
                 self.cxx.compile_flags += ['-I' + cxxabi_headers]
 
-    def configure_compile_flags_test_host(self):
-        if self.slow_test_host:
-            self.config.available_features.add('libcpp-slow-test-host')
-            self.cxx.compile_flags += ['-D_LIBCPP_SLOW_TEST_HOST']
-
     def configure_link_flags(self):
         # Configure library path
         self.configure_link_flags_cxx_library_path()
         self.configure_link_flags_abi_library_path()
-        # Add the ABI library link flags to cxx for use by libunwind tests
-        # This works for me on macOS and FreeBSD but for other systems
-        # we may need to add more linker flags (but probably not the full
-        # call to self.target_info.add_cxx_link_flags()).
-        self.cxx.link_libcxxabi_flag = ' '.join(self.get_link_flags_abi_library())
-
-        # Handle force_static_executable
-        if self.force_static_executable:
-            self.cxx.link_flags += ['-static']
 
         # Configure libraries
         if self.cxx_stdlib_under_test == 'libc++':
@@ -386,8 +333,6 @@ class Configuration(object):
             pass
         elif self.cxx_stdlib_under_test == 'cxx_default':
             self.cxx.link_flags += ['-pthread']
-        elif self.cxx_stdlib_under_test == 'none':
-            self.lit_config.note('not linking any C++ stdlib')
         else:
             self.lit_config.fatal('invalid stdlib under test')
 
@@ -433,61 +378,47 @@ class Configuration(object):
                 self.cxx.link_flags += ['-lc++']
 
     def configure_link_flags_abi_library(self):
-        self.cxx.link_flags += self.get_link_flags_abi_library()
-
-    def get_link_flags_abi_library(self):
-        if self.default_cxx_abi_library is None:
-            self.default_cxx_abi_library = self.target_info.default_cxx_abi_library()
-        cxx_abi = self.get_lit_conf('cxx_abi', self.default_cxx_abi_library)
-        if cxx_abi == 'default':
-            cxx_abi = self.default_cxx_abi_library
-        cxx_abi_lib_path = self.get_lit_conf('cxx_abi_lib_path', None)
-        self.lit_config.warning(
-            'default_cxx_abi_library=%s, cxx_abi=%s,cxx_abi_lib_path=%s' % (self.default_cxx_abi_library, cxx_abi, cxx_abi_lib_path))
-        link_flags = []
-        if cxx_abi_lib_path:
-            link_flags += [cxx_abi_lib_path]
-        elif cxx_abi == 'libstdc++':
-            link_flags += ['-lstdc++']
+        cxx_abi = self.get_lit_conf('cxx_abi', 'libcxxabi')
+        if cxx_abi == 'libstdc++':
+            self.cxx.link_flags += ['-lstdc++']
         elif cxx_abi == 'libsupc++':
-            link_flags += ['-lsupc++']
+            self.cxx.link_flags += ['-lsupc++']
         elif cxx_abi == 'libcxxabi':
             # If the C++ library requires explicitly linking to libc++abi, or
             # if we're testing libc++abi itself (the test configs are shared),
-            # then link it. Also allow linking when testing libunwind.
+            # then link it.
             testing_libcxxabi = self.get_lit_conf('name', '') == 'libc++abi'
-            testing_libunwind = self.get_lit_conf('name', '') == 'libunwind'
-            if self.target_info.allow_cxxabi_link() or testing_libcxxabi or testing_libunwind:
+            if self.target_info.allow_cxxabi_link() or testing_libcxxabi:
                 libcxxabi_shared = self.get_lit_bool('libcxxabi_shared', default=True)
-                if self.link_shared and libcxxabi_shared:
-                    link_flags += ['-lc++abi']
+                if libcxxabi_shared:
+                    self.cxx.link_flags += ['-lc++abi']
                 else:
                     if self.abi_library_root:
                         libname = self.make_static_lib_name('c++abi')
                         abs_path = os.path.join(self.abi_library_root, libname)
-                        link_flags += [abs_path]
+                        self.cxx.link_flags += [abs_path]
                     else:
-                        link_flags += ['-lc++abi']
+                        self.cxx.link_flags += ['-lc++abi']
+        elif cxx_abi == 'system-libcxxabi':
+            self.cxx.link_flags += ['-lc++abi']
         elif cxx_abi == 'libcxxrt':
-            link_flags += ['-lcxxrt']
+            self.cxx.link_flags += ['-lcxxrt']
         elif cxx_abi == 'vcruntime':
             debug_suffix = 'd' if self.debug_build else ''
             # This matches the set of libraries linked in the toplevel
             # libcxx CMakeLists.txt if building targeting msvc.
-            vcrt_linker_flags = ['-l%s%s' % (lib, debug_suffix) for lib in
-                                 ['vcruntime', 'ucrt', 'msvcrt', 'msvcprt']]
-            link_flags += vcrt_linker_flags
+            self.cxx.link_flags += ['-l%s%s' % (lib, debug_suffix) for lib in
+                                    ['vcruntime', 'ucrt', 'msvcrt', 'msvcprt']]
             # The compiler normally links in oldnames.lib too, but we've
             # specified -nostdlib above, so we need to specify it manually.
-            link_flags += ['-loldnames']
-        elif cxx_abi == 'none' or cxx_abi == 'default':
+            self.cxx.link_flags += ['-loldnames']
+        elif cxx_abi == 'none':
             if self.target_info.is_windows():
                 debug_suffix = 'd' if self.debug_build else ''
-                link_flags += ['-lmsvcrt%s' % debug_suffix]
+                self.cxx.link_flags += ['-lmsvcrt%s' % debug_suffix]
         else:
             self.lit_config.fatal(
                 'C++ ABI setting %s unsupported for tests' % cxx_abi)
-        return link_flags
 
     def configure_extra_library_flags(self):
         if self.get_lit_bool('cxx_ext_threads', default=False):
@@ -513,7 +444,6 @@ class Configuration(object):
         sub.append(('%{flags}',         ' '.join(map(self.quote, flags))))
         sub.append(('%{compile_flags}', ' '.join(map(self.quote, compile_flags))))
         sub.append(('%{link_flags}',    ' '.join(map(self.quote, self.cxx.link_flags))))
-        sub.append(('%{link_libcxxabi}', self.cxx.link_libcxxabi_flag))
 
         codesign_ident = self.get_lit_conf('llvm_codesign_identity', '')
         env_vars = ' '.join('%s=%s' % (k, self.quote(v)) for (k, v) in self.exec_env.items())

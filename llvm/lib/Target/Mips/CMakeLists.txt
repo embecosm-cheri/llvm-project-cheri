@@ -9,6 +9,8 @@ tablegen(LLVM MipsGenDAGISel.inc -gen-dag-isel)
 tablegen(LLVM MipsGenDisassemblerTables.inc -gen-disassembler)
 # tablegen(LLVM MipsGenFastISel.inc -gen-fast-isel)
 tablegen(LLVM MipsGenGlobalISel.inc -gen-global-isel)
+tablegen(LLVM MipsGenPostLegalizeGICombiner.inc -gen-global-isel-combiner
+              -combiners="MipsPostLegalizerCombinerHelper")
 tablegen(LLVM MipsGenInstrInfo.inc -gen-instr-info)
 tablegen(LLVM MipsGenMCCodeEmitter.inc -gen-emitter)
 tablegen(LLVM MipsGenMCPseudoLowering.inc -gen-pseudo-lowering)
@@ -48,6 +50,7 @@ add_llvm_target(MipsCodeGen
   MipsOptimizePICCall.cpp
   MipsOs16.cpp
   MipsPreLegalizerCombiner.cpp
+  MipsPostLegalizerCombiner.cpp
   MipsRegisterBankInfo.cpp
   MipsRegisterInfo.cpp
   MipsSelectionDAGInfo.cpp
@@ -59,6 +62,7 @@ add_llvm_target(MipsCodeGen
   MipsSubtarget.cpp
   MipsTargetMachine.cpp
   MipsTargetObjectFile.cpp
+  MipsTargetTransformInfo.cpp
   Cheri128FailHard.cpp
   CheriAddressingModeFolder.cpp
   CheriAddressingModeFolder.cpp
@@ -66,6 +70,7 @@ add_llvm_target(MipsCodeGen
   CheriStackInvalidatePass.cpp
   CheriRangeChecker.cpp
   MicroMipsSizeReduction.cpp
+  MipsMulMulBugPass.cpp
 
   LINK_COMPONENTS
   Analysis

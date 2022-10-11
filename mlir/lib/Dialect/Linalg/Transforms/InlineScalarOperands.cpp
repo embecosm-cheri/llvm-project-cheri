@@ -13,7 +13,8 @@
 //===----------------------------------------------------------------------===//
 
 #include "PassDetail.h"
-#include "mlir/Dialect/Linalg/IR/LinalgOps.h"
+#include "mlir/Dialect/Arithmetic/IR/Arithmetic.h"
+#include "mlir/Dialect/Linalg/IR/Linalg.h"
 #include "mlir/Dialect/Linalg/Passes.h"
 #include "mlir/Dialect/Linalg/Transforms/Transforms.h"
 #include "mlir/IR/AffineExpr.h"
@@ -55,10 +56,10 @@ struct InlineScalarOperands : public OpRewritePattern<GenericOp> {
     auto newOp = rewriter.create<GenericOp>(
         loc, genericOp->getResultTypes(), newOperands, outputOperands,
         newIndexingMaps,
-        llvm::to_vector<4>(
-            genericOp.iterator_types().template getAsValueRange<StringAttr>()));
-    rewriter.cloneRegionBefore(genericOp.region(), newOp.region(),
-                               newOp.region().begin());
+        llvm::to_vector<4>(genericOp.getIteratorTypes()
+                               .template getAsValueRange<StringAttr>()));
+    rewriter.cloneRegionBefore(genericOp.getRegion(), newOp.getRegion(),
+                               newOp.getRegion().begin());
 
     Block *body = newOp.getBody();
     PatternRewriter::InsertionGuard guard(rewriter);
@@ -70,7 +71,8 @@ struct InlineScalarOperands : public OpRewritePattern<GenericOp> {
       SmallVector<int64_t> indices = map.getConstantResults();
       SmallVector<Value> indicesValues;
       for (auto idx : indices)
-        indicesValues.emplace_back(rewriter.create<ConstantIndexOp>(loc, idx));
+        indicesValues.emplace_back(
+            rewriter.create<arith::ConstantIndexOp>(loc, idx));
       Value extractedValue = rewriter.create<tensor::ExtractOp>(
           loc, opOperand->get(), indicesValues);
       body->getArgument(idx).replaceAllUsesWith(extractedValue);
@@ -95,8 +97,8 @@ namespace {
 /// Pass that removes unit-extent dims within generic ops.
 struct LinalgInlineScalarOperandsPass
     : public LinalgInlineScalarOperandsBase<LinalgInlineScalarOperandsPass> {
-  void runOnFunction() override {
-    FuncOp funcOp = getFunction();
+  void runOnOperation() override {
+    func::FuncOp funcOp = getOperation();
     MLIRContext *context = funcOp.getContext();
     RewritePatternSet patterns(context);
 
@@ -106,7 +108,7 @@ struct LinalgInlineScalarOperandsPass
 };
 } // namespace
 
-std::unique_ptr<OperationPass<FuncOp>>
+std::unique_ptr<OperationPass<func::FuncOp>>
 mlir::createLinalgInlineScalarOperandsPass() {
   return std::make_unique<LinalgInlineScalarOperandsPass>();
 }

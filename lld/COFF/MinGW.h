@@ -17,8 +17,8 @@
 #include "llvm/Option/ArgList.h"
 #include <vector>
 
-namespace lld {
-namespace coff {
+namespace lld::coff {
+class COFFLinkerContext;
 
 // Logic for deciding what symbols to export, when exporting all
 // symbols for MinGW.
@@ -34,7 +34,7 @@ public:
   llvm::StringSet<> excludeLibs;
   llvm::StringSet<> excludeObjects;
 
-  bool shouldExport(Defined *sym) const;
+  bool shouldExport(const COFFLinkerContext &ctx, Defined *sym) const;
 };
 
 void writeDefFile(StringRef name);
@@ -53,11 +53,11 @@ struct WrappedSymbol {
   Symbol *wrap;
 };
 
-std::vector<WrappedSymbol> addWrappedSymbols(llvm::opt::InputArgList &args);
+std::vector<WrappedSymbol> addWrappedSymbols(COFFLinkerContext &ctx,
+                                             llvm::opt::InputArgList &args);
 
-void wrapSymbols(ArrayRef<WrappedSymbol> wrapped);
+void wrapSymbols(COFFLinkerContext &ctx, ArrayRef<WrappedSymbol> wrapped);
 
-} // namespace coff
-} // namespace lld
+} // namespace lld::coff
 
 #endif

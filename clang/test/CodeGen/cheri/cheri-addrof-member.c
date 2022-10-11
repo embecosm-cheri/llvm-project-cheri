@@ -9,8 +9,8 @@ struct S {
 
 // CHECK-LABEL: @struct_member(
 // CHECK-NEXT:  entry:
-// CHECK-NEXT:    [[C:%.*]] = getelementptr inbounds [[STRUCT_S:%.*]], [[STRUCT_S]] addrspace(200)* [[S:%.*]], i32 0, i32 1
-// CHECK-NEXT:    ret i8 addrspace(200)* [[C]]
+// CHECK-NEXT:    [[C:%.*]] = getelementptr inbounds [[STRUCT_S:%.*]], ptr addrspace(200) [[S:%.*]], i32 0, i32 1
+// CHECK-NEXT:    ret ptr addrspace(200) [[C]]
 //
 char * __capability struct_member(struct S * __capability s) {
   return &s->c;
@@ -18,8 +18,8 @@ char * __capability struct_member(struct S * __capability s) {
 
 // CHECK-LABEL: @array_member(
 // CHECK-NEXT:  entry:
-// CHECK-NEXT:    [[ARRAYIDX:%.*]] = getelementptr inbounds i8, i8 addrspace(200)* [[P:%.*]], i64 42
-// CHECK-NEXT:    ret i8 addrspace(200)* [[ARRAYIDX]]
+// CHECK-NEXT:    [[ARRAYIDX:%.*]] = getelementptr inbounds i8, ptr addrspace(200) [[P:%.*]], i64 42
+// CHECK-NEXT:    ret ptr addrspace(200) [[ARRAYIDX]]
 //
 char * __capability array_member(char * __capability p) {
   return &p[42];
@@ -29,9 +29,9 @@ char * __capability array_member(char * __capability p) {
 // Check that we don't create a capability.
 // CHECK-LABEL: @typeof_arg(
 // CHECK-NEXT:  entry:
-// CHECK-NEXT:    [[P_ADDR:%.*]] = alloca i8 addrspace(200)*, align 16
-// CHECK-NEXT:    store i8 addrspace(200)* [[P:%.*]], i8 addrspace(200)** [[P_ADDR]], align 16
-// CHECK-NEXT:    call void @foo(i8 addrspace(200)** [[P_ADDR]])
+// CHECK-NEXT:    [[P_ADDR:%.*]] = alloca ptr addrspace(200), align 16
+// CHECK-NEXT:    store ptr addrspace(200) [[P:%.*]], ptr [[P_ADDR]], align 16
+// CHECK-NEXT:    call void @foo(ptr noundef [[P_ADDR]])
 // CHECK-NEXT:    ret void
 //
 void typeof_arg(void * __capability p) {
@@ -46,10 +46,10 @@ void typeof_arg(void * __capability p) {
 // `char [1]`, which is not a capability.
 // CHECK-LABEL: @fromcap_member(
 // CHECK-NEXT:  entry:
-// CHECK-NEXT:    [[BUF:%.*]] = getelementptr inbounds [[STRUCT_S:%.*]], [[STRUCT_S]] addrspace(200)* [[S:%.*]], i32 0, i32 0
-// CHECK-NEXT:    [[ARRAYIDX:%.*]] = getelementptr inbounds [1 x i8], [1 x i8] addrspace(200)* [[BUF]], i64 0, i64 0
-// CHECK-NEXT:    [[ARRAYIDX_ASCAST:%.*]] = addrspacecast i8 addrspace(200)* [[ARRAYIDX]] to i8*
-// CHECK-NEXT:    ret i8* [[ARRAYIDX_ASCAST]]
+// CHECK-NEXT:    [[BUF:%.*]] = getelementptr inbounds [[STRUCT_S:%.*]], ptr addrspace(200) [[S:%.*]], i32 0, i32 0
+// CHECK-NEXT:    [[ARRAYIDX:%.*]] = getelementptr inbounds [1 x i8], ptr addrspace(200) [[BUF]], i64 0, i64 0
+// CHECK-NEXT:    [[ARRAYIDX_ASCAST:%.*]] = addrspacecast ptr addrspace(200) [[ARRAYIDX]] to ptr
+// CHECK-NEXT:    ret ptr [[ARRAYIDX_ASCAST]]
 //
 char *fromcap_member(struct S * __capability s) {
   return (__cheri_fromcap char *)&s->buf[0];

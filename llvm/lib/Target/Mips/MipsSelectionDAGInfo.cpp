@@ -81,7 +81,7 @@ SDValue EmitTargetCodeForMemOp(SelectionDAG &DAG, const SDLoc &dl,
   if (SrcAS == 0)
     Src = DAG.getAddrSpaceCast(dl, CapType, Src, 0, 200);
 
-  
+
   const char *memFnName = isMemCpy ?
     (STI.isABI_CheriPureCap() ?  "memcpy" : "memcpy_c") :
     (STI.isABI_CheriPureCap() ?  "memmove" : "memmove_c");
@@ -114,7 +114,7 @@ SDValue MipsSelectionDAGInfo::EmitTargetCodeForMemmove(
 
 SDValue MipsSelectionDAGInfo::EmitTargetCodeForMemset(
     SelectionDAG &DAG, const SDLoc &dl, SDValue Chain, SDValue Dst, SDValue Src,
-    SDValue Size, Align Alignment, bool isVolatile,
+    SDValue Size, Align Alignment, bool isVolatile, bool AlwaysInline,
     MachinePointerInfo DstPtrInfo) const {
   // If we're setting via an AS0 pointer, do the normal thing.
   unsigned DstAS = DstPtrInfo.getAddrSpace();
@@ -206,7 +206,7 @@ SDValue MipsSelectionDAGInfo::EmitTargetCodeForMemset(
   }
 
 
-  const char *memFnName = 
+  const char *memFnName =
     STI.isABI_CheriPureCap() ?  "memset" : "memset_c";
   return callFunction(DAG, dl, Chain, memFnName, Dst, Src, Size);
 }

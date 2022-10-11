@@ -34,7 +34,6 @@ class Constant;
 class Module;
 
 template <typename ValueSubClass> class SymbolTableListTraits;
-class DIGlobalVariable;
 class DIGlobalVariableExpression;
 
 class GlobalVariable : public GlobalObject, public ilist_node<GlobalVariable> {
@@ -50,13 +49,12 @@ class GlobalVariable : public GlobalObject, public ilist_node<GlobalVariable> {
 public:
   /// GlobalVariable ctor - If a parent module is specified, the global is
   /// automatically inserted into the end of the specified modules global list.
-  LLVM_ATTRIBUTE_DEPRECATED(
-      GlobalVariable(Type *Ty, bool isConstant, LinkageTypes Linkage,
-                     Constant *Initializer = nullptr, const Twine &Name = "",
-                     ThreadLocalMode TLMode = NotThreadLocal),
-      "use the overload with a Module& or an explicit address space")
-      : GlobalVariable(Ty, isConstant, Linkage, Initializer, Name, TLMode, 0,
-                       false) {}
+  [[deprecated("use the overload with a Module& or an explicit address space")]]
+  GlobalVariable(Type *Ty, bool isConstant, LinkageTypes Linkage,
+                 Constant *Initializer = nullptr, const Twine &Name = "",
+                 ThreadLocalMode TLMode = NotThreadLocal)
+    : GlobalVariable(Ty, isConstant, Linkage, Initializer, Name, TLMode, 0,
+                     false) {}
 
   GlobalVariable(Type *Ty, bool isConstant, LinkageTypes Linkage,
                  Constant *Initializer, const Twine &Name,

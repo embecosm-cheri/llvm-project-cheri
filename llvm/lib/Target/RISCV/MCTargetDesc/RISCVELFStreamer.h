@@ -6,8 +6,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLVM_LIB_TARGET_RISCV_RISCVELFSTREAMER_H
-#define LLVM_LIB_TARGET_RISCV_RISCVELFSTREAMER_H
+#ifndef LLVM_LIB_TARGET_RISCV_MCTARGETDESC_RISCVELFSTREAMER_H
+#define LLVM_LIB_TARGET_RISCV_MCTARGETDESC_RISCVELFSTREAMER_H
 
 #include "RISCVTargetStreamer.h"
 #include "llvm/MC/MCAsmBackend.h"
@@ -32,6 +32,7 @@ private:
   SmallVector<AttributeItem, 64> Contents;
 
   MCSection *AttributeSection = nullptr;
+  const MCSubtargetInfo &STI;
 
   AttributeItem *getAttributeItem(unsigned Attribute) {
     for (size_t i = 0; i < Contents.size(); ++i)
@@ -94,6 +95,8 @@ private:
   void finishAttributeSection() override;
   size_t calculateContentSize() const;
 
+  void reset() override;
+
 public:
   MCELFStreamer &getStreamer();
   RISCVTargetELFStreamer(MCStreamer &S, const MCSubtargetInfo &STI);
@@ -108,6 +111,8 @@ public:
   void emitDirectiveOptionNoRelax() override;
   void emitDirectiveOptionCapMode() override;
   void emitDirectiveOptionNoCapMode() override;
+
+  void finish() override;
 };
 
 MCELFStreamer *createRISCVELFStreamer(MCContext &C,

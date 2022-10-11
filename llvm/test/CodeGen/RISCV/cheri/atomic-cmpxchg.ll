@@ -16,8 +16,8 @@ define void @cmpxchg_i8_monotonic_monotonic(i8 addrspace(200)* %ptr, i8 %cmp, i8
 ; RV32IXCHERI-NEXT:    csb a1, 7(csp)
 ; RV32IXCHERI-NEXT:    cincoffset ca1, csp, 7
 ; RV32IXCHERI-NEXT:    csetbounds ca1, ca1, 1
-; RV32IXCHERI-NEXT:    mv a3, zero
-; RV32IXCHERI-NEXT:    mv a4, zero
+; RV32IXCHERI-NEXT:    li a3, 0
+; RV32IXCHERI-NEXT:    li a4, 0
 ; RV32IXCHERI-NEXT:    ccall __atomic_compare_exchange_1
 ; RV32IXCHERI-NEXT:    clc cra, 8(csp) # 8-byte Folded Reload
 ; RV32IXCHERI-NEXT:    cincoffset csp, csp, 16
@@ -43,8 +43,8 @@ define void @cmpxchg_i8_monotonic_monotonic(i8 addrspace(200)* %ptr, i8 %cmp, i8
 ; RV64IXCHERI-NEXT:    csb a1, 15(csp)
 ; RV64IXCHERI-NEXT:    cincoffset ca1, csp, 15
 ; RV64IXCHERI-NEXT:    csetbounds ca1, ca1, 1
-; RV64IXCHERI-NEXT:    mv a3, zero
-; RV64IXCHERI-NEXT:    mv a4, zero
+; RV64IXCHERI-NEXT:    li a3, 0
+; RV64IXCHERI-NEXT:    li a4, 0
 ; RV64IXCHERI-NEXT:    ccall __atomic_compare_exchange_1
 ; RV64IXCHERI-NEXT:    clc cra, 16(csp) # 16-byte Folded Reload
 ; RV64IXCHERI-NEXT:    cincoffset csp, csp, 32
@@ -74,8 +74,8 @@ define void @cmpxchg_i8_acquire_monotonic(i8 addrspace(200)* %ptr, i8 %cmp, i8 %
 ; RV32IXCHERI-NEXT:    csb a1, 7(csp)
 ; RV32IXCHERI-NEXT:    cincoffset ca1, csp, 7
 ; RV32IXCHERI-NEXT:    csetbounds ca1, ca1, 1
-; RV32IXCHERI-NEXT:    addi a3, zero, 2
-; RV32IXCHERI-NEXT:    mv a4, zero
+; RV32IXCHERI-NEXT:    li a3, 2
+; RV32IXCHERI-NEXT:    li a4, 0
 ; RV32IXCHERI-NEXT:    ccall __atomic_compare_exchange_1
 ; RV32IXCHERI-NEXT:    clc cra, 8(csp) # 8-byte Folded Reload
 ; RV32IXCHERI-NEXT:    cincoffset csp, csp, 16
@@ -101,8 +101,8 @@ define void @cmpxchg_i8_acquire_monotonic(i8 addrspace(200)* %ptr, i8 %cmp, i8 %
 ; RV64IXCHERI-NEXT:    csb a1, 15(csp)
 ; RV64IXCHERI-NEXT:    cincoffset ca1, csp, 15
 ; RV64IXCHERI-NEXT:    csetbounds ca1, ca1, 1
-; RV64IXCHERI-NEXT:    addi a3, zero, 2
-; RV64IXCHERI-NEXT:    mv a4, zero
+; RV64IXCHERI-NEXT:    li a3, 2
+; RV64IXCHERI-NEXT:    li a4, 0
 ; RV64IXCHERI-NEXT:    ccall __atomic_compare_exchange_1
 ; RV64IXCHERI-NEXT:    clc cra, 16(csp) # 16-byte Folded Reload
 ; RV64IXCHERI-NEXT:    cincoffset csp, csp, 32
@@ -132,8 +132,8 @@ define void @cmpxchg_i8_acquire_acquire(i8 addrspace(200)* %ptr, i8 %cmp, i8 %va
 ; RV32IXCHERI-NEXT:    csb a1, 7(csp)
 ; RV32IXCHERI-NEXT:    cincoffset ca1, csp, 7
 ; RV32IXCHERI-NEXT:    csetbounds ca1, ca1, 1
-; RV32IXCHERI-NEXT:    addi a3, zero, 2
-; RV32IXCHERI-NEXT:    addi a4, zero, 2
+; RV32IXCHERI-NEXT:    li a3, 2
+; RV32IXCHERI-NEXT:    li a4, 2
 ; RV32IXCHERI-NEXT:    ccall __atomic_compare_exchange_1
 ; RV32IXCHERI-NEXT:    clc cra, 8(csp) # 8-byte Folded Reload
 ; RV32IXCHERI-NEXT:    cincoffset csp, csp, 16
@@ -159,8 +159,8 @@ define void @cmpxchg_i8_acquire_acquire(i8 addrspace(200)* %ptr, i8 %cmp, i8 %va
 ; RV64IXCHERI-NEXT:    csb a1, 15(csp)
 ; RV64IXCHERI-NEXT:    cincoffset ca1, csp, 15
 ; RV64IXCHERI-NEXT:    csetbounds ca1, ca1, 1
-; RV64IXCHERI-NEXT:    addi a3, zero, 2
-; RV64IXCHERI-NEXT:    addi a4, zero, 2
+; RV64IXCHERI-NEXT:    li a3, 2
+; RV64IXCHERI-NEXT:    li a4, 2
 ; RV64IXCHERI-NEXT:    ccall __atomic_compare_exchange_1
 ; RV64IXCHERI-NEXT:    clc cra, 16(csp) # 16-byte Folded Reload
 ; RV64IXCHERI-NEXT:    cincoffset csp, csp, 32
@@ -190,8 +190,8 @@ define void @cmpxchg_i8_release_monotonic(i8 addrspace(200)* %ptr, i8 %cmp, i8 %
 ; RV32IXCHERI-NEXT:    csb a1, 7(csp)
 ; RV32IXCHERI-NEXT:    cincoffset ca1, csp, 7
 ; RV32IXCHERI-NEXT:    csetbounds ca1, ca1, 1
-; RV32IXCHERI-NEXT:    addi a3, zero, 3
-; RV32IXCHERI-NEXT:    mv a4, zero
+; RV32IXCHERI-NEXT:    li a3, 3
+; RV32IXCHERI-NEXT:    li a4, 0
 ; RV32IXCHERI-NEXT:    ccall __atomic_compare_exchange_1
 ; RV32IXCHERI-NEXT:    clc cra, 8(csp) # 8-byte Folded Reload
 ; RV32IXCHERI-NEXT:    cincoffset csp, csp, 16
@@ -217,8 +217,8 @@ define void @cmpxchg_i8_release_monotonic(i8 addrspace(200)* %ptr, i8 %cmp, i8 %
 ; RV64IXCHERI-NEXT:    csb a1, 15(csp)
 ; RV64IXCHERI-NEXT:    cincoffset ca1, csp, 15
 ; RV64IXCHERI-NEXT:    csetbounds ca1, ca1, 1
-; RV64IXCHERI-NEXT:    addi a3, zero, 3
-; RV64IXCHERI-NEXT:    mv a4, zero
+; RV64IXCHERI-NEXT:    li a3, 3
+; RV64IXCHERI-NEXT:    li a4, 0
 ; RV64IXCHERI-NEXT:    ccall __atomic_compare_exchange_1
 ; RV64IXCHERI-NEXT:    clc cra, 16(csp) # 16-byte Folded Reload
 ; RV64IXCHERI-NEXT:    cincoffset csp, csp, 32
@@ -248,8 +248,8 @@ define void @cmpxchg_i8_release_acquire(i8 addrspace(200)* %ptr, i8 %cmp, i8 %va
 ; RV32IXCHERI-NEXT:    csb a1, 7(csp)
 ; RV32IXCHERI-NEXT:    cincoffset ca1, csp, 7
 ; RV32IXCHERI-NEXT:    csetbounds ca1, ca1, 1
-; RV32IXCHERI-NEXT:    addi a3, zero, 3
-; RV32IXCHERI-NEXT:    addi a4, zero, 2
+; RV32IXCHERI-NEXT:    li a3, 3
+; RV32IXCHERI-NEXT:    li a4, 2
 ; RV32IXCHERI-NEXT:    ccall __atomic_compare_exchange_1
 ; RV32IXCHERI-NEXT:    clc cra, 8(csp) # 8-byte Folded Reload
 ; RV32IXCHERI-NEXT:    cincoffset csp, csp, 16
@@ -275,8 +275,8 @@ define void @cmpxchg_i8_release_acquire(i8 addrspace(200)* %ptr, i8 %cmp, i8 %va
 ; RV64IXCHERI-NEXT:    csb a1, 15(csp)
 ; RV64IXCHERI-NEXT:    cincoffset ca1, csp, 15
 ; RV64IXCHERI-NEXT:    csetbounds ca1, ca1, 1
-; RV64IXCHERI-NEXT:    addi a3, zero, 3
-; RV64IXCHERI-NEXT:    addi a4, zero, 2
+; RV64IXCHERI-NEXT:    li a3, 3
+; RV64IXCHERI-NEXT:    li a4, 2
 ; RV64IXCHERI-NEXT:    ccall __atomic_compare_exchange_1
 ; RV64IXCHERI-NEXT:    clc cra, 16(csp) # 16-byte Folded Reload
 ; RV64IXCHERI-NEXT:    cincoffset csp, csp, 32
@@ -306,8 +306,8 @@ define void @cmpxchg_i8_acq_rel_monotonic(i8 addrspace(200)* %ptr, i8 %cmp, i8 %
 ; RV32IXCHERI-NEXT:    csb a1, 7(csp)
 ; RV32IXCHERI-NEXT:    cincoffset ca1, csp, 7
 ; RV32IXCHERI-NEXT:    csetbounds ca1, ca1, 1
-; RV32IXCHERI-NEXT:    addi a3, zero, 4
-; RV32IXCHERI-NEXT:    mv a4, zero
+; RV32IXCHERI-NEXT:    li a3, 4
+; RV32IXCHERI-NEXT:    li a4, 0
 ; RV32IXCHERI-NEXT:    ccall __atomic_compare_exchange_1
 ; RV32IXCHERI-NEXT:    clc cra, 8(csp) # 8-byte Folded Reload
 ; RV32IXCHERI-NEXT:    cincoffset csp, csp, 16
@@ -333,8 +333,8 @@ define void @cmpxchg_i8_acq_rel_monotonic(i8 addrspace(200)* %ptr, i8 %cmp, i8 %
 ; RV64IXCHERI-NEXT:    csb a1, 15(csp)
 ; RV64IXCHERI-NEXT:    cincoffset ca1, csp, 15
 ; RV64IXCHERI-NEXT:    csetbounds ca1, ca1, 1
-; RV64IXCHERI-NEXT:    addi a3, zero, 4
-; RV64IXCHERI-NEXT:    mv a4, zero
+; RV64IXCHERI-NEXT:    li a3, 4
+; RV64IXCHERI-NEXT:    li a4, 0
 ; RV64IXCHERI-NEXT:    ccall __atomic_compare_exchange_1
 ; RV64IXCHERI-NEXT:    clc cra, 16(csp) # 16-byte Folded Reload
 ; RV64IXCHERI-NEXT:    cincoffset csp, csp, 32
@@ -364,8 +364,8 @@ define void @cmpxchg_i8_acq_rel_acquire(i8 addrspace(200)* %ptr, i8 %cmp, i8 %va
 ; RV32IXCHERI-NEXT:    csb a1, 7(csp)
 ; RV32IXCHERI-NEXT:    cincoffset ca1, csp, 7
 ; RV32IXCHERI-NEXT:    csetbounds ca1, ca1, 1
-; RV32IXCHERI-NEXT:    addi a3, zero, 4
-; RV32IXCHERI-NEXT:    addi a4, zero, 2
+; RV32IXCHERI-NEXT:    li a3, 4
+; RV32IXCHERI-NEXT:    li a4, 2
 ; RV32IXCHERI-NEXT:    ccall __atomic_compare_exchange_1
 ; RV32IXCHERI-NEXT:    clc cra, 8(csp) # 8-byte Folded Reload
 ; RV32IXCHERI-NEXT:    cincoffset csp, csp, 16
@@ -391,8 +391,8 @@ define void @cmpxchg_i8_acq_rel_acquire(i8 addrspace(200)* %ptr, i8 %cmp, i8 %va
 ; RV64IXCHERI-NEXT:    csb a1, 15(csp)
 ; RV64IXCHERI-NEXT:    cincoffset ca1, csp, 15
 ; RV64IXCHERI-NEXT:    csetbounds ca1, ca1, 1
-; RV64IXCHERI-NEXT:    addi a3, zero, 4
-; RV64IXCHERI-NEXT:    addi a4, zero, 2
+; RV64IXCHERI-NEXT:    li a3, 4
+; RV64IXCHERI-NEXT:    li a4, 2
 ; RV64IXCHERI-NEXT:    ccall __atomic_compare_exchange_1
 ; RV64IXCHERI-NEXT:    clc cra, 16(csp) # 16-byte Folded Reload
 ; RV64IXCHERI-NEXT:    cincoffset csp, csp, 32
@@ -422,8 +422,8 @@ define void @cmpxchg_i8_seq_cst_monotonic(i8 addrspace(200)* %ptr, i8 %cmp, i8 %
 ; RV32IXCHERI-NEXT:    csb a1, 7(csp)
 ; RV32IXCHERI-NEXT:    cincoffset ca1, csp, 7
 ; RV32IXCHERI-NEXT:    csetbounds ca1, ca1, 1
-; RV32IXCHERI-NEXT:    addi a3, zero, 5
-; RV32IXCHERI-NEXT:    mv a4, zero
+; RV32IXCHERI-NEXT:    li a3, 5
+; RV32IXCHERI-NEXT:    li a4, 0
 ; RV32IXCHERI-NEXT:    ccall __atomic_compare_exchange_1
 ; RV32IXCHERI-NEXT:    clc cra, 8(csp) # 8-byte Folded Reload
 ; RV32IXCHERI-NEXT:    cincoffset csp, csp, 16
@@ -449,8 +449,8 @@ define void @cmpxchg_i8_seq_cst_monotonic(i8 addrspace(200)* %ptr, i8 %cmp, i8 %
 ; RV64IXCHERI-NEXT:    csb a1, 15(csp)
 ; RV64IXCHERI-NEXT:    cincoffset ca1, csp, 15
 ; RV64IXCHERI-NEXT:    csetbounds ca1, ca1, 1
-; RV64IXCHERI-NEXT:    addi a3, zero, 5
-; RV64IXCHERI-NEXT:    mv a4, zero
+; RV64IXCHERI-NEXT:    li a3, 5
+; RV64IXCHERI-NEXT:    li a4, 0
 ; RV64IXCHERI-NEXT:    ccall __atomic_compare_exchange_1
 ; RV64IXCHERI-NEXT:    clc cra, 16(csp) # 16-byte Folded Reload
 ; RV64IXCHERI-NEXT:    cincoffset csp, csp, 32
@@ -480,8 +480,8 @@ define void @cmpxchg_i8_seq_cst_acquire(i8 addrspace(200)* %ptr, i8 %cmp, i8 %va
 ; RV32IXCHERI-NEXT:    csb a1, 7(csp)
 ; RV32IXCHERI-NEXT:    cincoffset ca1, csp, 7
 ; RV32IXCHERI-NEXT:    csetbounds ca1, ca1, 1
-; RV32IXCHERI-NEXT:    addi a3, zero, 5
-; RV32IXCHERI-NEXT:    addi a4, zero, 2
+; RV32IXCHERI-NEXT:    li a3, 5
+; RV32IXCHERI-NEXT:    li a4, 2
 ; RV32IXCHERI-NEXT:    ccall __atomic_compare_exchange_1
 ; RV32IXCHERI-NEXT:    clc cra, 8(csp) # 8-byte Folded Reload
 ; RV32IXCHERI-NEXT:    cincoffset csp, csp, 16
@@ -507,8 +507,8 @@ define void @cmpxchg_i8_seq_cst_acquire(i8 addrspace(200)* %ptr, i8 %cmp, i8 %va
 ; RV64IXCHERI-NEXT:    csb a1, 15(csp)
 ; RV64IXCHERI-NEXT:    cincoffset ca1, csp, 15
 ; RV64IXCHERI-NEXT:    csetbounds ca1, ca1, 1
-; RV64IXCHERI-NEXT:    addi a3, zero, 5
-; RV64IXCHERI-NEXT:    addi a4, zero, 2
+; RV64IXCHERI-NEXT:    li a3, 5
+; RV64IXCHERI-NEXT:    li a4, 2
 ; RV64IXCHERI-NEXT:    ccall __atomic_compare_exchange_1
 ; RV64IXCHERI-NEXT:    clc cra, 16(csp) # 16-byte Folded Reload
 ; RV64IXCHERI-NEXT:    cincoffset csp, csp, 32
@@ -538,8 +538,8 @@ define void @cmpxchg_i8_seq_cst_seq_cst(i8 addrspace(200)* %ptr, i8 %cmp, i8 %va
 ; RV32IXCHERI-NEXT:    csb a1, 7(csp)
 ; RV32IXCHERI-NEXT:    cincoffset ca1, csp, 7
 ; RV32IXCHERI-NEXT:    csetbounds ca1, ca1, 1
-; RV32IXCHERI-NEXT:    addi a3, zero, 5
-; RV32IXCHERI-NEXT:    addi a4, zero, 5
+; RV32IXCHERI-NEXT:    li a3, 5
+; RV32IXCHERI-NEXT:    li a4, 5
 ; RV32IXCHERI-NEXT:    ccall __atomic_compare_exchange_1
 ; RV32IXCHERI-NEXT:    clc cra, 8(csp) # 8-byte Folded Reload
 ; RV32IXCHERI-NEXT:    cincoffset csp, csp, 16
@@ -565,8 +565,8 @@ define void @cmpxchg_i8_seq_cst_seq_cst(i8 addrspace(200)* %ptr, i8 %cmp, i8 %va
 ; RV64IXCHERI-NEXT:    csb a1, 15(csp)
 ; RV64IXCHERI-NEXT:    cincoffset ca1, csp, 15
 ; RV64IXCHERI-NEXT:    csetbounds ca1, ca1, 1
-; RV64IXCHERI-NEXT:    addi a3, zero, 5
-; RV64IXCHERI-NEXT:    addi a4, zero, 5
+; RV64IXCHERI-NEXT:    li a3, 5
+; RV64IXCHERI-NEXT:    li a4, 5
 ; RV64IXCHERI-NEXT:    ccall __atomic_compare_exchange_1
 ; RV64IXCHERI-NEXT:    clc cra, 16(csp) # 16-byte Folded Reload
 ; RV64IXCHERI-NEXT:    cincoffset csp, csp, 32
@@ -597,8 +597,8 @@ define void @cmpxchg_i16_monotonic_monotonic(i16 addrspace(200)* %ptr, i16 %cmp,
 ; RV32IXCHERI-NEXT:    csetbounds ca3, ca3, 2
 ; RV32IXCHERI-NEXT:    csh a1, 6(csp)
 ; RV32IXCHERI-NEXT:    cmove ca1, ca3
-; RV32IXCHERI-NEXT:    mv a3, zero
-; RV32IXCHERI-NEXT:    mv a4, zero
+; RV32IXCHERI-NEXT:    li a3, 0
+; RV32IXCHERI-NEXT:    li a4, 0
 ; RV32IXCHERI-NEXT:    ccall __atomic_compare_exchange_2
 ; RV32IXCHERI-NEXT:    clc cra, 8(csp) # 8-byte Folded Reload
 ; RV32IXCHERI-NEXT:    cincoffset csp, csp, 16
@@ -625,8 +625,8 @@ define void @cmpxchg_i16_monotonic_monotonic(i16 addrspace(200)* %ptr, i16 %cmp,
 ; RV64IXCHERI-NEXT:    csetbounds ca3, ca3, 2
 ; RV64IXCHERI-NEXT:    csh a1, 14(csp)
 ; RV64IXCHERI-NEXT:    cmove ca1, ca3
-; RV64IXCHERI-NEXT:    mv a3, zero
-; RV64IXCHERI-NEXT:    mv a4, zero
+; RV64IXCHERI-NEXT:    li a3, 0
+; RV64IXCHERI-NEXT:    li a4, 0
 ; RV64IXCHERI-NEXT:    ccall __atomic_compare_exchange_2
 ; RV64IXCHERI-NEXT:    clc cra, 16(csp) # 16-byte Folded Reload
 ; RV64IXCHERI-NEXT:    cincoffset csp, csp, 32
@@ -656,9 +656,9 @@ define void @cmpxchg_i16_acquire_monotonic(i16 addrspace(200)* %ptr, i16 %cmp, i
 ; RV32IXCHERI-NEXT:    cincoffset ca3, csp, 6
 ; RV32IXCHERI-NEXT:    csetbounds ca4, ca3, 2
 ; RV32IXCHERI-NEXT:    csh a1, 6(csp)
-; RV32IXCHERI-NEXT:    addi a3, zero, 2
+; RV32IXCHERI-NEXT:    li a3, 2
 ; RV32IXCHERI-NEXT:    cmove ca1, ca4
-; RV32IXCHERI-NEXT:    mv a4, zero
+; RV32IXCHERI-NEXT:    li a4, 0
 ; RV32IXCHERI-NEXT:    ccall __atomic_compare_exchange_2
 ; RV32IXCHERI-NEXT:    clc cra, 8(csp) # 8-byte Folded Reload
 ; RV32IXCHERI-NEXT:    cincoffset csp, csp, 16
@@ -684,9 +684,9 @@ define void @cmpxchg_i16_acquire_monotonic(i16 addrspace(200)* %ptr, i16 %cmp, i
 ; RV64IXCHERI-NEXT:    cincoffset ca3, csp, 14
 ; RV64IXCHERI-NEXT:    csetbounds ca4, ca3, 2
 ; RV64IXCHERI-NEXT:    csh a1, 14(csp)
-; RV64IXCHERI-NEXT:    addi a3, zero, 2
+; RV64IXCHERI-NEXT:    li a3, 2
 ; RV64IXCHERI-NEXT:    cmove ca1, ca4
-; RV64IXCHERI-NEXT:    mv a4, zero
+; RV64IXCHERI-NEXT:    li a4, 0
 ; RV64IXCHERI-NEXT:    ccall __atomic_compare_exchange_2
 ; RV64IXCHERI-NEXT:    clc cra, 16(csp) # 16-byte Folded Reload
 ; RV64IXCHERI-NEXT:    cincoffset csp, csp, 32
@@ -716,8 +716,8 @@ define void @cmpxchg_i16_acquire_acquire(i16 addrspace(200)* %ptr, i16 %cmp, i16
 ; RV32IXCHERI-NEXT:    cincoffset ca3, csp, 6
 ; RV32IXCHERI-NEXT:    csetbounds ca5, ca3, 2
 ; RV32IXCHERI-NEXT:    csh a1, 6(csp)
-; RV32IXCHERI-NEXT:    addi a3, zero, 2
-; RV32IXCHERI-NEXT:    addi a4, zero, 2
+; RV32IXCHERI-NEXT:    li a3, 2
+; RV32IXCHERI-NEXT:    li a4, 2
 ; RV32IXCHERI-NEXT:    cmove ca1, ca5
 ; RV32IXCHERI-NEXT:    ccall __atomic_compare_exchange_2
 ; RV32IXCHERI-NEXT:    clc cra, 8(csp) # 8-byte Folded Reload
@@ -744,8 +744,8 @@ define void @cmpxchg_i16_acquire_acquire(i16 addrspace(200)* %ptr, i16 %cmp, i16
 ; RV64IXCHERI-NEXT:    cincoffset ca3, csp, 14
 ; RV64IXCHERI-NEXT:    csetbounds ca5, ca3, 2
 ; RV64IXCHERI-NEXT:    csh a1, 14(csp)
-; RV64IXCHERI-NEXT:    addi a3, zero, 2
-; RV64IXCHERI-NEXT:    addi a4, zero, 2
+; RV64IXCHERI-NEXT:    li a3, 2
+; RV64IXCHERI-NEXT:    li a4, 2
 ; RV64IXCHERI-NEXT:    cmove ca1, ca5
 ; RV64IXCHERI-NEXT:    ccall __atomic_compare_exchange_2
 ; RV64IXCHERI-NEXT:    clc cra, 16(csp) # 16-byte Folded Reload
@@ -776,9 +776,9 @@ define void @cmpxchg_i16_release_monotonic(i16 addrspace(200)* %ptr, i16 %cmp, i
 ; RV32IXCHERI-NEXT:    cincoffset ca3, csp, 6
 ; RV32IXCHERI-NEXT:    csetbounds ca4, ca3, 2
 ; RV32IXCHERI-NEXT:    csh a1, 6(csp)
-; RV32IXCHERI-NEXT:    addi a3, zero, 3
+; RV32IXCHERI-NEXT:    li a3, 3
 ; RV32IXCHERI-NEXT:    cmove ca1, ca4
-; RV32IXCHERI-NEXT:    mv a4, zero
+; RV32IXCHERI-NEXT:    li a4, 0
 ; RV32IXCHERI-NEXT:    ccall __atomic_compare_exchange_2
 ; RV32IXCHERI-NEXT:    clc cra, 8(csp) # 8-byte Folded Reload
 ; RV32IXCHERI-NEXT:    cincoffset csp, csp, 16
@@ -804,9 +804,9 @@ define void @cmpxchg_i16_release_monotonic(i16 addrspace(200)* %ptr, i16 %cmp, i
 ; RV64IXCHERI-NEXT:    cincoffset ca3, csp, 14
 ; RV64IXCHERI-NEXT:    csetbounds ca4, ca3, 2
 ; RV64IXCHERI-NEXT:    csh a1, 14(csp)
-; RV64IXCHERI-NEXT:    addi a3, zero, 3
+; RV64IXCHERI-NEXT:    li a3, 3
 ; RV64IXCHERI-NEXT:    cmove ca1, ca4
-; RV64IXCHERI-NEXT:    mv a4, zero
+; RV64IXCHERI-NEXT:    li a4, 0
 ; RV64IXCHERI-NEXT:    ccall __atomic_compare_exchange_2
 ; RV64IXCHERI-NEXT:    clc cra, 16(csp) # 16-byte Folded Reload
 ; RV64IXCHERI-NEXT:    cincoffset csp, csp, 32
@@ -836,8 +836,8 @@ define void @cmpxchg_i16_release_acquire(i16 addrspace(200)* %ptr, i16 %cmp, i16
 ; RV32IXCHERI-NEXT:    cincoffset ca3, csp, 6
 ; RV32IXCHERI-NEXT:    csetbounds ca5, ca3, 2
 ; RV32IXCHERI-NEXT:    csh a1, 6(csp)
-; RV32IXCHERI-NEXT:    addi a3, zero, 3
-; RV32IXCHERI-NEXT:    addi a4, zero, 2
+; RV32IXCHERI-NEXT:    li a3, 3
+; RV32IXCHERI-NEXT:    li a4, 2
 ; RV32IXCHERI-NEXT:    cmove ca1, ca5
 ; RV32IXCHERI-NEXT:    ccall __atomic_compare_exchange_2
 ; RV32IXCHERI-NEXT:    clc cra, 8(csp) # 8-byte Folded Reload
@@ -864,8 +864,8 @@ define void @cmpxchg_i16_release_acquire(i16 addrspace(200)* %ptr, i16 %cmp, i16
 ; RV64IXCHERI-NEXT:    cincoffset ca3, csp, 14
 ; RV64IXCHERI-NEXT:    csetbounds ca5, ca3, 2
 ; RV64IXCHERI-NEXT:    csh a1, 14(csp)
-; RV64IXCHERI-NEXT:    addi a3, zero, 3
-; RV64IXCHERI-NEXT:    addi a4, zero, 2
+; RV64IXCHERI-NEXT:    li a3, 3
+; RV64IXCHERI-NEXT:    li a4, 2
 ; RV64IXCHERI-NEXT:    cmove ca1, ca5
 ; RV64IXCHERI-NEXT:    ccall __atomic_compare_exchange_2
 ; RV64IXCHERI-NEXT:    clc cra, 16(csp) # 16-byte Folded Reload
@@ -896,9 +896,9 @@ define void @cmpxchg_i16_acq_rel_monotonic(i16 addrspace(200)* %ptr, i16 %cmp, i
 ; RV32IXCHERI-NEXT:    cincoffset ca3, csp, 6
 ; RV32IXCHERI-NEXT:    csetbounds ca4, ca3, 2
 ; RV32IXCHERI-NEXT:    csh a1, 6(csp)
-; RV32IXCHERI-NEXT:    addi a3, zero, 4
+; RV32IXCHERI-NEXT:    li a3, 4
 ; RV32IXCHERI-NEXT:    cmove ca1, ca4
-; RV32IXCHERI-NEXT:    mv a4, zero
+; RV32IXCHERI-NEXT:    li a4, 0
 ; RV32IXCHERI-NEXT:    ccall __atomic_compare_exchange_2
 ; RV32IXCHERI-NEXT:    clc cra, 8(csp) # 8-byte Folded Reload
 ; RV32IXCHERI-NEXT:    cincoffset csp, csp, 16
@@ -924,9 +924,9 @@ define void @cmpxchg_i16_acq_rel_monotonic(i16 addrspace(200)* %ptr, i16 %cmp, i
 ; RV64IXCHERI-NEXT:    cincoffset ca3, csp, 14
 ; RV64IXCHERI-NEXT:    csetbounds ca4, ca3, 2
 ; RV64IXCHERI-NEXT:    csh a1, 14(csp)
-; RV64IXCHERI-NEXT:    addi a3, zero, 4
+; RV64IXCHERI-NEXT:    li a3, 4
 ; RV64IXCHERI-NEXT:    cmove ca1, ca4
-; RV64IXCHERI-NEXT:    mv a4, zero
+; RV64IXCHERI-NEXT:    li a4, 0
 ; RV64IXCHERI-NEXT:    ccall __atomic_compare_exchange_2
 ; RV64IXCHERI-NEXT:    clc cra, 16(csp) # 16-byte Folded Reload
 ; RV64IXCHERI-NEXT:    cincoffset csp, csp, 32
@@ -956,8 +956,8 @@ define void @cmpxchg_i16_acq_rel_acquire(i16 addrspace(200)* %ptr, i16 %cmp, i16
 ; RV32IXCHERI-NEXT:    cincoffset ca3, csp, 6
 ; RV32IXCHERI-NEXT:    csetbounds ca5, ca3, 2
 ; RV32IXCHERI-NEXT:    csh a1, 6(csp)
-; RV32IXCHERI-NEXT:    addi a3, zero, 4
-; RV32IXCHERI-NEXT:    addi a4, zero, 2
+; RV32IXCHERI-NEXT:    li a3, 4
+; RV32IXCHERI-NEXT:    li a4, 2
 ; RV32IXCHERI-NEXT:    cmove ca1, ca5
 ; RV32IXCHERI-NEXT:    ccall __atomic_compare_exchange_2
 ; RV32IXCHERI-NEXT:    clc cra, 8(csp) # 8-byte Folded Reload
@@ -984,8 +984,8 @@ define void @cmpxchg_i16_acq_rel_acquire(i16 addrspace(200)* %ptr, i16 %cmp, i16
 ; RV64IXCHERI-NEXT:    cincoffset ca3, csp, 14
 ; RV64IXCHERI-NEXT:    csetbounds ca5, ca3, 2
 ; RV64IXCHERI-NEXT:    csh a1, 14(csp)
-; RV64IXCHERI-NEXT:    addi a3, zero, 4
-; RV64IXCHERI-NEXT:    addi a4, zero, 2
+; RV64IXCHERI-NEXT:    li a3, 4
+; RV64IXCHERI-NEXT:    li a4, 2
 ; RV64IXCHERI-NEXT:    cmove ca1, ca5
 ; RV64IXCHERI-NEXT:    ccall __atomic_compare_exchange_2
 ; RV64IXCHERI-NEXT:    clc cra, 16(csp) # 16-byte Folded Reload
@@ -1016,9 +1016,9 @@ define void @cmpxchg_i16_seq_cst_monotonic(i16 addrspace(200)* %ptr, i16 %cmp, i
 ; RV32IXCHERI-NEXT:    cincoffset ca3, csp, 6
 ; RV32IXCHERI-NEXT:    csetbounds ca4, ca3, 2
 ; RV32IXCHERI-NEXT:    csh a1, 6(csp)
-; RV32IXCHERI-NEXT:    addi a3, zero, 5
+; RV32IXCHERI-NEXT:    li a3, 5
 ; RV32IXCHERI-NEXT:    cmove ca1, ca4
-; RV32IXCHERI-NEXT:    mv a4, zero
+; RV32IXCHERI-NEXT:    li a4, 0
 ; RV32IXCHERI-NEXT:    ccall __atomic_compare_exchange_2
 ; RV32IXCHERI-NEXT:    clc cra, 8(csp) # 8-byte Folded Reload
 ; RV32IXCHERI-NEXT:    cincoffset csp, csp, 16
@@ -1044,9 +1044,9 @@ define void @cmpxchg_i16_seq_cst_monotonic(i16 addrspace(200)* %ptr, i16 %cmp, i
 ; RV64IXCHERI-NEXT:    cincoffset ca3, csp, 14
 ; RV64IXCHERI-NEXT:    csetbounds ca4, ca3, 2
 ; RV64IXCHERI-NEXT:    csh a1, 14(csp)
-; RV64IXCHERI-NEXT:    addi a3, zero, 5
+; RV64IXCHERI-NEXT:    li a3, 5
 ; RV64IXCHERI-NEXT:    cmove ca1, ca4
-; RV64IXCHERI-NEXT:    mv a4, zero
+; RV64IXCHERI-NEXT:    li a4, 0
 ; RV64IXCHERI-NEXT:    ccall __atomic_compare_exchange_2
 ; RV64IXCHERI-NEXT:    clc cra, 16(csp) # 16-byte Folded Reload
 ; RV64IXCHERI-NEXT:    cincoffset csp, csp, 32
@@ -1076,8 +1076,8 @@ define void @cmpxchg_i16_seq_cst_acquire(i16 addrspace(200)* %ptr, i16 %cmp, i16
 ; RV32IXCHERI-NEXT:    cincoffset ca3, csp, 6
 ; RV32IXCHERI-NEXT:    csetbounds ca5, ca3, 2
 ; RV32IXCHERI-NEXT:    csh a1, 6(csp)
-; RV32IXCHERI-NEXT:    addi a3, zero, 5
-; RV32IXCHERI-NEXT:    addi a4, zero, 2
+; RV32IXCHERI-NEXT:    li a3, 5
+; RV32IXCHERI-NEXT:    li a4, 2
 ; RV32IXCHERI-NEXT:    cmove ca1, ca5
 ; RV32IXCHERI-NEXT:    ccall __atomic_compare_exchange_2
 ; RV32IXCHERI-NEXT:    clc cra, 8(csp) # 8-byte Folded Reload
@@ -1104,8 +1104,8 @@ define void @cmpxchg_i16_seq_cst_acquire(i16 addrspace(200)* %ptr, i16 %cmp, i16
 ; RV64IXCHERI-NEXT:    cincoffset ca3, csp, 14
 ; RV64IXCHERI-NEXT:    csetbounds ca5, ca3, 2
 ; RV64IXCHERI-NEXT:    csh a1, 14(csp)
-; RV64IXCHERI-NEXT:    addi a3, zero, 5
-; RV64IXCHERI-NEXT:    addi a4, zero, 2
+; RV64IXCHERI-NEXT:    li a3, 5
+; RV64IXCHERI-NEXT:    li a4, 2
 ; RV64IXCHERI-NEXT:    cmove ca1, ca5
 ; RV64IXCHERI-NEXT:    ccall __atomic_compare_exchange_2
 ; RV64IXCHERI-NEXT:    clc cra, 16(csp) # 16-byte Folded Reload
@@ -1136,8 +1136,8 @@ define void @cmpxchg_i16_seq_cst_seq_cst(i16 addrspace(200)* %ptr, i16 %cmp, i16
 ; RV32IXCHERI-NEXT:    cincoffset ca3, csp, 6
 ; RV32IXCHERI-NEXT:    csetbounds ca5, ca3, 2
 ; RV32IXCHERI-NEXT:    csh a1, 6(csp)
-; RV32IXCHERI-NEXT:    addi a3, zero, 5
-; RV32IXCHERI-NEXT:    addi a4, zero, 5
+; RV32IXCHERI-NEXT:    li a3, 5
+; RV32IXCHERI-NEXT:    li a4, 5
 ; RV32IXCHERI-NEXT:    cmove ca1, ca5
 ; RV32IXCHERI-NEXT:    ccall __atomic_compare_exchange_2
 ; RV32IXCHERI-NEXT:    clc cra, 8(csp) # 8-byte Folded Reload
@@ -1164,8 +1164,8 @@ define void @cmpxchg_i16_seq_cst_seq_cst(i16 addrspace(200)* %ptr, i16 %cmp, i16
 ; RV64IXCHERI-NEXT:    cincoffset ca3, csp, 14
 ; RV64IXCHERI-NEXT:    csetbounds ca5, ca3, 2
 ; RV64IXCHERI-NEXT:    csh a1, 14(csp)
-; RV64IXCHERI-NEXT:    addi a3, zero, 5
-; RV64IXCHERI-NEXT:    addi a4, zero, 5
+; RV64IXCHERI-NEXT:    li a3, 5
+; RV64IXCHERI-NEXT:    li a4, 5
 ; RV64IXCHERI-NEXT:    cmove ca1, ca5
 ; RV64IXCHERI-NEXT:    ccall __atomic_compare_exchange_2
 ; RV64IXCHERI-NEXT:    clc cra, 16(csp) # 16-byte Folded Reload
@@ -1197,8 +1197,8 @@ define void @cmpxchg_i32_monotonic_monotonic(i32 addrspace(200)* %ptr, i32 %cmp,
 ; RV32IXCHERI-NEXT:    csetbounds ca3, ca3, 4
 ; RV32IXCHERI-NEXT:    csw a1, 4(csp)
 ; RV32IXCHERI-NEXT:    cmove ca1, ca3
-; RV32IXCHERI-NEXT:    mv a3, zero
-; RV32IXCHERI-NEXT:    mv a4, zero
+; RV32IXCHERI-NEXT:    li a3, 0
+; RV32IXCHERI-NEXT:    li a4, 0
 ; RV32IXCHERI-NEXT:    ccall __atomic_compare_exchange_4
 ; RV32IXCHERI-NEXT:    clc cra, 8(csp) # 8-byte Folded Reload
 ; RV32IXCHERI-NEXT:    cincoffset csp, csp, 16
@@ -1223,8 +1223,8 @@ define void @cmpxchg_i32_monotonic_monotonic(i32 addrspace(200)* %ptr, i32 %cmp,
 ; RV64IXCHERI-NEXT:    csetbounds ca3, ca3, 4
 ; RV64IXCHERI-NEXT:    csw a1, 12(csp)
 ; RV64IXCHERI-NEXT:    cmove ca1, ca3
-; RV64IXCHERI-NEXT:    mv a3, zero
-; RV64IXCHERI-NEXT:    mv a4, zero
+; RV64IXCHERI-NEXT:    li a3, 0
+; RV64IXCHERI-NEXT:    li a4, 0
 ; RV64IXCHERI-NEXT:    ccall __atomic_compare_exchange_4
 ; RV64IXCHERI-NEXT:    clc cra, 16(csp) # 16-byte Folded Reload
 ; RV64IXCHERI-NEXT:    cincoffset csp, csp, 32
@@ -1253,9 +1253,9 @@ define void @cmpxchg_i32_acquire_monotonic(i32 addrspace(200)* %ptr, i32 %cmp, i
 ; RV32IXCHERI-NEXT:    cincoffset ca3, csp, 4
 ; RV32IXCHERI-NEXT:    csetbounds ca4, ca3, 4
 ; RV32IXCHERI-NEXT:    csw a1, 4(csp)
-; RV32IXCHERI-NEXT:    addi a3, zero, 2
+; RV32IXCHERI-NEXT:    li a3, 2
 ; RV32IXCHERI-NEXT:    cmove ca1, ca4
-; RV32IXCHERI-NEXT:    mv a4, zero
+; RV32IXCHERI-NEXT:    li a4, 0
 ; RV32IXCHERI-NEXT:    ccall __atomic_compare_exchange_4
 ; RV32IXCHERI-NEXT:    clc cra, 8(csp) # 8-byte Folded Reload
 ; RV32IXCHERI-NEXT:    cincoffset csp, csp, 16
@@ -1279,9 +1279,9 @@ define void @cmpxchg_i32_acquire_monotonic(i32 addrspace(200)* %ptr, i32 %cmp, i
 ; RV64IXCHERI-NEXT:    cincoffset ca3, csp, 12
 ; RV64IXCHERI-NEXT:    csetbounds ca4, ca3, 4
 ; RV64IXCHERI-NEXT:    csw a1, 12(csp)
-; RV64IXCHERI-NEXT:    addi a3, zero, 2
+; RV64IXCHERI-NEXT:    li a3, 2
 ; RV64IXCHERI-NEXT:    cmove ca1, ca4
-; RV64IXCHERI-NEXT:    mv a4, zero
+; RV64IXCHERI-NEXT:    li a4, 0
 ; RV64IXCHERI-NEXT:    ccall __atomic_compare_exchange_4
 ; RV64IXCHERI-NEXT:    clc cra, 16(csp) # 16-byte Folded Reload
 ; RV64IXCHERI-NEXT:    cincoffset csp, csp, 32
@@ -1310,8 +1310,8 @@ define void @cmpxchg_i32_acquire_acquire(i32 addrspace(200)* %ptr, i32 %cmp, i32
 ; RV32IXCHERI-NEXT:    cincoffset ca3, csp, 4
 ; RV32IXCHERI-NEXT:    csetbounds ca5, ca3, 4
 ; RV32IXCHERI-NEXT:    csw a1, 4(csp)
-; RV32IXCHERI-NEXT:    addi a3, zero, 2
-; RV32IXCHERI-NEXT:    addi a4, zero, 2
+; RV32IXCHERI-NEXT:    li a3, 2
+; RV32IXCHERI-NEXT:    li a4, 2
 ; RV32IXCHERI-NEXT:    cmove ca1, ca5
 ; RV32IXCHERI-NEXT:    ccall __atomic_compare_exchange_4
 ; RV32IXCHERI-NEXT:    clc cra, 8(csp) # 8-byte Folded Reload
@@ -1336,8 +1336,8 @@ define void @cmpxchg_i32_acquire_acquire(i32 addrspace(200)* %ptr, i32 %cmp, i32
 ; RV64IXCHERI-NEXT:    cincoffset ca3, csp, 12
 ; RV64IXCHERI-NEXT:    csetbounds ca5, ca3, 4
 ; RV64IXCHERI-NEXT:    csw a1, 12(csp)
-; RV64IXCHERI-NEXT:    addi a3, zero, 2
-; RV64IXCHERI-NEXT:    addi a4, zero, 2
+; RV64IXCHERI-NEXT:    li a3, 2
+; RV64IXCHERI-NEXT:    li a4, 2
 ; RV64IXCHERI-NEXT:    cmove ca1, ca5
 ; RV64IXCHERI-NEXT:    ccall __atomic_compare_exchange_4
 ; RV64IXCHERI-NEXT:    clc cra, 16(csp) # 16-byte Folded Reload
@@ -1367,9 +1367,9 @@ define void @cmpxchg_i32_release_monotonic(i32 addrspace(200)* %ptr, i32 %cmp, i
 ; RV32IXCHERI-NEXT:    cincoffset ca3, csp, 4
 ; RV32IXCHERI-NEXT:    csetbounds ca4, ca3, 4
 ; RV32IXCHERI-NEXT:    csw a1, 4(csp)
-; RV32IXCHERI-NEXT:    addi a3, zero, 3
+; RV32IXCHERI-NEXT:    li a3, 3
 ; RV32IXCHERI-NEXT:    cmove ca1, ca4
-; RV32IXCHERI-NEXT:    mv a4, zero
+; RV32IXCHERI-NEXT:    li a4, 0
 ; RV32IXCHERI-NEXT:    ccall __atomic_compare_exchange_4
 ; RV32IXCHERI-NEXT:    clc cra, 8(csp) # 8-byte Folded Reload
 ; RV32IXCHERI-NEXT:    cincoffset csp, csp, 16
@@ -1393,9 +1393,9 @@ define void @cmpxchg_i32_release_monotonic(i32 addrspace(200)* %ptr, i32 %cmp, i
 ; RV64IXCHERI-NEXT:    cincoffset ca3, csp, 12
 ; RV64IXCHERI-NEXT:    csetbounds ca4, ca3, 4
 ; RV64IXCHERI-NEXT:    csw a1, 12(csp)
-; RV64IXCHERI-NEXT:    addi a3, zero, 3
+; RV64IXCHERI-NEXT:    li a3, 3
 ; RV64IXCHERI-NEXT:    cmove ca1, ca4
-; RV64IXCHERI-NEXT:    mv a4, zero
+; RV64IXCHERI-NEXT:    li a4, 0
 ; RV64IXCHERI-NEXT:    ccall __atomic_compare_exchange_4
 ; RV64IXCHERI-NEXT:    clc cra, 16(csp) # 16-byte Folded Reload
 ; RV64IXCHERI-NEXT:    cincoffset csp, csp, 32
@@ -1424,8 +1424,8 @@ define void @cmpxchg_i32_release_acquire(i32 addrspace(200)* %ptr, i32 %cmp, i32
 ; RV32IXCHERI-NEXT:    cincoffset ca3, csp, 4
 ; RV32IXCHERI-NEXT:    csetbounds ca5, ca3, 4
 ; RV32IXCHERI-NEXT:    csw a1, 4(csp)
-; RV32IXCHERI-NEXT:    addi a3, zero, 3
-; RV32IXCHERI-NEXT:    addi a4, zero, 2
+; RV32IXCHERI-NEXT:    li a3, 3
+; RV32IXCHERI-NEXT:    li a4, 2
 ; RV32IXCHERI-NEXT:    cmove ca1, ca5
 ; RV32IXCHERI-NEXT:    ccall __atomic_compare_exchange_4
 ; RV32IXCHERI-NEXT:    clc cra, 8(csp) # 8-byte Folded Reload
@@ -1450,8 +1450,8 @@ define void @cmpxchg_i32_release_acquire(i32 addrspace(200)* %ptr, i32 %cmp, i32
 ; RV64IXCHERI-NEXT:    cincoffset ca3, csp, 12
 ; RV64IXCHERI-NEXT:    csetbounds ca5, ca3, 4
 ; RV64IXCHERI-NEXT:    csw a1, 12(csp)
-; RV64IXCHERI-NEXT:    addi a3, zero, 3
-; RV64IXCHERI-NEXT:    addi a4, zero, 2
+; RV64IXCHERI-NEXT:    li a3, 3
+; RV64IXCHERI-NEXT:    li a4, 2
 ; RV64IXCHERI-NEXT:    cmove ca1, ca5
 ; RV64IXCHERI-NEXT:    ccall __atomic_compare_exchange_4
 ; RV64IXCHERI-NEXT:    clc cra, 16(csp) # 16-byte Folded Reload
@@ -1481,9 +1481,9 @@ define void @cmpxchg_i32_acq_rel_monotonic(i32 addrspace(200)* %ptr, i32 %cmp, i
 ; RV32IXCHERI-NEXT:    cincoffset ca3, csp, 4
 ; RV32IXCHERI-NEXT:    csetbounds ca4, ca3, 4
 ; RV32IXCHERI-NEXT:    csw a1, 4(csp)
-; RV32IXCHERI-NEXT:    addi a3, zero, 4
+; RV32IXCHERI-NEXT:    li a3, 4
 ; RV32IXCHERI-NEXT:    cmove ca1, ca4
-; RV32IXCHERI-NEXT:    mv a4, zero
+; RV32IXCHERI-NEXT:    li a4, 0
 ; RV32IXCHERI-NEXT:    ccall __atomic_compare_exchange_4
 ; RV32IXCHERI-NEXT:    clc cra, 8(csp) # 8-byte Folded Reload
 ; RV32IXCHERI-NEXT:    cincoffset csp, csp, 16
@@ -1507,9 +1507,9 @@ define void @cmpxchg_i32_acq_rel_monotonic(i32 addrspace(200)* %ptr, i32 %cmp, i
 ; RV64IXCHERI-NEXT:    cincoffset ca3, csp, 12
 ; RV64IXCHERI-NEXT:    csetbounds ca4, ca3, 4
 ; RV64IXCHERI-NEXT:    csw a1, 12(csp)
-; RV64IXCHERI-NEXT:    addi a3, zero, 4
+; RV64IXCHERI-NEXT:    li a3, 4
 ; RV64IXCHERI-NEXT:    cmove ca1, ca4
-; RV64IXCHERI-NEXT:    mv a4, zero
+; RV64IXCHERI-NEXT:    li a4, 0
 ; RV64IXCHERI-NEXT:    ccall __atomic_compare_exchange_4
 ; RV64IXCHERI-NEXT:    clc cra, 16(csp) # 16-byte Folded Reload
 ; RV64IXCHERI-NEXT:    cincoffset csp, csp, 32
@@ -1538,8 +1538,8 @@ define void @cmpxchg_i32_acq_rel_acquire(i32 addrspace(200)* %ptr, i32 %cmp, i32
 ; RV32IXCHERI-NEXT:    cincoffset ca3, csp, 4
 ; RV32IXCHERI-NEXT:    csetbounds ca5, ca3, 4
 ; RV32IXCHERI-NEXT:    csw a1, 4(csp)
-; RV32IXCHERI-NEXT:    addi a3, zero, 4
-; RV32IXCHERI-NEXT:    addi a4, zero, 2
+; RV32IXCHERI-NEXT:    li a3, 4
+; RV32IXCHERI-NEXT:    li a4, 2
 ; RV32IXCHERI-NEXT:    cmove ca1, ca5
 ; RV32IXCHERI-NEXT:    ccall __atomic_compare_exchange_4
 ; RV32IXCHERI-NEXT:    clc cra, 8(csp) # 8-byte Folded Reload
@@ -1564,8 +1564,8 @@ define void @cmpxchg_i32_acq_rel_acquire(i32 addrspace(200)* %ptr, i32 %cmp, i32
 ; RV64IXCHERI-NEXT:    cincoffset ca3, csp, 12
 ; RV64IXCHERI-NEXT:    csetbounds ca5, ca3, 4
 ; RV64IXCHERI-NEXT:    csw a1, 12(csp)
-; RV64IXCHERI-NEXT:    addi a3, zero, 4
-; RV64IXCHERI-NEXT:    addi a4, zero, 2
+; RV64IXCHERI-NEXT:    li a3, 4
+; RV64IXCHERI-NEXT:    li a4, 2
 ; RV64IXCHERI-NEXT:    cmove ca1, ca5
 ; RV64IXCHERI-NEXT:    ccall __atomic_compare_exchange_4
 ; RV64IXCHERI-NEXT:    clc cra, 16(csp) # 16-byte Folded Reload
@@ -1595,9 +1595,9 @@ define void @cmpxchg_i32_seq_cst_monotonic(i32 addrspace(200)* %ptr, i32 %cmp, i
 ; RV32IXCHERI-NEXT:    cincoffset ca3, csp, 4
 ; RV32IXCHERI-NEXT:    csetbounds ca4, ca3, 4
 ; RV32IXCHERI-NEXT:    csw a1, 4(csp)
-; RV32IXCHERI-NEXT:    addi a3, zero, 5
+; RV32IXCHERI-NEXT:    li a3, 5
 ; RV32IXCHERI-NEXT:    cmove ca1, ca4
-; RV32IXCHERI-NEXT:    mv a4, zero
+; RV32IXCHERI-NEXT:    li a4, 0
 ; RV32IXCHERI-NEXT:    ccall __atomic_compare_exchange_4
 ; RV32IXCHERI-NEXT:    clc cra, 8(csp) # 8-byte Folded Reload
 ; RV32IXCHERI-NEXT:    cincoffset csp, csp, 16
@@ -1621,9 +1621,9 @@ define void @cmpxchg_i32_seq_cst_monotonic(i32 addrspace(200)* %ptr, i32 %cmp, i
 ; RV64IXCHERI-NEXT:    cincoffset ca3, csp, 12
 ; RV64IXCHERI-NEXT:    csetbounds ca4, ca3, 4
 ; RV64IXCHERI-NEXT:    csw a1, 12(csp)
-; RV64IXCHERI-NEXT:    addi a3, zero, 5
+; RV64IXCHERI-NEXT:    li a3, 5
 ; RV64IXCHERI-NEXT:    cmove ca1, ca4
-; RV64IXCHERI-NEXT:    mv a4, zero
+; RV64IXCHERI-NEXT:    li a4, 0
 ; RV64IXCHERI-NEXT:    ccall __atomic_compare_exchange_4
 ; RV64IXCHERI-NEXT:    clc cra, 16(csp) # 16-byte Folded Reload
 ; RV64IXCHERI-NEXT:    cincoffset csp, csp, 32
@@ -1652,8 +1652,8 @@ define void @cmpxchg_i32_seq_cst_acquire(i32 addrspace(200)* %ptr, i32 %cmp, i32
 ; RV32IXCHERI-NEXT:    cincoffset ca3, csp, 4
 ; RV32IXCHERI-NEXT:    csetbounds ca5, ca3, 4
 ; RV32IXCHERI-NEXT:    csw a1, 4(csp)
-; RV32IXCHERI-NEXT:    addi a3, zero, 5
-; RV32IXCHERI-NEXT:    addi a4, zero, 2
+; RV32IXCHERI-NEXT:    li a3, 5
+; RV32IXCHERI-NEXT:    li a4, 2
 ; RV32IXCHERI-NEXT:    cmove ca1, ca5
 ; RV32IXCHERI-NEXT:    ccall __atomic_compare_exchange_4
 ; RV32IXCHERI-NEXT:    clc cra, 8(csp) # 8-byte Folded Reload
@@ -1678,8 +1678,8 @@ define void @cmpxchg_i32_seq_cst_acquire(i32 addrspace(200)* %ptr, i32 %cmp, i32
 ; RV64IXCHERI-NEXT:    cincoffset ca3, csp, 12
 ; RV64IXCHERI-NEXT:    csetbounds ca5, ca3, 4
 ; RV64IXCHERI-NEXT:    csw a1, 12(csp)
-; RV64IXCHERI-NEXT:    addi a3, zero, 5
-; RV64IXCHERI-NEXT:    addi a4, zero, 2
+; RV64IXCHERI-NEXT:    li a3, 5
+; RV64IXCHERI-NEXT:    li a4, 2
 ; RV64IXCHERI-NEXT:    cmove ca1, ca5
 ; RV64IXCHERI-NEXT:    ccall __atomic_compare_exchange_4
 ; RV64IXCHERI-NEXT:    clc cra, 16(csp) # 16-byte Folded Reload
@@ -1709,8 +1709,8 @@ define void @cmpxchg_i32_seq_cst_seq_cst(i32 addrspace(200)* %ptr, i32 %cmp, i32
 ; RV32IXCHERI-NEXT:    cincoffset ca3, csp, 4
 ; RV32IXCHERI-NEXT:    csetbounds ca5, ca3, 4
 ; RV32IXCHERI-NEXT:    csw a1, 4(csp)
-; RV32IXCHERI-NEXT:    addi a3, zero, 5
-; RV32IXCHERI-NEXT:    addi a4, zero, 5
+; RV32IXCHERI-NEXT:    li a3, 5
+; RV32IXCHERI-NEXT:    li a4, 5
 ; RV32IXCHERI-NEXT:    cmove ca1, ca5
 ; RV32IXCHERI-NEXT:    ccall __atomic_compare_exchange_4
 ; RV32IXCHERI-NEXT:    clc cra, 8(csp) # 8-byte Folded Reload
@@ -1735,8 +1735,8 @@ define void @cmpxchg_i32_seq_cst_seq_cst(i32 addrspace(200)* %ptr, i32 %cmp, i32
 ; RV64IXCHERI-NEXT:    cincoffset ca3, csp, 12
 ; RV64IXCHERI-NEXT:    csetbounds ca5, ca3, 4
 ; RV64IXCHERI-NEXT:    csw a1, 12(csp)
-; RV64IXCHERI-NEXT:    addi a3, zero, 5
-; RV64IXCHERI-NEXT:    addi a4, zero, 5
+; RV64IXCHERI-NEXT:    li a3, 5
+; RV64IXCHERI-NEXT:    li a4, 5
 ; RV64IXCHERI-NEXT:    cmove ca1, ca5
 ; RV64IXCHERI-NEXT:    ccall __atomic_compare_exchange_4
 ; RV64IXCHERI-NEXT:    clc cra, 16(csp) # 16-byte Folded Reload
@@ -1763,15 +1763,16 @@ define void @cmpxchg_i64_monotonic_monotonic(i64 addrspace(200)* %ptr, i64 %cmp,
 ; RV32IXCHERI:       # %bb.0:
 ; RV32IXCHERI-NEXT:    cincoffset csp, csp, -16
 ; RV32IXCHERI-NEXT:    csc cra, 8(csp) # 8-byte Folded Spill
-; RV32IXCHERI-NEXT:    cincoffset ca5, csp, 0
-; RV32IXCHERI-NEXT:    csetbounds ca5, ca5, 8
-; RV32IXCHERI-NEXT:    csw a2, 4(csp)
+; RV32IXCHERI-NEXT:    mv a6, a4
+; RV32IXCHERI-NEXT:    cincoffset ca4, csp, 0
+; RV32IXCHERI-NEXT:    csetbounds ca5, ca4, 8
+; RV32IXCHERI-NEXT:    csw a2, 4(ca4)
 ; RV32IXCHERI-NEXT:    csw a1, 0(csp)
 ; RV32IXCHERI-NEXT:    cmove ca1, ca5
 ; RV32IXCHERI-NEXT:    mv a2, a3
-; RV32IXCHERI-NEXT:    mv a3, a4
-; RV32IXCHERI-NEXT:    mv a4, zero
-; RV32IXCHERI-NEXT:    mv a5, zero
+; RV32IXCHERI-NEXT:    mv a3, a6
+; RV32IXCHERI-NEXT:    li a4, 0
+; RV32IXCHERI-NEXT:    li a5, 0
 ; RV32IXCHERI-NEXT:    ccall __atomic_compare_exchange_8
 ; RV32IXCHERI-NEXT:    clc cra, 8(csp) # 8-byte Folded Reload
 ; RV32IXCHERI-NEXT:    cincoffset csp, csp, 16
@@ -1781,15 +1782,16 @@ define void @cmpxchg_i64_monotonic_monotonic(i64 addrspace(200)* %ptr, i64 %cmp,
 ; RV32IAXCHERI:       # %bb.0:
 ; RV32IAXCHERI-NEXT:    cincoffset csp, csp, -16
 ; RV32IAXCHERI-NEXT:    csc cra, 8(csp) # 8-byte Folded Spill
-; RV32IAXCHERI-NEXT:    cincoffset ca5, csp, 0
-; RV32IAXCHERI-NEXT:    csetbounds ca5, ca5, 8
-; RV32IAXCHERI-NEXT:    csw a2, 4(csp)
+; RV32IAXCHERI-NEXT:    mv a6, a4
+; RV32IAXCHERI-NEXT:    cincoffset ca4, csp, 0
+; RV32IAXCHERI-NEXT:    csetbounds ca5, ca4, 8
+; RV32IAXCHERI-NEXT:    csw a2, 4(ca4)
 ; RV32IAXCHERI-NEXT:    csw a1, 0(csp)
 ; RV32IAXCHERI-NEXT:    cmove ca1, ca5
 ; RV32IAXCHERI-NEXT:    mv a2, a3
-; RV32IAXCHERI-NEXT:    mv a3, a4
-; RV32IAXCHERI-NEXT:    mv a4, zero
-; RV32IAXCHERI-NEXT:    mv a5, zero
+; RV32IAXCHERI-NEXT:    mv a3, a6
+; RV32IAXCHERI-NEXT:    li a4, 0
+; RV32IAXCHERI-NEXT:    li a5, 0
 ; RV32IAXCHERI-NEXT:    ccall __atomic_compare_exchange_8
 ; RV32IAXCHERI-NEXT:    clc cra, 8(csp) # 8-byte Folded Reload
 ; RV32IAXCHERI-NEXT:    cincoffset csp, csp, 16
@@ -1803,8 +1805,8 @@ define void @cmpxchg_i64_monotonic_monotonic(i64 addrspace(200)* %ptr, i64 %cmp,
 ; RV64IXCHERI-NEXT:    csetbounds ca3, ca3, 8
 ; RV64IXCHERI-NEXT:    csd a1, 8(csp)
 ; RV64IXCHERI-NEXT:    cmove ca1, ca3
-; RV64IXCHERI-NEXT:    mv a3, zero
-; RV64IXCHERI-NEXT:    mv a4, zero
+; RV64IXCHERI-NEXT:    li a3, 0
+; RV64IXCHERI-NEXT:    li a4, 0
 ; RV64IXCHERI-NEXT:    ccall __atomic_compare_exchange_8
 ; RV64IXCHERI-NEXT:    clc cra, 16(csp) # 16-byte Folded Reload
 ; RV64IXCHERI-NEXT:    cincoffset csp, csp, 32
@@ -1832,13 +1834,13 @@ define void @cmpxchg_i64_acquire_monotonic(i64 addrspace(200)* %ptr, i64 %cmp, i
 ; RV32IXCHERI-NEXT:    mv a6, a4
 ; RV32IXCHERI-NEXT:    cincoffset ca4, csp, 0
 ; RV32IXCHERI-NEXT:    csetbounds ca5, ca4, 8
-; RV32IXCHERI-NEXT:    csw a2, 4(csp)
+; RV32IXCHERI-NEXT:    csw a2, 4(ca4)
 ; RV32IXCHERI-NEXT:    csw a1, 0(csp)
-; RV32IXCHERI-NEXT:    addi a4, zero, 2
+; RV32IXCHERI-NEXT:    li a4, 2
 ; RV32IXCHERI-NEXT:    cmove ca1, ca5
 ; RV32IXCHERI-NEXT:    mv a2, a3
 ; RV32IXCHERI-NEXT:    mv a3, a6
-; RV32IXCHERI-NEXT:    mv a5, zero
+; RV32IXCHERI-NEXT:    li a5, 0
 ; RV32IXCHERI-NEXT:    ccall __atomic_compare_exchange_8
 ; RV32IXCHERI-NEXT:    clc cra, 8(csp) # 8-byte Folded Reload
 ; RV32IXCHERI-NEXT:    cincoffset csp, csp, 16
@@ -1851,13 +1853,13 @@ define void @cmpxchg_i64_acquire_monotonic(i64 addrspace(200)* %ptr, i64 %cmp, i
 ; RV32IAXCHERI-NEXT:    mv a6, a4
 ; RV32IAXCHERI-NEXT:    cincoffset ca4, csp, 0
 ; RV32IAXCHERI-NEXT:    csetbounds ca5, ca4, 8
-; RV32IAXCHERI-NEXT:    csw a2, 4(csp)
+; RV32IAXCHERI-NEXT:    csw a2, 4(ca4)
 ; RV32IAXCHERI-NEXT:    csw a1, 0(csp)
-; RV32IAXCHERI-NEXT:    addi a4, zero, 2
+; RV32IAXCHERI-NEXT:    li a4, 2
 ; RV32IAXCHERI-NEXT:    cmove ca1, ca5
 ; RV32IAXCHERI-NEXT:    mv a2, a3
 ; RV32IAXCHERI-NEXT:    mv a3, a6
-; RV32IAXCHERI-NEXT:    mv a5, zero
+; RV32IAXCHERI-NEXT:    li a5, 0
 ; RV32IAXCHERI-NEXT:    ccall __atomic_compare_exchange_8
 ; RV32IAXCHERI-NEXT:    clc cra, 8(csp) # 8-byte Folded Reload
 ; RV32IAXCHERI-NEXT:    cincoffset csp, csp, 16
@@ -1870,9 +1872,9 @@ define void @cmpxchg_i64_acquire_monotonic(i64 addrspace(200)* %ptr, i64 %cmp, i
 ; RV64IXCHERI-NEXT:    cincoffset ca3, csp, 8
 ; RV64IXCHERI-NEXT:    csetbounds ca4, ca3, 8
 ; RV64IXCHERI-NEXT:    csd a1, 8(csp)
-; RV64IXCHERI-NEXT:    addi a3, zero, 2
+; RV64IXCHERI-NEXT:    li a3, 2
 ; RV64IXCHERI-NEXT:    cmove ca1, ca4
-; RV64IXCHERI-NEXT:    mv a4, zero
+; RV64IXCHERI-NEXT:    li a4, 0
 ; RV64IXCHERI-NEXT:    ccall __atomic_compare_exchange_8
 ; RV64IXCHERI-NEXT:    clc cra, 16(csp) # 16-byte Folded Reload
 ; RV64IXCHERI-NEXT:    cincoffset csp, csp, 32
@@ -1899,12 +1901,12 @@ define void @cmpxchg_i64_acquire_acquire(i64 addrspace(200)* %ptr, i64 %cmp, i64
 ; RV32IXCHERI-NEXT:    csc cra, 8(csp) # 8-byte Folded Spill
 ; RV32IXCHERI-NEXT:    mv a6, a4
 ; RV32IXCHERI-NEXT:    mv a7, a3
-; RV32IXCHERI-NEXT:    cincoffset ca3, csp, 0
-; RV32IXCHERI-NEXT:    csetbounds ca3, ca3, 8
-; RV32IXCHERI-NEXT:    csw a2, 4(csp)
+; RV32IXCHERI-NEXT:    cincoffset ca4, csp, 0
+; RV32IXCHERI-NEXT:    csetbounds ca3, ca4, 8
+; RV32IXCHERI-NEXT:    csw a2, 4(ca4)
 ; RV32IXCHERI-NEXT:    csw a1, 0(csp)
-; RV32IXCHERI-NEXT:    addi a4, zero, 2
-; RV32IXCHERI-NEXT:    addi a5, zero, 2
+; RV32IXCHERI-NEXT:    li a4, 2
+; RV32IXCHERI-NEXT:    li a5, 2
 ; RV32IXCHERI-NEXT:    cmove ca1, ca3
 ; RV32IXCHERI-NEXT:    mv a2, a7
 ; RV32IXCHERI-NEXT:    mv a3, a6
@@ -1919,12 +1921,12 @@ define void @cmpxchg_i64_acquire_acquire(i64 addrspace(200)* %ptr, i64 %cmp, i64
 ; RV32IAXCHERI-NEXT:    csc cra, 8(csp) # 8-byte Folded Spill
 ; RV32IAXCHERI-NEXT:    mv a6, a4
 ; RV32IAXCHERI-NEXT:    mv a7, a3
-; RV32IAXCHERI-NEXT:    cincoffset ca3, csp, 0
-; RV32IAXCHERI-NEXT:    csetbounds ca3, ca3, 8
-; RV32IAXCHERI-NEXT:    csw a2, 4(csp)
+; RV32IAXCHERI-NEXT:    cincoffset ca4, csp, 0
+; RV32IAXCHERI-NEXT:    csetbounds ca3, ca4, 8
+; RV32IAXCHERI-NEXT:    csw a2, 4(ca4)
 ; RV32IAXCHERI-NEXT:    csw a1, 0(csp)
-; RV32IAXCHERI-NEXT:    addi a4, zero, 2
-; RV32IAXCHERI-NEXT:    addi a5, zero, 2
+; RV32IAXCHERI-NEXT:    li a4, 2
+; RV32IAXCHERI-NEXT:    li a5, 2
 ; RV32IAXCHERI-NEXT:    cmove ca1, ca3
 ; RV32IAXCHERI-NEXT:    mv a2, a7
 ; RV32IAXCHERI-NEXT:    mv a3, a6
@@ -1940,8 +1942,8 @@ define void @cmpxchg_i64_acquire_acquire(i64 addrspace(200)* %ptr, i64 %cmp, i64
 ; RV64IXCHERI-NEXT:    cincoffset ca3, csp, 8
 ; RV64IXCHERI-NEXT:    csetbounds ca5, ca3, 8
 ; RV64IXCHERI-NEXT:    csd a1, 8(csp)
-; RV64IXCHERI-NEXT:    addi a3, zero, 2
-; RV64IXCHERI-NEXT:    addi a4, zero, 2
+; RV64IXCHERI-NEXT:    li a3, 2
+; RV64IXCHERI-NEXT:    li a4, 2
 ; RV64IXCHERI-NEXT:    cmove ca1, ca5
 ; RV64IXCHERI-NEXT:    ccall __atomic_compare_exchange_8
 ; RV64IXCHERI-NEXT:    clc cra, 16(csp) # 16-byte Folded Reload
@@ -1970,13 +1972,13 @@ define void @cmpxchg_i64_release_monotonic(i64 addrspace(200)* %ptr, i64 %cmp, i
 ; RV32IXCHERI-NEXT:    mv a6, a4
 ; RV32IXCHERI-NEXT:    cincoffset ca4, csp, 0
 ; RV32IXCHERI-NEXT:    csetbounds ca5, ca4, 8
-; RV32IXCHERI-NEXT:    csw a2, 4(csp)
+; RV32IXCHERI-NEXT:    csw a2, 4(ca4)
 ; RV32IXCHERI-NEXT:    csw a1, 0(csp)
-; RV32IXCHERI-NEXT:    addi a4, zero, 3
+; RV32IXCHERI-NEXT:    li a4, 3
 ; RV32IXCHERI-NEXT:    cmove ca1, ca5
 ; RV32IXCHERI-NEXT:    mv a2, a3
 ; RV32IXCHERI-NEXT:    mv a3, a6
-; RV32IXCHERI-NEXT:    mv a5, zero
+; RV32IXCHERI-NEXT:    li a5, 0
 ; RV32IXCHERI-NEXT:    ccall __atomic_compare_exchange_8
 ; RV32IXCHERI-NEXT:    clc cra, 8(csp) # 8-byte Folded Reload
 ; RV32IXCHERI-NEXT:    cincoffset csp, csp, 16
@@ -1989,13 +1991,13 @@ define void @cmpxchg_i64_release_monotonic(i64 addrspace(200)* %ptr, i64 %cmp, i
 ; RV32IAXCHERI-NEXT:    mv a6, a4
 ; RV32IAXCHERI-NEXT:    cincoffset ca4, csp, 0
 ; RV32IAXCHERI-NEXT:    csetbounds ca5, ca4, 8
-; RV32IAXCHERI-NEXT:    csw a2, 4(csp)
+; RV32IAXCHERI-NEXT:    csw a2, 4(ca4)
 ; RV32IAXCHERI-NEXT:    csw a1, 0(csp)
-; RV32IAXCHERI-NEXT:    addi a4, zero, 3
+; RV32IAXCHERI-NEXT:    li a4, 3
 ; RV32IAXCHERI-NEXT:    cmove ca1, ca5
 ; RV32IAXCHERI-NEXT:    mv a2, a3
 ; RV32IAXCHERI-NEXT:    mv a3, a6
-; RV32IAXCHERI-NEXT:    mv a5, zero
+; RV32IAXCHERI-NEXT:    li a5, 0
 ; RV32IAXCHERI-NEXT:    ccall __atomic_compare_exchange_8
 ; RV32IAXCHERI-NEXT:    clc cra, 8(csp) # 8-byte Folded Reload
 ; RV32IAXCHERI-NEXT:    cincoffset csp, csp, 16
@@ -2008,9 +2010,9 @@ define void @cmpxchg_i64_release_monotonic(i64 addrspace(200)* %ptr, i64 %cmp, i
 ; RV64IXCHERI-NEXT:    cincoffset ca3, csp, 8
 ; RV64IXCHERI-NEXT:    csetbounds ca4, ca3, 8
 ; RV64IXCHERI-NEXT:    csd a1, 8(csp)
-; RV64IXCHERI-NEXT:    addi a3, zero, 3
+; RV64IXCHERI-NEXT:    li a3, 3
 ; RV64IXCHERI-NEXT:    cmove ca1, ca4
-; RV64IXCHERI-NEXT:    mv a4, zero
+; RV64IXCHERI-NEXT:    li a4, 0
 ; RV64IXCHERI-NEXT:    ccall __atomic_compare_exchange_8
 ; RV64IXCHERI-NEXT:    clc cra, 16(csp) # 16-byte Folded Reload
 ; RV64IXCHERI-NEXT:    cincoffset csp, csp, 32
@@ -2037,12 +2039,12 @@ define void @cmpxchg_i64_release_acquire(i64 addrspace(200)* %ptr, i64 %cmp, i64
 ; RV32IXCHERI-NEXT:    csc cra, 8(csp) # 8-byte Folded Spill
 ; RV32IXCHERI-NEXT:    mv a6, a4
 ; RV32IXCHERI-NEXT:    mv a7, a3
-; RV32IXCHERI-NEXT:    cincoffset ca3, csp, 0
-; RV32IXCHERI-NEXT:    csetbounds ca3, ca3, 8
-; RV32IXCHERI-NEXT:    csw a2, 4(csp)
+; RV32IXCHERI-NEXT:    cincoffset ca4, csp, 0
+; RV32IXCHERI-NEXT:    csetbounds ca3, ca4, 8
+; RV32IXCHERI-NEXT:    csw a2, 4(ca4)
 ; RV32IXCHERI-NEXT:    csw a1, 0(csp)
-; RV32IXCHERI-NEXT:    addi a4, zero, 3
-; RV32IXCHERI-NEXT:    addi a5, zero, 2
+; RV32IXCHERI-NEXT:    li a4, 3
+; RV32IXCHERI-NEXT:    li a5, 2
 ; RV32IXCHERI-NEXT:    cmove ca1, ca3
 ; RV32IXCHERI-NEXT:    mv a2, a7
 ; RV32IXCHERI-NEXT:    mv a3, a6
@@ -2057,12 +2059,12 @@ define void @cmpxchg_i64_release_acquire(i64 addrspace(200)* %ptr, i64 %cmp, i64
 ; RV32IAXCHERI-NEXT:    csc cra, 8(csp) # 8-byte Folded Spill
 ; RV32IAXCHERI-NEXT:    mv a6, a4
 ; RV32IAXCHERI-NEXT:    mv a7, a3
-; RV32IAXCHERI-NEXT:    cincoffset ca3, csp, 0
-; RV32IAXCHERI-NEXT:    csetbounds ca3, ca3, 8
-; RV32IAXCHERI-NEXT:    csw a2, 4(csp)
+; RV32IAXCHERI-NEXT:    cincoffset ca4, csp, 0
+; RV32IAXCHERI-NEXT:    csetbounds ca3, ca4, 8
+; RV32IAXCHERI-NEXT:    csw a2, 4(ca4)
 ; RV32IAXCHERI-NEXT:    csw a1, 0(csp)
-; RV32IAXCHERI-NEXT:    addi a4, zero, 3
-; RV32IAXCHERI-NEXT:    addi a5, zero, 2
+; RV32IAXCHERI-NEXT:    li a4, 3
+; RV32IAXCHERI-NEXT:    li a5, 2
 ; RV32IAXCHERI-NEXT:    cmove ca1, ca3
 ; RV32IAXCHERI-NEXT:    mv a2, a7
 ; RV32IAXCHERI-NEXT:    mv a3, a6
@@ -2078,8 +2080,8 @@ define void @cmpxchg_i64_release_acquire(i64 addrspace(200)* %ptr, i64 %cmp, i64
 ; RV64IXCHERI-NEXT:    cincoffset ca3, csp, 8
 ; RV64IXCHERI-NEXT:    csetbounds ca5, ca3, 8
 ; RV64IXCHERI-NEXT:    csd a1, 8(csp)
-; RV64IXCHERI-NEXT:    addi a3, zero, 3
-; RV64IXCHERI-NEXT:    addi a4, zero, 2
+; RV64IXCHERI-NEXT:    li a3, 3
+; RV64IXCHERI-NEXT:    li a4, 2
 ; RV64IXCHERI-NEXT:    cmove ca1, ca5
 ; RV64IXCHERI-NEXT:    ccall __atomic_compare_exchange_8
 ; RV64IXCHERI-NEXT:    clc cra, 16(csp) # 16-byte Folded Reload
@@ -2108,13 +2110,13 @@ define void @cmpxchg_i64_acq_rel_monotonic(i64 addrspace(200)* %ptr, i64 %cmp, i
 ; RV32IXCHERI-NEXT:    mv a6, a4
 ; RV32IXCHERI-NEXT:    cincoffset ca4, csp, 0
 ; RV32IXCHERI-NEXT:    csetbounds ca5, ca4, 8
-; RV32IXCHERI-NEXT:    csw a2, 4(csp)
+; RV32IXCHERI-NEXT:    csw a2, 4(ca4)
 ; RV32IXCHERI-NEXT:    csw a1, 0(csp)
-; RV32IXCHERI-NEXT:    addi a4, zero, 4
+; RV32IXCHERI-NEXT:    li a4, 4
 ; RV32IXCHERI-NEXT:    cmove ca1, ca5
 ; RV32IXCHERI-NEXT:    mv a2, a3
 ; RV32IXCHERI-NEXT:    mv a3, a6
-; RV32IXCHERI-NEXT:    mv a5, zero
+; RV32IXCHERI-NEXT:    li a5, 0
 ; RV32IXCHERI-NEXT:    ccall __atomic_compare_exchange_8
 ; RV32IXCHERI-NEXT:    clc cra, 8(csp) # 8-byte Folded Reload
 ; RV32IXCHERI-NEXT:    cincoffset csp, csp, 16
@@ -2127,13 +2129,13 @@ define void @cmpxchg_i64_acq_rel_monotonic(i64 addrspace(200)* %ptr, i64 %cmp, i
 ; RV32IAXCHERI-NEXT:    mv a6, a4
 ; RV32IAXCHERI-NEXT:    cincoffset ca4, csp, 0
 ; RV32IAXCHERI-NEXT:    csetbounds ca5, ca4, 8
-; RV32IAXCHERI-NEXT:    csw a2, 4(csp)
+; RV32IAXCHERI-NEXT:    csw a2, 4(ca4)
 ; RV32IAXCHERI-NEXT:    csw a1, 0(csp)
-; RV32IAXCHERI-NEXT:    addi a4, zero, 4
+; RV32IAXCHERI-NEXT:    li a4, 4
 ; RV32IAXCHERI-NEXT:    cmove ca1, ca5
 ; RV32IAXCHERI-NEXT:    mv a2, a3
 ; RV32IAXCHERI-NEXT:    mv a3, a6
-; RV32IAXCHERI-NEXT:    mv a5, zero
+; RV32IAXCHERI-NEXT:    li a5, 0
 ; RV32IAXCHERI-NEXT:    ccall __atomic_compare_exchange_8
 ; RV32IAXCHERI-NEXT:    clc cra, 8(csp) # 8-byte Folded Reload
 ; RV32IAXCHERI-NEXT:    cincoffset csp, csp, 16
@@ -2146,9 +2148,9 @@ define void @cmpxchg_i64_acq_rel_monotonic(i64 addrspace(200)* %ptr, i64 %cmp, i
 ; RV64IXCHERI-NEXT:    cincoffset ca3, csp, 8
 ; RV64IXCHERI-NEXT:    csetbounds ca4, ca3, 8
 ; RV64IXCHERI-NEXT:    csd a1, 8(csp)
-; RV64IXCHERI-NEXT:    addi a3, zero, 4
+; RV64IXCHERI-NEXT:    li a3, 4
 ; RV64IXCHERI-NEXT:    cmove ca1, ca4
-; RV64IXCHERI-NEXT:    mv a4, zero
+; RV64IXCHERI-NEXT:    li a4, 0
 ; RV64IXCHERI-NEXT:    ccall __atomic_compare_exchange_8
 ; RV64IXCHERI-NEXT:    clc cra, 16(csp) # 16-byte Folded Reload
 ; RV64IXCHERI-NEXT:    cincoffset csp, csp, 32
@@ -2175,12 +2177,12 @@ define void @cmpxchg_i64_acq_rel_acquire(i64 addrspace(200)* %ptr, i64 %cmp, i64
 ; RV32IXCHERI-NEXT:    csc cra, 8(csp) # 8-byte Folded Spill
 ; RV32IXCHERI-NEXT:    mv a6, a4
 ; RV32IXCHERI-NEXT:    mv a7, a3
-; RV32IXCHERI-NEXT:    cincoffset ca3, csp, 0
-; RV32IXCHERI-NEXT:    csetbounds ca3, ca3, 8
-; RV32IXCHERI-NEXT:    csw a2, 4(csp)
+; RV32IXCHERI-NEXT:    cincoffset ca4, csp, 0
+; RV32IXCHERI-NEXT:    csetbounds ca3, ca4, 8
+; RV32IXCHERI-NEXT:    csw a2, 4(ca4)
 ; RV32IXCHERI-NEXT:    csw a1, 0(csp)
-; RV32IXCHERI-NEXT:    addi a4, zero, 4
-; RV32IXCHERI-NEXT:    addi a5, zero, 2
+; RV32IXCHERI-NEXT:    li a4, 4
+; RV32IXCHERI-NEXT:    li a5, 2
 ; RV32IXCHERI-NEXT:    cmove ca1, ca3
 ; RV32IXCHERI-NEXT:    mv a2, a7
 ; RV32IXCHERI-NEXT:    mv a3, a6
@@ -2195,12 +2197,12 @@ define void @cmpxchg_i64_acq_rel_acquire(i64 addrspace(200)* %ptr, i64 %cmp, i64
 ; RV32IAXCHERI-NEXT:    csc cra, 8(csp) # 8-byte Folded Spill
 ; RV32IAXCHERI-NEXT:    mv a6, a4
 ; RV32IAXCHERI-NEXT:    mv a7, a3
-; RV32IAXCHERI-NEXT:    cincoffset ca3, csp, 0
-; RV32IAXCHERI-NEXT:    csetbounds ca3, ca3, 8
-; RV32IAXCHERI-NEXT:    csw a2, 4(csp)
+; RV32IAXCHERI-NEXT:    cincoffset ca4, csp, 0
+; RV32IAXCHERI-NEXT:    csetbounds ca3, ca4, 8
+; RV32IAXCHERI-NEXT:    csw a2, 4(ca4)
 ; RV32IAXCHERI-NEXT:    csw a1, 0(csp)
-; RV32IAXCHERI-NEXT:    addi a4, zero, 4
-; RV32IAXCHERI-NEXT:    addi a5, zero, 2
+; RV32IAXCHERI-NEXT:    li a4, 4
+; RV32IAXCHERI-NEXT:    li a5, 2
 ; RV32IAXCHERI-NEXT:    cmove ca1, ca3
 ; RV32IAXCHERI-NEXT:    mv a2, a7
 ; RV32IAXCHERI-NEXT:    mv a3, a6
@@ -2216,8 +2218,8 @@ define void @cmpxchg_i64_acq_rel_acquire(i64 addrspace(200)* %ptr, i64 %cmp, i64
 ; RV64IXCHERI-NEXT:    cincoffset ca3, csp, 8
 ; RV64IXCHERI-NEXT:    csetbounds ca5, ca3, 8
 ; RV64IXCHERI-NEXT:    csd a1, 8(csp)
-; RV64IXCHERI-NEXT:    addi a3, zero, 4
-; RV64IXCHERI-NEXT:    addi a4, zero, 2
+; RV64IXCHERI-NEXT:    li a3, 4
+; RV64IXCHERI-NEXT:    li a4, 2
 ; RV64IXCHERI-NEXT:    cmove ca1, ca5
 ; RV64IXCHERI-NEXT:    ccall __atomic_compare_exchange_8
 ; RV64IXCHERI-NEXT:    clc cra, 16(csp) # 16-byte Folded Reload
@@ -2246,13 +2248,13 @@ define void @cmpxchg_i64_seq_cst_monotonic(i64 addrspace(200)* %ptr, i64 %cmp, i
 ; RV32IXCHERI-NEXT:    mv a6, a4
 ; RV32IXCHERI-NEXT:    cincoffset ca4, csp, 0
 ; RV32IXCHERI-NEXT:    csetbounds ca5, ca4, 8
-; RV32IXCHERI-NEXT:    csw a2, 4(csp)
+; RV32IXCHERI-NEXT:    csw a2, 4(ca4)
 ; RV32IXCHERI-NEXT:    csw a1, 0(csp)
-; RV32IXCHERI-NEXT:    addi a4, zero, 5
+; RV32IXCHERI-NEXT:    li a4, 5
 ; RV32IXCHERI-NEXT:    cmove ca1, ca5
 ; RV32IXCHERI-NEXT:    mv a2, a3
 ; RV32IXCHERI-NEXT:    mv a3, a6
-; RV32IXCHERI-NEXT:    mv a5, zero
+; RV32IXCHERI-NEXT:    li a5, 0
 ; RV32IXCHERI-NEXT:    ccall __atomic_compare_exchange_8
 ; RV32IXCHERI-NEXT:    clc cra, 8(csp) # 8-byte Folded Reload
 ; RV32IXCHERI-NEXT:    cincoffset csp, csp, 16
@@ -2265,13 +2267,13 @@ define void @cmpxchg_i64_seq_cst_monotonic(i64 addrspace(200)* %ptr, i64 %cmp, i
 ; RV32IAXCHERI-NEXT:    mv a6, a4
 ; RV32IAXCHERI-NEXT:    cincoffset ca4, csp, 0
 ; RV32IAXCHERI-NEXT:    csetbounds ca5, ca4, 8
-; RV32IAXCHERI-NEXT:    csw a2, 4(csp)
+; RV32IAXCHERI-NEXT:    csw a2, 4(ca4)
 ; RV32IAXCHERI-NEXT:    csw a1, 0(csp)
-; RV32IAXCHERI-NEXT:    addi a4, zero, 5
+; RV32IAXCHERI-NEXT:    li a4, 5
 ; RV32IAXCHERI-NEXT:    cmove ca1, ca5
 ; RV32IAXCHERI-NEXT:    mv a2, a3
 ; RV32IAXCHERI-NEXT:    mv a3, a6
-; RV32IAXCHERI-NEXT:    mv a5, zero
+; RV32IAXCHERI-NEXT:    li a5, 0
 ; RV32IAXCHERI-NEXT:    ccall __atomic_compare_exchange_8
 ; RV32IAXCHERI-NEXT:    clc cra, 8(csp) # 8-byte Folded Reload
 ; RV32IAXCHERI-NEXT:    cincoffset csp, csp, 16
@@ -2284,9 +2286,9 @@ define void @cmpxchg_i64_seq_cst_monotonic(i64 addrspace(200)* %ptr, i64 %cmp, i
 ; RV64IXCHERI-NEXT:    cincoffset ca3, csp, 8
 ; RV64IXCHERI-NEXT:    csetbounds ca4, ca3, 8
 ; RV64IXCHERI-NEXT:    csd a1, 8(csp)
-; RV64IXCHERI-NEXT:    addi a3, zero, 5
+; RV64IXCHERI-NEXT:    li a3, 5
 ; RV64IXCHERI-NEXT:    cmove ca1, ca4
-; RV64IXCHERI-NEXT:    mv a4, zero
+; RV64IXCHERI-NEXT:    li a4, 0
 ; RV64IXCHERI-NEXT:    ccall __atomic_compare_exchange_8
 ; RV64IXCHERI-NEXT:    clc cra, 16(csp) # 16-byte Folded Reload
 ; RV64IXCHERI-NEXT:    cincoffset csp, csp, 32
@@ -2313,12 +2315,12 @@ define void @cmpxchg_i64_seq_cst_acquire(i64 addrspace(200)* %ptr, i64 %cmp, i64
 ; RV32IXCHERI-NEXT:    csc cra, 8(csp) # 8-byte Folded Spill
 ; RV32IXCHERI-NEXT:    mv a6, a4
 ; RV32IXCHERI-NEXT:    mv a7, a3
-; RV32IXCHERI-NEXT:    cincoffset ca3, csp, 0
-; RV32IXCHERI-NEXT:    csetbounds ca3, ca3, 8
-; RV32IXCHERI-NEXT:    csw a2, 4(csp)
+; RV32IXCHERI-NEXT:    cincoffset ca4, csp, 0
+; RV32IXCHERI-NEXT:    csetbounds ca3, ca4, 8
+; RV32IXCHERI-NEXT:    csw a2, 4(ca4)
 ; RV32IXCHERI-NEXT:    csw a1, 0(csp)
-; RV32IXCHERI-NEXT:    addi a4, zero, 5
-; RV32IXCHERI-NEXT:    addi a5, zero, 2
+; RV32IXCHERI-NEXT:    li a4, 5
+; RV32IXCHERI-NEXT:    li a5, 2
 ; RV32IXCHERI-NEXT:    cmove ca1, ca3
 ; RV32IXCHERI-NEXT:    mv a2, a7
 ; RV32IXCHERI-NEXT:    mv a3, a6
@@ -2333,12 +2335,12 @@ define void @cmpxchg_i64_seq_cst_acquire(i64 addrspace(200)* %ptr, i64 %cmp, i64
 ; RV32IAXCHERI-NEXT:    csc cra, 8(csp) # 8-byte Folded Spill
 ; RV32IAXCHERI-NEXT:    mv a6, a4
 ; RV32IAXCHERI-NEXT:    mv a7, a3
-; RV32IAXCHERI-NEXT:    cincoffset ca3, csp, 0
-; RV32IAXCHERI-NEXT:    csetbounds ca3, ca3, 8
-; RV32IAXCHERI-NEXT:    csw a2, 4(csp)
+; RV32IAXCHERI-NEXT:    cincoffset ca4, csp, 0
+; RV32IAXCHERI-NEXT:    csetbounds ca3, ca4, 8
+; RV32IAXCHERI-NEXT:    csw a2, 4(ca4)
 ; RV32IAXCHERI-NEXT:    csw a1, 0(csp)
-; RV32IAXCHERI-NEXT:    addi a4, zero, 5
-; RV32IAXCHERI-NEXT:    addi a5, zero, 2
+; RV32IAXCHERI-NEXT:    li a4, 5
+; RV32IAXCHERI-NEXT:    li a5, 2
 ; RV32IAXCHERI-NEXT:    cmove ca1, ca3
 ; RV32IAXCHERI-NEXT:    mv a2, a7
 ; RV32IAXCHERI-NEXT:    mv a3, a6
@@ -2354,8 +2356,8 @@ define void @cmpxchg_i64_seq_cst_acquire(i64 addrspace(200)* %ptr, i64 %cmp, i64
 ; RV64IXCHERI-NEXT:    cincoffset ca3, csp, 8
 ; RV64IXCHERI-NEXT:    csetbounds ca5, ca3, 8
 ; RV64IXCHERI-NEXT:    csd a1, 8(csp)
-; RV64IXCHERI-NEXT:    addi a3, zero, 5
-; RV64IXCHERI-NEXT:    addi a4, zero, 2
+; RV64IXCHERI-NEXT:    li a3, 5
+; RV64IXCHERI-NEXT:    li a4, 2
 ; RV64IXCHERI-NEXT:    cmove ca1, ca5
 ; RV64IXCHERI-NEXT:    ccall __atomic_compare_exchange_8
 ; RV64IXCHERI-NEXT:    clc cra, 16(csp) # 16-byte Folded Reload
@@ -2383,12 +2385,12 @@ define void @cmpxchg_i64_seq_cst_seq_cst(i64 addrspace(200)* %ptr, i64 %cmp, i64
 ; RV32IXCHERI-NEXT:    csc cra, 8(csp) # 8-byte Folded Spill
 ; RV32IXCHERI-NEXT:    mv a6, a4
 ; RV32IXCHERI-NEXT:    mv a7, a3
-; RV32IXCHERI-NEXT:    cincoffset ca3, csp, 0
-; RV32IXCHERI-NEXT:    csetbounds ca3, ca3, 8
-; RV32IXCHERI-NEXT:    csw a2, 4(csp)
+; RV32IXCHERI-NEXT:    cincoffset ca4, csp, 0
+; RV32IXCHERI-NEXT:    csetbounds ca3, ca4, 8
+; RV32IXCHERI-NEXT:    csw a2, 4(ca4)
 ; RV32IXCHERI-NEXT:    csw a1, 0(csp)
-; RV32IXCHERI-NEXT:    addi a4, zero, 5
-; RV32IXCHERI-NEXT:    addi a5, zero, 5
+; RV32IXCHERI-NEXT:    li a4, 5
+; RV32IXCHERI-NEXT:    li a5, 5
 ; RV32IXCHERI-NEXT:    cmove ca1, ca3
 ; RV32IXCHERI-NEXT:    mv a2, a7
 ; RV32IXCHERI-NEXT:    mv a3, a6
@@ -2403,12 +2405,12 @@ define void @cmpxchg_i64_seq_cst_seq_cst(i64 addrspace(200)* %ptr, i64 %cmp, i64
 ; RV32IAXCHERI-NEXT:    csc cra, 8(csp) # 8-byte Folded Spill
 ; RV32IAXCHERI-NEXT:    mv a6, a4
 ; RV32IAXCHERI-NEXT:    mv a7, a3
-; RV32IAXCHERI-NEXT:    cincoffset ca3, csp, 0
-; RV32IAXCHERI-NEXT:    csetbounds ca3, ca3, 8
-; RV32IAXCHERI-NEXT:    csw a2, 4(csp)
+; RV32IAXCHERI-NEXT:    cincoffset ca4, csp, 0
+; RV32IAXCHERI-NEXT:    csetbounds ca3, ca4, 8
+; RV32IAXCHERI-NEXT:    csw a2, 4(ca4)
 ; RV32IAXCHERI-NEXT:    csw a1, 0(csp)
-; RV32IAXCHERI-NEXT:    addi a4, zero, 5
-; RV32IAXCHERI-NEXT:    addi a5, zero, 5
+; RV32IAXCHERI-NEXT:    li a4, 5
+; RV32IAXCHERI-NEXT:    li a5, 5
 ; RV32IAXCHERI-NEXT:    cmove ca1, ca3
 ; RV32IAXCHERI-NEXT:    mv a2, a7
 ; RV32IAXCHERI-NEXT:    mv a3, a6
@@ -2424,8 +2426,8 @@ define void @cmpxchg_i64_seq_cst_seq_cst(i64 addrspace(200)* %ptr, i64 %cmp, i64
 ; RV64IXCHERI-NEXT:    cincoffset ca3, csp, 8
 ; RV64IXCHERI-NEXT:    csetbounds ca5, ca3, 8
 ; RV64IXCHERI-NEXT:    csd a1, 8(csp)
-; RV64IXCHERI-NEXT:    addi a3, zero, 5
-; RV64IXCHERI-NEXT:    addi a4, zero, 5
+; RV64IXCHERI-NEXT:    li a3, 5
+; RV64IXCHERI-NEXT:    li a4, 5
 ; RV64IXCHERI-NEXT:    cmove ca1, ca5
 ; RV64IXCHERI-NEXT:    ccall __atomic_compare_exchange_8
 ; RV64IXCHERI-NEXT:    clc cra, 16(csp) # 16-byte Folded Reload
@@ -2455,8 +2457,8 @@ define void @cmpxchg_cap_monotonic_monotonic(i8 addrspace(200)* addrspace(200)* 
 ; RV32IXCHERI-NEXT:    csetbounds ca3, ca3, 8
 ; RV32IXCHERI-NEXT:    csc ca1, 0(csp)
 ; RV32IXCHERI-NEXT:    cmove ca1, ca3
-; RV32IXCHERI-NEXT:    mv a3, zero
-; RV32IXCHERI-NEXT:    mv a4, zero
+; RV32IXCHERI-NEXT:    li a3, 0
+; RV32IXCHERI-NEXT:    li a4, 0
 ; RV32IXCHERI-NEXT:    ccall __atomic_compare_exchange_cap
 ; RV32IXCHERI-NEXT:    clc cra, 8(csp) # 8-byte Folded Reload
 ; RV32IXCHERI-NEXT:    cincoffset csp, csp, 16
@@ -2481,8 +2483,8 @@ define void @cmpxchg_cap_monotonic_monotonic(i8 addrspace(200)* addrspace(200)* 
 ; RV64IXCHERI-NEXT:    csetbounds ca3, ca3, 16
 ; RV64IXCHERI-NEXT:    csc ca1, 0(csp)
 ; RV64IXCHERI-NEXT:    cmove ca1, ca3
-; RV64IXCHERI-NEXT:    mv a3, zero
-; RV64IXCHERI-NEXT:    mv a4, zero
+; RV64IXCHERI-NEXT:    li a3, 0
+; RV64IXCHERI-NEXT:    li a4, 0
 ; RV64IXCHERI-NEXT:    ccall __atomic_compare_exchange_cap
 ; RV64IXCHERI-NEXT:    clc cra, 16(csp) # 16-byte Folded Reload
 ; RV64IXCHERI-NEXT:    cincoffset csp, csp, 32
@@ -2510,9 +2512,9 @@ define void @cmpxchg_cap_acquire_monotonic(i8 addrspace(200)* addrspace(200)* %p
 ; RV32IXCHERI-NEXT:    cincoffset ca3, csp, 0
 ; RV32IXCHERI-NEXT:    csetbounds ca4, ca3, 8
 ; RV32IXCHERI-NEXT:    csc ca1, 0(csp)
-; RV32IXCHERI-NEXT:    addi a3, zero, 2
+; RV32IXCHERI-NEXT:    li a3, 2
 ; RV32IXCHERI-NEXT:    cmove ca1, ca4
-; RV32IXCHERI-NEXT:    mv a4, zero
+; RV32IXCHERI-NEXT:    li a4, 0
 ; RV32IXCHERI-NEXT:    ccall __atomic_compare_exchange_cap
 ; RV32IXCHERI-NEXT:    clc cra, 8(csp) # 8-byte Folded Reload
 ; RV32IXCHERI-NEXT:    cincoffset csp, csp, 16
@@ -2536,9 +2538,9 @@ define void @cmpxchg_cap_acquire_monotonic(i8 addrspace(200)* addrspace(200)* %p
 ; RV64IXCHERI-NEXT:    cincoffset ca3, csp, 0
 ; RV64IXCHERI-NEXT:    csetbounds ca4, ca3, 16
 ; RV64IXCHERI-NEXT:    csc ca1, 0(csp)
-; RV64IXCHERI-NEXT:    addi a3, zero, 2
+; RV64IXCHERI-NEXT:    li a3, 2
 ; RV64IXCHERI-NEXT:    cmove ca1, ca4
-; RV64IXCHERI-NEXT:    mv a4, zero
+; RV64IXCHERI-NEXT:    li a4, 0
 ; RV64IXCHERI-NEXT:    ccall __atomic_compare_exchange_cap
 ; RV64IXCHERI-NEXT:    clc cra, 16(csp) # 16-byte Folded Reload
 ; RV64IXCHERI-NEXT:    cincoffset csp, csp, 32
@@ -2566,8 +2568,8 @@ define void @cmpxchg_cap_acquire_acquire(i8 addrspace(200)* addrspace(200)* %ptr
 ; RV32IXCHERI-NEXT:    cincoffset ca3, csp, 0
 ; RV32IXCHERI-NEXT:    csetbounds ca5, ca3, 8
 ; RV32IXCHERI-NEXT:    csc ca1, 0(csp)
-; RV32IXCHERI-NEXT:    addi a3, zero, 2
-; RV32IXCHERI-NEXT:    addi a4, zero, 2
+; RV32IXCHERI-NEXT:    li a3, 2
+; RV32IXCHERI-NEXT:    li a4, 2
 ; RV32IXCHERI-NEXT:    cmove ca1, ca5
 ; RV32IXCHERI-NEXT:    ccall __atomic_compare_exchange_cap
 ; RV32IXCHERI-NEXT:    clc cra, 8(csp) # 8-byte Folded Reload
@@ -2592,8 +2594,8 @@ define void @cmpxchg_cap_acquire_acquire(i8 addrspace(200)* addrspace(200)* %ptr
 ; RV64IXCHERI-NEXT:    cincoffset ca3, csp, 0
 ; RV64IXCHERI-NEXT:    csetbounds ca5, ca3, 16
 ; RV64IXCHERI-NEXT:    csc ca1, 0(csp)
-; RV64IXCHERI-NEXT:    addi a3, zero, 2
-; RV64IXCHERI-NEXT:    addi a4, zero, 2
+; RV64IXCHERI-NEXT:    li a3, 2
+; RV64IXCHERI-NEXT:    li a4, 2
 ; RV64IXCHERI-NEXT:    cmove ca1, ca5
 ; RV64IXCHERI-NEXT:    ccall __atomic_compare_exchange_cap
 ; RV64IXCHERI-NEXT:    clc cra, 16(csp) # 16-byte Folded Reload
@@ -2622,9 +2624,9 @@ define void @cmpxchg_cap_release_monotonic(i8 addrspace(200)* addrspace(200)* %p
 ; RV32IXCHERI-NEXT:    cincoffset ca3, csp, 0
 ; RV32IXCHERI-NEXT:    csetbounds ca4, ca3, 8
 ; RV32IXCHERI-NEXT:    csc ca1, 0(csp)
-; RV32IXCHERI-NEXT:    addi a3, zero, 3
+; RV32IXCHERI-NEXT:    li a3, 3
 ; RV32IXCHERI-NEXT:    cmove ca1, ca4
-; RV32IXCHERI-NEXT:    mv a4, zero
+; RV32IXCHERI-NEXT:    li a4, 0
 ; RV32IXCHERI-NEXT:    ccall __atomic_compare_exchange_cap
 ; RV32IXCHERI-NEXT:    clc cra, 8(csp) # 8-byte Folded Reload
 ; RV32IXCHERI-NEXT:    cincoffset csp, csp, 16
@@ -2648,9 +2650,9 @@ define void @cmpxchg_cap_release_monotonic(i8 addrspace(200)* addrspace(200)* %p
 ; RV64IXCHERI-NEXT:    cincoffset ca3, csp, 0
 ; RV64IXCHERI-NEXT:    csetbounds ca4, ca3, 16
 ; RV64IXCHERI-NEXT:    csc ca1, 0(csp)
-; RV64IXCHERI-NEXT:    addi a3, zero, 3
+; RV64IXCHERI-NEXT:    li a3, 3
 ; RV64IXCHERI-NEXT:    cmove ca1, ca4
-; RV64IXCHERI-NEXT:    mv a4, zero
+; RV64IXCHERI-NEXT:    li a4, 0
 ; RV64IXCHERI-NEXT:    ccall __atomic_compare_exchange_cap
 ; RV64IXCHERI-NEXT:    clc cra, 16(csp) # 16-byte Folded Reload
 ; RV64IXCHERI-NEXT:    cincoffset csp, csp, 32
@@ -2678,8 +2680,8 @@ define void @cmpxchg_cap_release_acquire(i8 addrspace(200)* addrspace(200)* %ptr
 ; RV32IXCHERI-NEXT:    cincoffset ca3, csp, 0
 ; RV32IXCHERI-NEXT:    csetbounds ca5, ca3, 8
 ; RV32IXCHERI-NEXT:    csc ca1, 0(csp)
-; RV32IXCHERI-NEXT:    addi a3, zero, 3
-; RV32IXCHERI-NEXT:    addi a4, zero, 2
+; RV32IXCHERI-NEXT:    li a3, 3
+; RV32IXCHERI-NEXT:    li a4, 2
 ; RV32IXCHERI-NEXT:    cmove ca1, ca5
 ; RV32IXCHERI-NEXT:    ccall __atomic_compare_exchange_cap
 ; RV32IXCHERI-NEXT:    clc cra, 8(csp) # 8-byte Folded Reload
@@ -2704,8 +2706,8 @@ define void @cmpxchg_cap_release_acquire(i8 addrspace(200)* addrspace(200)* %ptr
 ; RV64IXCHERI-NEXT:    cincoffset ca3, csp, 0
 ; RV64IXCHERI-NEXT:    csetbounds ca5, ca3, 16
 ; RV64IXCHERI-NEXT:    csc ca1, 0(csp)
-; RV64IXCHERI-NEXT:    addi a3, zero, 3
-; RV64IXCHERI-NEXT:    addi a4, zero, 2
+; RV64IXCHERI-NEXT:    li a3, 3
+; RV64IXCHERI-NEXT:    li a4, 2
 ; RV64IXCHERI-NEXT:    cmove ca1, ca5
 ; RV64IXCHERI-NEXT:    ccall __atomic_compare_exchange_cap
 ; RV64IXCHERI-NEXT:    clc cra, 16(csp) # 16-byte Folded Reload
@@ -2734,9 +2736,9 @@ define void @cmpxchg_cap_acq_rel_monotonic(i8 addrspace(200)* addrspace(200)* %p
 ; RV32IXCHERI-NEXT:    cincoffset ca3, csp, 0
 ; RV32IXCHERI-NEXT:    csetbounds ca4, ca3, 8
 ; RV32IXCHERI-NEXT:    csc ca1, 0(csp)
-; RV32IXCHERI-NEXT:    addi a3, zero, 4
+; RV32IXCHERI-NEXT:    li a3, 4
 ; RV32IXCHERI-NEXT:    cmove ca1, ca4
-; RV32IXCHERI-NEXT:    mv a4, zero
+; RV32IXCHERI-NEXT:    li a4, 0
 ; RV32IXCHERI-NEXT:    ccall __atomic_compare_exchange_cap
 ; RV32IXCHERI-NEXT:    clc cra, 8(csp) # 8-byte Folded Reload
 ; RV32IXCHERI-NEXT:    cincoffset csp, csp, 16
@@ -2760,9 +2762,9 @@ define void @cmpxchg_cap_acq_rel_monotonic(i8 addrspace(200)* addrspace(200)* %p
 ; RV64IXCHERI-NEXT:    cincoffset ca3, csp, 0
 ; RV64IXCHERI-NEXT:    csetbounds ca4, ca3, 16
 ; RV64IXCHERI-NEXT:    csc ca1, 0(csp)
-; RV64IXCHERI-NEXT:    addi a3, zero, 4
+; RV64IXCHERI-NEXT:    li a3, 4
 ; RV64IXCHERI-NEXT:    cmove ca1, ca4
-; RV64IXCHERI-NEXT:    mv a4, zero
+; RV64IXCHERI-NEXT:    li a4, 0
 ; RV64IXCHERI-NEXT:    ccall __atomic_compare_exchange_cap
 ; RV64IXCHERI-NEXT:    clc cra, 16(csp) # 16-byte Folded Reload
 ; RV64IXCHERI-NEXT:    cincoffset csp, csp, 32
@@ -2790,8 +2792,8 @@ define void @cmpxchg_cap_acq_rel_acquire(i8 addrspace(200)* addrspace(200)* %ptr
 ; RV32IXCHERI-NEXT:    cincoffset ca3, csp, 0
 ; RV32IXCHERI-NEXT:    csetbounds ca5, ca3, 8
 ; RV32IXCHERI-NEXT:    csc ca1, 0(csp)
-; RV32IXCHERI-NEXT:    addi a3, zero, 4
-; RV32IXCHERI-NEXT:    addi a4, zero, 2
+; RV32IXCHERI-NEXT:    li a3, 4
+; RV32IXCHERI-NEXT:    li a4, 2
 ; RV32IXCHERI-NEXT:    cmove ca1, ca5
 ; RV32IXCHERI-NEXT:    ccall __atomic_compare_exchange_cap
 ; RV32IXCHERI-NEXT:    clc cra, 8(csp) # 8-byte Folded Reload
@@ -2816,8 +2818,8 @@ define void @cmpxchg_cap_acq_rel_acquire(i8 addrspace(200)* addrspace(200)* %ptr
 ; RV64IXCHERI-NEXT:    cincoffset ca3, csp, 0
 ; RV64IXCHERI-NEXT:    csetbounds ca5, ca3, 16
 ; RV64IXCHERI-NEXT:    csc ca1, 0(csp)
-; RV64IXCHERI-NEXT:    addi a3, zero, 4
-; RV64IXCHERI-NEXT:    addi a4, zero, 2
+; RV64IXCHERI-NEXT:    li a3, 4
+; RV64IXCHERI-NEXT:    li a4, 2
 ; RV64IXCHERI-NEXT:    cmove ca1, ca5
 ; RV64IXCHERI-NEXT:    ccall __atomic_compare_exchange_cap
 ; RV64IXCHERI-NEXT:    clc cra, 16(csp) # 16-byte Folded Reload
@@ -2846,9 +2848,9 @@ define void @cmpxchg_cap_seq_cst_monotonic(i8 addrspace(200)* addrspace(200)* %p
 ; RV32IXCHERI-NEXT:    cincoffset ca3, csp, 0
 ; RV32IXCHERI-NEXT:    csetbounds ca4, ca3, 8
 ; RV32IXCHERI-NEXT:    csc ca1, 0(csp)
-; RV32IXCHERI-NEXT:    addi a3, zero, 5
+; RV32IXCHERI-NEXT:    li a3, 5
 ; RV32IXCHERI-NEXT:    cmove ca1, ca4
-; RV32IXCHERI-NEXT:    mv a4, zero
+; RV32IXCHERI-NEXT:    li a4, 0
 ; RV32IXCHERI-NEXT:    ccall __atomic_compare_exchange_cap
 ; RV32IXCHERI-NEXT:    clc cra, 8(csp) # 8-byte Folded Reload
 ; RV32IXCHERI-NEXT:    cincoffset csp, csp, 16
@@ -2872,9 +2874,9 @@ define void @cmpxchg_cap_seq_cst_monotonic(i8 addrspace(200)* addrspace(200)* %p
 ; RV64IXCHERI-NEXT:    cincoffset ca3, csp, 0
 ; RV64IXCHERI-NEXT:    csetbounds ca4, ca3, 16
 ; RV64IXCHERI-NEXT:    csc ca1, 0(csp)
-; RV64IXCHERI-NEXT:    addi a3, zero, 5
+; RV64IXCHERI-NEXT:    li a3, 5
 ; RV64IXCHERI-NEXT:    cmove ca1, ca4
-; RV64IXCHERI-NEXT:    mv a4, zero
+; RV64IXCHERI-NEXT:    li a4, 0
 ; RV64IXCHERI-NEXT:    ccall __atomic_compare_exchange_cap
 ; RV64IXCHERI-NEXT:    clc cra, 16(csp) # 16-byte Folded Reload
 ; RV64IXCHERI-NEXT:    cincoffset csp, csp, 32
@@ -2902,8 +2904,8 @@ define void @cmpxchg_cap_seq_cst_acquire(i8 addrspace(200)* addrspace(200)* %ptr
 ; RV32IXCHERI-NEXT:    cincoffset ca3, csp, 0
 ; RV32IXCHERI-NEXT:    csetbounds ca5, ca3, 8
 ; RV32IXCHERI-NEXT:    csc ca1, 0(csp)
-; RV32IXCHERI-NEXT:    addi a3, zero, 5
-; RV32IXCHERI-NEXT:    addi a4, zero, 2
+; RV32IXCHERI-NEXT:    li a3, 5
+; RV32IXCHERI-NEXT:    li a4, 2
 ; RV32IXCHERI-NEXT:    cmove ca1, ca5
 ; RV32IXCHERI-NEXT:    ccall __atomic_compare_exchange_cap
 ; RV32IXCHERI-NEXT:    clc cra, 8(csp) # 8-byte Folded Reload
@@ -2928,8 +2930,8 @@ define void @cmpxchg_cap_seq_cst_acquire(i8 addrspace(200)* addrspace(200)* %ptr
 ; RV64IXCHERI-NEXT:    cincoffset ca3, csp, 0
 ; RV64IXCHERI-NEXT:    csetbounds ca5, ca3, 16
 ; RV64IXCHERI-NEXT:    csc ca1, 0(csp)
-; RV64IXCHERI-NEXT:    addi a3, zero, 5
-; RV64IXCHERI-NEXT:    addi a4, zero, 2
+; RV64IXCHERI-NEXT:    li a3, 5
+; RV64IXCHERI-NEXT:    li a4, 2
 ; RV64IXCHERI-NEXT:    cmove ca1, ca5
 ; RV64IXCHERI-NEXT:    ccall __atomic_compare_exchange_cap
 ; RV64IXCHERI-NEXT:    clc cra, 16(csp) # 16-byte Folded Reload
@@ -2958,8 +2960,8 @@ define void @cmpxchg_cap_seq_cst_seq_cst(i8 addrspace(200)* addrspace(200)* %ptr
 ; RV32IXCHERI-NEXT:    cincoffset ca3, csp, 0
 ; RV32IXCHERI-NEXT:    csetbounds ca5, ca3, 8
 ; RV32IXCHERI-NEXT:    csc ca1, 0(csp)
-; RV32IXCHERI-NEXT:    addi a3, zero, 5
-; RV32IXCHERI-NEXT:    addi a4, zero, 5
+; RV32IXCHERI-NEXT:    li a3, 5
+; RV32IXCHERI-NEXT:    li a4, 5
 ; RV32IXCHERI-NEXT:    cmove ca1, ca5
 ; RV32IXCHERI-NEXT:    ccall __atomic_compare_exchange_cap
 ; RV32IXCHERI-NEXT:    clc cra, 8(csp) # 8-byte Folded Reload
@@ -2984,8 +2986,8 @@ define void @cmpxchg_cap_seq_cst_seq_cst(i8 addrspace(200)* addrspace(200)* %ptr
 ; RV64IXCHERI-NEXT:    cincoffset ca3, csp, 0
 ; RV64IXCHERI-NEXT:    csetbounds ca5, ca3, 16
 ; RV64IXCHERI-NEXT:    csc ca1, 0(csp)
-; RV64IXCHERI-NEXT:    addi a3, zero, 5
-; RV64IXCHERI-NEXT:    addi a4, zero, 5
+; RV64IXCHERI-NEXT:    li a3, 5
+; RV64IXCHERI-NEXT:    li a4, 5
 ; RV64IXCHERI-NEXT:    cmove ca1, ca5
 ; RV64IXCHERI-NEXT:    ccall __atomic_compare_exchange_cap
 ; RV64IXCHERI-NEXT:    clc cra, 16(csp) # 16-byte Folded Reload

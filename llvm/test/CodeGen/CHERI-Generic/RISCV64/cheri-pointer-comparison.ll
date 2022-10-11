@@ -363,7 +363,9 @@ define i32 @sle_null(i8 addrspace(200)* %a) nounwind {
 define i8 addrspace(200)* @select_eq(i8 addrspace(200)* %a, i8 addrspace(200)* %b) nounwind {
 ; HYBRID-LABEL: select_eq:
 ; HYBRID:       # %bb.0:
-; HYBRID-NEXT:    beq a0, a1, .LBB20_2
+; HYBRID-NEXT:    xor a2, a0, a1
+; HYBRID-NEXT:    seqz a2, a2
+; HYBRID-NEXT:    bnez a2, .LBB20_2
 ; HYBRID-NEXT:  # %bb.1:
 ; HYBRID-NEXT:    cmove ca0, ca1
 ; HYBRID-NEXT:  .LBB20_2:
@@ -371,7 +373,9 @@ define i8 addrspace(200)* @select_eq(i8 addrspace(200)* %a, i8 addrspace(200)* %
 ;
 ; PURECAP-LABEL: select_eq:
 ; PURECAP:       # %bb.0:
-; PURECAP-NEXT:    beq a0, a1, .LBB20_2
+; PURECAP-NEXT:    xor a2, a0, a1
+; PURECAP-NEXT:    seqz a2, a2
+; PURECAP-NEXT:    bnez a2, .LBB20_2
 ; PURECAP-NEXT:  # %bb.1:
 ; PURECAP-NEXT:    cmove ca0, ca1
 ; PURECAP-NEXT:  .LBB20_2:
@@ -384,7 +388,9 @@ define i8 addrspace(200)* @select_eq(i8 addrspace(200)* %a, i8 addrspace(200)* %
 define i8 addrspace(200)* @select_ne(i8 addrspace(200)* %a, i8 addrspace(200)* %b) nounwind {
 ; HYBRID-LABEL: select_ne:
 ; HYBRID:       # %bb.0:
-; HYBRID-NEXT:    bne a0, a1, .LBB21_2
+; HYBRID-NEXT:    xor a2, a0, a1
+; HYBRID-NEXT:    snez a2, a2
+; HYBRID-NEXT:    bnez a2, .LBB21_2
 ; HYBRID-NEXT:  # %bb.1:
 ; HYBRID-NEXT:    cmove ca0, ca1
 ; HYBRID-NEXT:  .LBB21_2:
@@ -392,7 +398,9 @@ define i8 addrspace(200)* @select_ne(i8 addrspace(200)* %a, i8 addrspace(200)* %
 ;
 ; PURECAP-LABEL: select_ne:
 ; PURECAP:       # %bb.0:
-; PURECAP-NEXT:    bne a0, a1, .LBB21_2
+; PURECAP-NEXT:    xor a2, a0, a1
+; PURECAP-NEXT:    snez a2, a2
+; PURECAP-NEXT:    bnez a2, .LBB21_2
 ; PURECAP-NEXT:  # %bb.1:
 ; PURECAP-NEXT:    cmove ca0, ca1
 ; PURECAP-NEXT:  .LBB21_2:
@@ -405,7 +413,8 @@ define i8 addrspace(200)* @select_ne(i8 addrspace(200)* %a, i8 addrspace(200)* %
 define i8 addrspace(200)* @select_ugt(i8 addrspace(200)* %a, i8 addrspace(200)* %b) nounwind {
 ; HYBRID-LABEL: select_ugt:
 ; HYBRID:       # %bb.0:
-; HYBRID-NEXT:    bltu a1, a0, .LBB22_2
+; HYBRID-NEXT:    sltu a2, a1, a0
+; HYBRID-NEXT:    bnez a2, .LBB22_2
 ; HYBRID-NEXT:  # %bb.1:
 ; HYBRID-NEXT:    cmove ca0, ca1
 ; HYBRID-NEXT:  .LBB22_2:
@@ -413,7 +422,8 @@ define i8 addrspace(200)* @select_ugt(i8 addrspace(200)* %a, i8 addrspace(200)* 
 ;
 ; PURECAP-LABEL: select_ugt:
 ; PURECAP:       # %bb.0:
-; PURECAP-NEXT:    bltu a1, a0, .LBB22_2
+; PURECAP-NEXT:    sltu a2, a1, a0
+; PURECAP-NEXT:    bnez a2, .LBB22_2
 ; PURECAP-NEXT:  # %bb.1:
 ; PURECAP-NEXT:    cmove ca0, ca1
 ; PURECAP-NEXT:  .LBB22_2:
@@ -426,7 +436,9 @@ define i8 addrspace(200)* @select_ugt(i8 addrspace(200)* %a, i8 addrspace(200)* 
 define i8 addrspace(200)* @select_uge(i8 addrspace(200)* %a, i8 addrspace(200)* %b) nounwind {
 ; HYBRID-LABEL: select_uge:
 ; HYBRID:       # %bb.0:
-; HYBRID-NEXT:    bgeu a0, a1, .LBB23_2
+; HYBRID-NEXT:    sltu a2, a0, a1
+; HYBRID-NEXT:    xori a2, a2, 1
+; HYBRID-NEXT:    bnez a2, .LBB23_2
 ; HYBRID-NEXT:  # %bb.1:
 ; HYBRID-NEXT:    cmove ca0, ca1
 ; HYBRID-NEXT:  .LBB23_2:
@@ -434,7 +446,9 @@ define i8 addrspace(200)* @select_uge(i8 addrspace(200)* %a, i8 addrspace(200)* 
 ;
 ; PURECAP-LABEL: select_uge:
 ; PURECAP:       # %bb.0:
-; PURECAP-NEXT:    bgeu a0, a1, .LBB23_2
+; PURECAP-NEXT:    sltu a2, a0, a1
+; PURECAP-NEXT:    xori a2, a2, 1
+; PURECAP-NEXT:    bnez a2, .LBB23_2
 ; PURECAP-NEXT:  # %bb.1:
 ; PURECAP-NEXT:    cmove ca0, ca1
 ; PURECAP-NEXT:  .LBB23_2:
@@ -447,7 +461,8 @@ define i8 addrspace(200)* @select_uge(i8 addrspace(200)* %a, i8 addrspace(200)* 
 define i8 addrspace(200)* @select_ult(i8 addrspace(200)* %a, i8 addrspace(200)* %b) nounwind {
 ; HYBRID-LABEL: select_ult:
 ; HYBRID:       # %bb.0:
-; HYBRID-NEXT:    bltu a0, a1, .LBB24_2
+; HYBRID-NEXT:    sltu a2, a0, a1
+; HYBRID-NEXT:    bnez a2, .LBB24_2
 ; HYBRID-NEXT:  # %bb.1:
 ; HYBRID-NEXT:    cmove ca0, ca1
 ; HYBRID-NEXT:  .LBB24_2:
@@ -455,7 +470,8 @@ define i8 addrspace(200)* @select_ult(i8 addrspace(200)* %a, i8 addrspace(200)* 
 ;
 ; PURECAP-LABEL: select_ult:
 ; PURECAP:       # %bb.0:
-; PURECAP-NEXT:    bltu a0, a1, .LBB24_2
+; PURECAP-NEXT:    sltu a2, a0, a1
+; PURECAP-NEXT:    bnez a2, .LBB24_2
 ; PURECAP-NEXT:  # %bb.1:
 ; PURECAP-NEXT:    cmove ca0, ca1
 ; PURECAP-NEXT:  .LBB24_2:
@@ -468,7 +484,9 @@ define i8 addrspace(200)* @select_ult(i8 addrspace(200)* %a, i8 addrspace(200)* 
 define i8 addrspace(200)* @select_ule(i8 addrspace(200)* %a, i8 addrspace(200)* %b) nounwind {
 ; HYBRID-LABEL: select_ule:
 ; HYBRID:       # %bb.0:
-; HYBRID-NEXT:    bgeu a1, a0, .LBB25_2
+; HYBRID-NEXT:    sltu a2, a1, a0
+; HYBRID-NEXT:    xori a2, a2, 1
+; HYBRID-NEXT:    bnez a2, .LBB25_2
 ; HYBRID-NEXT:  # %bb.1:
 ; HYBRID-NEXT:    cmove ca0, ca1
 ; HYBRID-NEXT:  .LBB25_2:
@@ -476,7 +494,9 @@ define i8 addrspace(200)* @select_ule(i8 addrspace(200)* %a, i8 addrspace(200)* 
 ;
 ; PURECAP-LABEL: select_ule:
 ; PURECAP:       # %bb.0:
-; PURECAP-NEXT:    bgeu a1, a0, .LBB25_2
+; PURECAP-NEXT:    sltu a2, a1, a0
+; PURECAP-NEXT:    xori a2, a2, 1
+; PURECAP-NEXT:    bnez a2, .LBB25_2
 ; PURECAP-NEXT:  # %bb.1:
 ; PURECAP-NEXT:    cmove ca0, ca1
 ; PURECAP-NEXT:  .LBB25_2:
@@ -489,7 +509,8 @@ define i8 addrspace(200)* @select_ule(i8 addrspace(200)* %a, i8 addrspace(200)* 
 define i8 addrspace(200)* @select_sgt(i8 addrspace(200)* %a, i8 addrspace(200)* %b) nounwind {
 ; HYBRID-LABEL: select_sgt:
 ; HYBRID:       # %bb.0:
-; HYBRID-NEXT:    blt a1, a0, .LBB26_2
+; HYBRID-NEXT:    slt a2, a1, a0
+; HYBRID-NEXT:    bnez a2, .LBB26_2
 ; HYBRID-NEXT:  # %bb.1:
 ; HYBRID-NEXT:    cmove ca0, ca1
 ; HYBRID-NEXT:  .LBB26_2:
@@ -497,7 +518,8 @@ define i8 addrspace(200)* @select_sgt(i8 addrspace(200)* %a, i8 addrspace(200)* 
 ;
 ; PURECAP-LABEL: select_sgt:
 ; PURECAP:       # %bb.0:
-; PURECAP-NEXT:    blt a1, a0, .LBB26_2
+; PURECAP-NEXT:    slt a2, a1, a0
+; PURECAP-NEXT:    bnez a2, .LBB26_2
 ; PURECAP-NEXT:  # %bb.1:
 ; PURECAP-NEXT:    cmove ca0, ca1
 ; PURECAP-NEXT:  .LBB26_2:
@@ -510,7 +532,9 @@ define i8 addrspace(200)* @select_sgt(i8 addrspace(200)* %a, i8 addrspace(200)* 
 define i8 addrspace(200)* @select_sge(i8 addrspace(200)* %a, i8 addrspace(200)* %b) nounwind {
 ; HYBRID-LABEL: select_sge:
 ; HYBRID:       # %bb.0:
-; HYBRID-NEXT:    bge a0, a1, .LBB27_2
+; HYBRID-NEXT:    slt a2, a0, a1
+; HYBRID-NEXT:    xori a2, a2, 1
+; HYBRID-NEXT:    bnez a2, .LBB27_2
 ; HYBRID-NEXT:  # %bb.1:
 ; HYBRID-NEXT:    cmove ca0, ca1
 ; HYBRID-NEXT:  .LBB27_2:
@@ -518,7 +542,9 @@ define i8 addrspace(200)* @select_sge(i8 addrspace(200)* %a, i8 addrspace(200)* 
 ;
 ; PURECAP-LABEL: select_sge:
 ; PURECAP:       # %bb.0:
-; PURECAP-NEXT:    bge a0, a1, .LBB27_2
+; PURECAP-NEXT:    slt a2, a0, a1
+; PURECAP-NEXT:    xori a2, a2, 1
+; PURECAP-NEXT:    bnez a2, .LBB27_2
 ; PURECAP-NEXT:  # %bb.1:
 ; PURECAP-NEXT:    cmove ca0, ca1
 ; PURECAP-NEXT:  .LBB27_2:
@@ -531,7 +557,8 @@ define i8 addrspace(200)* @select_sge(i8 addrspace(200)* %a, i8 addrspace(200)* 
 define i8 addrspace(200)* @select_slt(i8 addrspace(200)* %a, i8 addrspace(200)* %b) nounwind {
 ; HYBRID-LABEL: select_slt:
 ; HYBRID:       # %bb.0:
-; HYBRID-NEXT:    blt a0, a1, .LBB28_2
+; HYBRID-NEXT:    slt a2, a0, a1
+; HYBRID-NEXT:    bnez a2, .LBB28_2
 ; HYBRID-NEXT:  # %bb.1:
 ; HYBRID-NEXT:    cmove ca0, ca1
 ; HYBRID-NEXT:  .LBB28_2:
@@ -539,7 +566,8 @@ define i8 addrspace(200)* @select_slt(i8 addrspace(200)* %a, i8 addrspace(200)* 
 ;
 ; PURECAP-LABEL: select_slt:
 ; PURECAP:       # %bb.0:
-; PURECAP-NEXT:    blt a0, a1, .LBB28_2
+; PURECAP-NEXT:    slt a2, a0, a1
+; PURECAP-NEXT:    bnez a2, .LBB28_2
 ; PURECAP-NEXT:  # %bb.1:
 ; PURECAP-NEXT:    cmove ca0, ca1
 ; PURECAP-NEXT:  .LBB28_2:
@@ -552,7 +580,9 @@ define i8 addrspace(200)* @select_slt(i8 addrspace(200)* %a, i8 addrspace(200)* 
 define i8 addrspace(200)* @select_sle(i8 addrspace(200)* %a, i8 addrspace(200)* %b) nounwind {
 ; HYBRID-LABEL: select_sle:
 ; HYBRID:       # %bb.0:
-; HYBRID-NEXT:    bge a1, a0, .LBB29_2
+; HYBRID-NEXT:    slt a2, a1, a0
+; HYBRID-NEXT:    xori a2, a2, 1
+; HYBRID-NEXT:    bnez a2, .LBB29_2
 ; HYBRID-NEXT:  # %bb.1:
 ; HYBRID-NEXT:    cmove ca0, ca1
 ; HYBRID-NEXT:  .LBB29_2:
@@ -560,7 +590,9 @@ define i8 addrspace(200)* @select_sle(i8 addrspace(200)* %a, i8 addrspace(200)* 
 ;
 ; PURECAP-LABEL: select_sle:
 ; PURECAP:       # %bb.0:
-; PURECAP-NEXT:    bge a1, a0, .LBB29_2
+; PURECAP-NEXT:    slt a2, a1, a0
+; PURECAP-NEXT:    xori a2, a2, 1
+; PURECAP-NEXT:    bnez a2, .LBB29_2
 ; PURECAP-NEXT:  # %bb.1:
 ; PURECAP-NEXT:    cmove ca0, ca1
 ; PURECAP-NEXT:  .LBB29_2:
@@ -573,7 +605,8 @@ define i8 addrspace(200)* @select_sle(i8 addrspace(200)* %a, i8 addrspace(200)* 
 define i8 addrspace(200)* @select_eq_null(i8 addrspace(200)* %a, i8 addrspace(200)* %b) nounwind {
 ; HYBRID-LABEL: select_eq_null:
 ; HYBRID:       # %bb.0:
-; HYBRID-NEXT:    beqz a0, .LBB30_2
+; HYBRID-NEXT:    seqz a2, a0
+; HYBRID-NEXT:    bnez a2, .LBB30_2
 ; HYBRID-NEXT:  # %bb.1:
 ; HYBRID-NEXT:    cmove ca0, ca1
 ; HYBRID-NEXT:  .LBB30_2:
@@ -581,7 +614,8 @@ define i8 addrspace(200)* @select_eq_null(i8 addrspace(200)* %a, i8 addrspace(20
 ;
 ; PURECAP-LABEL: select_eq_null:
 ; PURECAP:       # %bb.0:
-; PURECAP-NEXT:    beqz a0, .LBB30_2
+; PURECAP-NEXT:    seqz a2, a0
+; PURECAP-NEXT:    bnez a2, .LBB30_2
 ; PURECAP-NEXT:  # %bb.1:
 ; PURECAP-NEXT:    cmove ca0, ca1
 ; PURECAP-NEXT:  .LBB30_2:
@@ -594,7 +628,8 @@ define i8 addrspace(200)* @select_eq_null(i8 addrspace(200)* %a, i8 addrspace(20
 define i8 addrspace(200)* @select_ne_null(i8 addrspace(200)* %a, i8 addrspace(200)* %b) nounwind {
 ; HYBRID-LABEL: select_ne_null:
 ; HYBRID:       # %bb.0:
-; HYBRID-NEXT:    bnez a0, .LBB31_2
+; HYBRID-NEXT:    snez a2, a0
+; HYBRID-NEXT:    bnez a2, .LBB31_2
 ; HYBRID-NEXT:  # %bb.1:
 ; HYBRID-NEXT:    cmove ca0, ca1
 ; HYBRID-NEXT:  .LBB31_2:
@@ -602,7 +637,8 @@ define i8 addrspace(200)* @select_ne_null(i8 addrspace(200)* %a, i8 addrspace(20
 ;
 ; PURECAP-LABEL: select_ne_null:
 ; PURECAP:       # %bb.0:
-; PURECAP-NEXT:    bnez a0, .LBB31_2
+; PURECAP-NEXT:    snez a2, a0
+; PURECAP-NEXT:    bnez a2, .LBB31_2
 ; PURECAP-NEXT:  # %bb.1:
 ; PURECAP-NEXT:    cmove ca0, ca1
 ; PURECAP-NEXT:  .LBB31_2:
@@ -615,7 +651,8 @@ define i8 addrspace(200)* @select_ne_null(i8 addrspace(200)* %a, i8 addrspace(20
 define i8 addrspace(200)* @select_ugt_null(i8 addrspace(200)* %a, i8 addrspace(200)* %b) nounwind {
 ; HYBRID-LABEL: select_ugt_null:
 ; HYBRID:       # %bb.0:
-; HYBRID-NEXT:    bltu zero, a0, .LBB32_2
+; HYBRID-NEXT:    snez a2, a0
+; HYBRID-NEXT:    bnez a2, .LBB32_2
 ; HYBRID-NEXT:  # %bb.1:
 ; HYBRID-NEXT:    cmove ca0, ca1
 ; HYBRID-NEXT:  .LBB32_2:
@@ -623,7 +660,8 @@ define i8 addrspace(200)* @select_ugt_null(i8 addrspace(200)* %a, i8 addrspace(2
 ;
 ; PURECAP-LABEL: select_ugt_null:
 ; PURECAP:       # %bb.0:
-; PURECAP-NEXT:    bltu zero, a0, .LBB32_2
+; PURECAP-NEXT:    snez a2, a0
+; PURECAP-NEXT:    bnez a2, .LBB32_2
 ; PURECAP-NEXT:  # %bb.1:
 ; PURECAP-NEXT:    cmove ca0, ca1
 ; PURECAP-NEXT:  .LBB32_2:
@@ -636,7 +674,9 @@ define i8 addrspace(200)* @select_ugt_null(i8 addrspace(200)* %a, i8 addrspace(2
 define i8 addrspace(200)* @select_uge_null(i8 addrspace(200)* %a, i8 addrspace(200)* %b) nounwind {
 ; HYBRID-LABEL: select_uge_null:
 ; HYBRID:       # %bb.0:
-; HYBRID-NEXT:    bgeu a0, zero, .LBB33_2
+; HYBRID-NEXT:    sltu a2, a0, zero
+; HYBRID-NEXT:    xori a2, a2, 1
+; HYBRID-NEXT:    bnez a2, .LBB33_2
 ; HYBRID-NEXT:  # %bb.1:
 ; HYBRID-NEXT:    cmove ca0, ca1
 ; HYBRID-NEXT:  .LBB33_2:
@@ -644,7 +684,9 @@ define i8 addrspace(200)* @select_uge_null(i8 addrspace(200)* %a, i8 addrspace(2
 ;
 ; PURECAP-LABEL: select_uge_null:
 ; PURECAP:       # %bb.0:
-; PURECAP-NEXT:    bgeu a0, zero, .LBB33_2
+; PURECAP-NEXT:    sltu a2, a0, zero
+; PURECAP-NEXT:    xori a2, a2, 1
+; PURECAP-NEXT:    bnez a2, .LBB33_2
 ; PURECAP-NEXT:  # %bb.1:
 ; PURECAP-NEXT:    cmove ca0, ca1
 ; PURECAP-NEXT:  .LBB33_2:
@@ -657,7 +699,8 @@ define i8 addrspace(200)* @select_uge_null(i8 addrspace(200)* %a, i8 addrspace(2
 define i8 addrspace(200)* @select_ult_null(i8 addrspace(200)* %a, i8 addrspace(200)* %b) nounwind {
 ; HYBRID-LABEL: select_ult_null:
 ; HYBRID:       # %bb.0:
-; HYBRID-NEXT:    bltu a0, zero, .LBB34_2
+; HYBRID-NEXT:    sltiu a2, a0, 0
+; HYBRID-NEXT:    bnez a2, .LBB34_2
 ; HYBRID-NEXT:  # %bb.1:
 ; HYBRID-NEXT:    cmove ca0, ca1
 ; HYBRID-NEXT:  .LBB34_2:
@@ -665,7 +708,8 @@ define i8 addrspace(200)* @select_ult_null(i8 addrspace(200)* %a, i8 addrspace(2
 ;
 ; PURECAP-LABEL: select_ult_null:
 ; PURECAP:       # %bb.0:
-; PURECAP-NEXT:    bltu a0, zero, .LBB34_2
+; PURECAP-NEXT:    sltiu a2, a0, 0
+; PURECAP-NEXT:    bnez a2, .LBB34_2
 ; PURECAP-NEXT:  # %bb.1:
 ; PURECAP-NEXT:    cmove ca0, ca1
 ; PURECAP-NEXT:  .LBB34_2:
@@ -678,7 +722,9 @@ define i8 addrspace(200)* @select_ult_null(i8 addrspace(200)* %a, i8 addrspace(2
 define i8 addrspace(200)* @select_ule_null(i8 addrspace(200)* %a, i8 addrspace(200)* %b) nounwind {
 ; HYBRID-LABEL: select_ule_null:
 ; HYBRID:       # %bb.0:
-; HYBRID-NEXT:    bgeu zero, a0, .LBB35_2
+; HYBRID-NEXT:    snez a2, a0
+; HYBRID-NEXT:    xori a2, a2, 1
+; HYBRID-NEXT:    bnez a2, .LBB35_2
 ; HYBRID-NEXT:  # %bb.1:
 ; HYBRID-NEXT:    cmove ca0, ca1
 ; HYBRID-NEXT:  .LBB35_2:
@@ -686,7 +732,9 @@ define i8 addrspace(200)* @select_ule_null(i8 addrspace(200)* %a, i8 addrspace(2
 ;
 ; PURECAP-LABEL: select_ule_null:
 ; PURECAP:       # %bb.0:
-; PURECAP-NEXT:    bgeu zero, a0, .LBB35_2
+; PURECAP-NEXT:    snez a2, a0
+; PURECAP-NEXT:    xori a2, a2, 1
+; PURECAP-NEXT:    bnez a2, .LBB35_2
 ; PURECAP-NEXT:  # %bb.1:
 ; PURECAP-NEXT:    cmove ca0, ca1
 ; PURECAP-NEXT:  .LBB35_2:
@@ -699,7 +747,8 @@ define i8 addrspace(200)* @select_ule_null(i8 addrspace(200)* %a, i8 addrspace(2
 define i8 addrspace(200)* @select_sgt_null(i8 addrspace(200)* %a, i8 addrspace(200)* %b) nounwind {
 ; HYBRID-LABEL: select_sgt_null:
 ; HYBRID:       # %bb.0:
-; HYBRID-NEXT:    bgtz a0, .LBB36_2
+; HYBRID-NEXT:    sgtz a2, a0
+; HYBRID-NEXT:    bnez a2, .LBB36_2
 ; HYBRID-NEXT:  # %bb.1:
 ; HYBRID-NEXT:    cmove ca0, ca1
 ; HYBRID-NEXT:  .LBB36_2:
@@ -707,7 +756,8 @@ define i8 addrspace(200)* @select_sgt_null(i8 addrspace(200)* %a, i8 addrspace(2
 ;
 ; PURECAP-LABEL: select_sgt_null:
 ; PURECAP:       # %bb.0:
-; PURECAP-NEXT:    bgtz a0, .LBB36_2
+; PURECAP-NEXT:    sgtz a2, a0
+; PURECAP-NEXT:    bnez a2, .LBB36_2
 ; PURECAP-NEXT:  # %bb.1:
 ; PURECAP-NEXT:    cmove ca0, ca1
 ; PURECAP-NEXT:  .LBB36_2:
@@ -720,7 +770,9 @@ define i8 addrspace(200)* @select_sgt_null(i8 addrspace(200)* %a, i8 addrspace(2
 define i8 addrspace(200)* @select_sge_null(i8 addrspace(200)* %a, i8 addrspace(200)* %b) nounwind {
 ; HYBRID-LABEL: select_sge_null:
 ; HYBRID:       # %bb.0:
-; HYBRID-NEXT:    bgez a0, .LBB37_2
+; HYBRID-NEXT:    sltz a2, a0
+; HYBRID-NEXT:    xori a2, a2, 1
+; HYBRID-NEXT:    bnez a2, .LBB37_2
 ; HYBRID-NEXT:  # %bb.1:
 ; HYBRID-NEXT:    cmove ca0, ca1
 ; HYBRID-NEXT:  .LBB37_2:
@@ -728,7 +780,9 @@ define i8 addrspace(200)* @select_sge_null(i8 addrspace(200)* %a, i8 addrspace(2
 ;
 ; PURECAP-LABEL: select_sge_null:
 ; PURECAP:       # %bb.0:
-; PURECAP-NEXT:    bgez a0, .LBB37_2
+; PURECAP-NEXT:    sltz a2, a0
+; PURECAP-NEXT:    xori a2, a2, 1
+; PURECAP-NEXT:    bnez a2, .LBB37_2
 ; PURECAP-NEXT:  # %bb.1:
 ; PURECAP-NEXT:    cmove ca0, ca1
 ; PURECAP-NEXT:  .LBB37_2:
@@ -741,7 +795,8 @@ define i8 addrspace(200)* @select_sge_null(i8 addrspace(200)* %a, i8 addrspace(2
 define i8 addrspace(200)* @select_slt_null(i8 addrspace(200)* %a, i8 addrspace(200)* %b) nounwind {
 ; HYBRID-LABEL: select_slt_null:
 ; HYBRID:       # %bb.0:
-; HYBRID-NEXT:    bltz a0, .LBB38_2
+; HYBRID-NEXT:    slti a2, a0, 0
+; HYBRID-NEXT:    bnez a2, .LBB38_2
 ; HYBRID-NEXT:  # %bb.1:
 ; HYBRID-NEXT:    cmove ca0, ca1
 ; HYBRID-NEXT:  .LBB38_2:
@@ -749,7 +804,8 @@ define i8 addrspace(200)* @select_slt_null(i8 addrspace(200)* %a, i8 addrspace(2
 ;
 ; PURECAP-LABEL: select_slt_null:
 ; PURECAP:       # %bb.0:
-; PURECAP-NEXT:    bltz a0, .LBB38_2
+; PURECAP-NEXT:    slti a2, a0, 0
+; PURECAP-NEXT:    bnez a2, .LBB38_2
 ; PURECAP-NEXT:  # %bb.1:
 ; PURECAP-NEXT:    cmove ca0, ca1
 ; PURECAP-NEXT:  .LBB38_2:
@@ -762,7 +818,9 @@ define i8 addrspace(200)* @select_slt_null(i8 addrspace(200)* %a, i8 addrspace(2
 define i8 addrspace(200)* @select_sle_null(i8 addrspace(200)* %a, i8 addrspace(200)* %b) nounwind {
 ; HYBRID-LABEL: select_sle_null:
 ; HYBRID:       # %bb.0:
-; HYBRID-NEXT:    blez a0, .LBB39_2
+; HYBRID-NEXT:    sgtz a2, a0
+; HYBRID-NEXT:    xori a2, a2, 1
+; HYBRID-NEXT:    bnez a2, .LBB39_2
 ; HYBRID-NEXT:  # %bb.1:
 ; HYBRID-NEXT:    cmove ca0, ca1
 ; HYBRID-NEXT:  .LBB39_2:
@@ -770,7 +828,9 @@ define i8 addrspace(200)* @select_sle_null(i8 addrspace(200)* %a, i8 addrspace(2
 ;
 ; PURECAP-LABEL: select_sle_null:
 ; PURECAP:       # %bb.0:
-; PURECAP-NEXT:    blez a0, .LBB39_2
+; PURECAP-NEXT:    sgtz a2, a0
+; PURECAP-NEXT:    xori a2, a2, 1
+; PURECAP-NEXT:    bnez a2, .LBB39_2
 ; PURECAP-NEXT:  # %bb.1:
 ; PURECAP-NEXT:    cmove ca0, ca1
 ; PURECAP-NEXT:  .LBB39_2:

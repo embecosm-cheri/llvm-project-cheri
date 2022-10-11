@@ -418,24 +418,24 @@ INITIALIZE_PASS_DEPENDENCY(AAResultsWrapperPass)
 INITIALIZE_PASS_END(RegisterCoalescer, "simple-register-coalescing",
                     "Simple Register Coalescing", false, false)
 
-LLVM_NODISCARD static bool isMoveInstr(const TargetRegisterInfo &tri,
-                                       const MachineInstr *MI, Register &Src,
-                                       Register &Dst, unsigned &SrcSub,
-                                       unsigned &DstSub) {
-  if (MI->isCopy()) {
-    Dst = MI->getOperand(0).getReg();
-    DstSub = MI->getOperand(0).getSubReg();
-    Src = MI->getOperand(1).getReg();
-    SrcSub = MI->getOperand(1).getSubReg();
-  } else if (MI->isSubregToReg()) {
-    Dst = MI->getOperand(0).getReg();
-    DstSub = tri.composeSubRegIndices(MI->getOperand(0).getSubReg(),
-                                      MI->getOperand(3).getImm());
-    Src = MI->getOperand(2).getReg();
-    SrcSub = MI->getOperand(2).getSubReg();
-  } else
-    return false;
-  return true;
+[[nodiscard]] static bool isMoveInstr(const TargetRegisterInfo &tri,
+                                      const MachineInstr *MI, Register &Src,
+                                      Register &Dst, unsigned &SrcSub,
+                                      unsigned &DstSub) {
+    if (MI->isCopy()) {
+      Dst = MI->getOperand(0).getReg();
+      DstSub = MI->getOperand(0).getSubReg();
+      Src = MI->getOperand(1).getReg();
+      SrcSub = MI->getOperand(1).getSubReg();
+    } else if (MI->isSubregToReg()) {
+      Dst = MI->getOperand(0).getReg();
+      DstSub = tri.composeSubRegIndices(MI->getOperand(0).getSubReg(),
+                                        MI->getOperand(3).getImm());
+      Src = MI->getOperand(2).getReg();
+      SrcSub = MI->getOperand(2).getSubReg();
+    } else
+      return false;
+    return true;
 }
 
 /// Return true if this block should be vacated by the coalescer to eliminate
@@ -932,12 +932,8 @@ RegisterCoalescer::removeCopyByCommutingDef(const CoalescerPair &CP,
   //   = B
 
   // Update uses of IntA of the specific Val# with IntB.
-  for (MachineRegisterInfo::use_iterator UI = MRI->use_begin(IntA.reg()),
-                                         UE = MRI->use_end();
-       UI != UE;
-       /* ++UI is below because of possible MI removal */) {
-    MachineOperand &UseMO = *UI;
-    ++UI;
+  for (MachineOperand &UseMO :
+       llvm::make_early_inc_range(MRI->use_operands(IntA.reg()))) {
     if (UseMO.isUndef())
       continue;
     MachineInstr *UseMI = UseMO.getParent();
@@ -1152,7 +1148,7 @@ bool RegisterCoalescer::removePartialRedundancy(const CoalescerPair &CP,
     // we need to keep the copy of B = A at the end of Pred if we remove
     // B = A from MBB.
     bool ValB_Changed = false;
-    for (auto VNI : IntB.valnos) {
+    for (auto *VNI : IntB.valnos) {
       if (VNI->isUnused())
         continue;
       if (PVal->def < VNI->def && VNI->def < LIS->getMBBEndIdx(Pred)) {
@@ -1310,7 +1306,7 @@ bool RegisterCoalescer::reMaterializeTrivialDef(const CoalescerPair &CP,
   }
   if (!TII->isAsCheapAsAMove(*DefMI))
     return false;
-  if (!TII->isTriviallyReMaterializable(*DefMI, AA))
+  if (!TII->isTriviallyReMaterializable(*DefMI))
     return false;
   if (!definesFullReg(*DefMI, SrcReg))
     return false;
@@ -1573,9 +1569,8 @@ bool RegisterCoalescer::reMaterializeTrivialDef(const CoalescerPair &CP,
   // If the virtual SrcReg is completely eliminated, update all DBG_VALUEs
   // to describe DstReg instead.
   if (MRI->use_nodbg_empty(SrcReg)) {
-    for (MachineRegisterInfo::use_iterator UI = MRI->use_begin(SrcReg);
-         UI != MRI->use_end();) {
-      MachineOperand &UseMO = *UI++;
+    for (MachineOperand &UseMO :
+         llvm::make_early_inc_range(MRI->use_operands(SrcReg))) {
       MachineInstr *UseMI = UseMO.getParent();
       if (UseMI->isDebugInstr()) {
         if (Register::isPhysicalRegister(DstReg))
@@ -1652,7 +1647,7 @@ MachineInstr *RegisterCoalescer::eliminateUndefCopy(MachineInstr *CopyMI) {
       for (unsigned i = CopyMI->getNumOperands(); i != 0; --i) {
         MachineOperand &MO = CopyMI->getOperand(i-1);
         if (MO.isReg() && MO.isUse())
-          CopyMI->RemoveOperand(i-1);
+          CopyMI->removeOperand(i-1);
       }
       LLVM_DEBUG(dbgs() << "\tReplaced copy of <undef> value with an "
                            "implicit def\n");
@@ -2108,6 +2103,7 @@ bool RegisterCoalescer::joinCopy(MachineInstr *CopyMI, bool &Again) {
       LLVM_DEBUG(dbgs() << "Shrink LaneUses (Lane " << PrintLaneMask(S.LaneMask)
                         << ")\n");
       LIS->shrinkToUses(S, LI.reg());
+      ShrinkMainRange = true;
     }
     LI.removeEmptySubRanges();
   }
@@ -2960,7 +2956,7 @@ void JoinVals::computeAssignment(unsigned ValNo, JoinVals &Other) {
     }
 
     OtherV.Pruned = true;
-    LLVM_FALLTHROUGH;
+    [[fallthrough]];
   }
   default:
     // This value number needs to go in the final joined live range.
@@ -3403,7 +3399,7 @@ void JoinVals::eraseInstrs(SmallPtrSetImpl<MachineInstr*> &ErasedInstrs,
         if (LI != nullptr)
           dbgs() << "\t\t  LHS = " << *LI << '\n';
       });
-      LLVM_FALLTHROUGH;
+      [[fallthrough]];
     }
 
     case CR_Erase: {
@@ -3708,7 +3704,7 @@ void RegisterCoalescer::buildVRegToDbgValueMap(MachineFunction &MF)
   // vreg => DbgValueLoc map.
   auto CloseNewDVRange = [this, &ToInsert](SlotIndex Slot) {
     for (auto *X : ToInsert) {
-      for (auto Op : X->debug_operands()) {
+      for (const auto &Op : X->debug_operands()) {
         if (Op.isReg() && Op.getReg().isVirtual())
           DbgVRegToValues[Op.getReg()].push_back({Slot, X});
       }
@@ -3913,20 +3909,20 @@ void RegisterCoalescer::lateLiveIntervalUpdate() {
 bool RegisterCoalescer::
 copyCoalesceWorkList(MutableArrayRef<MachineInstr*> CurrList) {
   bool Progress = false;
-  for (unsigned i = 0, e = CurrList.size(); i != e; ++i) {
-    if (!CurrList[i])
+  for (MachineInstr *&MI : CurrList) {
+    if (!MI)
       continue;
     // Skip instruction pointers that have already been erased, for example by
     // dead code elimination.
-    if (ErasedInstrs.count(CurrList[i])) {
-      CurrList[i] = nullptr;
+    if (ErasedInstrs.count(MI)) {
+      MI = nullptr;
       continue;
     }
     bool Again = false;
-    bool Success = joinCopy(CurrList[i], Again);
+    bool Success = joinCopy(MI, Again);
     Progress |= Success;
     if (Success || !Again)
-      CurrList[i] = nullptr;
+      MI = nullptr;
   }
   return Progress;
 }
@@ -4072,13 +4068,13 @@ void RegisterCoalescer::joinAllIntervals() {
 
   // Coalesce intervals in MBB priority order.
   unsigned CurrDepth = std::numeric_limits<unsigned>::max();
-  for (unsigned i = 0, e = MBBs.size(); i != e; ++i) {
+  for (MBBPriorityInfo &MBB : MBBs) {
     // Try coalescing the collected local copies for deeper loops.
-    if (JoinGlobalCopies && MBBs[i].Depth < CurrDepth) {
+    if (JoinGlobalCopies && MBB.Depth < CurrDepth) {
       coalesceLocals();
-      CurrDepth = MBBs[i].Depth;
+      CurrDepth = MBB.Depth;
     }
-    copyCoalesceInMBB(MBBs[i].MBB);
+    copyCoalesceInMBB(MBB.MBB);
   }
   lateLiveIntervalUpdate();
   coalesceLocals();

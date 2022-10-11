@@ -27,15 +27,17 @@ namespace __sanitizer {
 struct AddressInfo {
   // Owns all the string members. Storage for them is
   // (de)allocated using sanitizer internal allocator.
-  vaddr address;
+  uptr address;
 
   char *module;
-  usize module_offset;
+  uptr module_offset;
   ModuleArch module_arch;
+  u8 uuid[kModuleUUIDSize];
+  uptr uuid_size;
 
-  static const vaddr kUnknown = ~(vaddr)0;
+  static const uptr kUnknown = ~(uptr)0;
   char *function;
-  usize function_offset;
+  uptr function_offset;
 
   char *file;
   int line;
@@ -44,14 +46,16 @@ struct AddressInfo {
   AddressInfo();
   // Deletes all strings and resets all fields.
   void Clear();
-  void FillModuleInfo(const char *mod_name, usize mod_offset, ModuleArch arch);
+  void FillModuleInfo(const char *mod_name, uptr mod_offset, ModuleArch arch);
+  void FillModuleInfo(const LoadedModule &mod);
+  uptr module_base() const { return address - module_offset; }
 };
 
 // Linked list of symbolized frames (each frame is described by AddressInfo).
 struct SymbolizedStack {
   SymbolizedStack *next;
   AddressInfo info;
-  static SymbolizedStack *New(vaddr addr);
+  static SymbolizedStack *New(uptr addr);
   // Deletes current, and all subsequent frames in the linked list.
   // The object cannot be accessed after the call to this function.
   void ClearAll();
@@ -65,14 +69,14 @@ struct DataInfo {
   // Owns all the string members. Storage for them is
   // (de)allocated using sanitizer internal allocator.
   char *module;
-  usize module_offset;
+  uptr module_offset;
   ModuleArch module_arch;
 
   char *file;
-  usize line;
+  uptr line;
   char *name;
-  vaddr start;
-  usize size;
+  uptr start;
+  uptr size;
 
   DataInfo();
   void Clear();
@@ -88,16 +92,16 @@ struct LocalInfo {
   bool has_size = false;
   bool has_tag_offset = false;
 
-  ssize frame_offset;
-  usize size;
-  usize tag_offset;
+  sptr frame_offset;
+  uptr size;
+  uptr tag_offset;
 
   void Clear();
 };
 
 struct FrameInfo {
   char *module;
-  usize module_offset;
+  uptr module_offset;
   ModuleArch module_arch;
 
   InternalMmapVector<LocalInfo> locals;
@@ -114,17 +118,17 @@ class Symbolizer final {
   static void LateInitialize();
   // Returns a list of symbolized frames for a given address (containing
   // all inlined functions, if necessary).
-  SymbolizedStack *SymbolizePC(vaddr address);
-  bool SymbolizeData(vaddr address, DataInfo *info);
-  bool SymbolizeFrame(vaddr address, FrameInfo *info);
+  SymbolizedStack *SymbolizePC(uptr address);
+  bool SymbolizeData(uptr address, DataInfo *info);
+  bool SymbolizeFrame(uptr address, FrameInfo *info);
 
   // The module names Symbolizer returns are stable and unique for every given
   // module.  It is safe to store and compare them as pointers.
-  bool GetModuleNameAndOffsetForPC(vaddr pc, const char **module_name,
-                                   usize *module_offset);
-  const char *GetModuleNameForPc(vaddr pc) {
+  bool GetModuleNameAndOffsetForPC(uptr pc, const char **module_name,
+                                   uptr *module_address);
+  const char *GetModuleNameForPc(uptr pc) {
     const char *module_name = nullptr;
-    vaddr unused;
+    uptr unused;
     if (GetModuleNameAndOffsetForPC(pc, &module_name, &unused))
       return module_name;
     return nullptr;
@@ -146,7 +150,7 @@ class Symbolizer final {
                 EndSymbolizationHook end_hook);
 
   void RefreshModules();
-  const LoadedModule *FindModuleForAddress(vaddr address);
+  const LoadedModule *FindModuleForAddress(uptr address);
 
   void InvalidateModuleList();
 
@@ -158,25 +162,25 @@ class Symbolizer final {
   // its method should be protected by |mu_|.
   class ModuleNameOwner {
    public:
-    explicit ModuleNameOwner(BlockingMutex *synchronized_by)
+    explicit ModuleNameOwner(Mutex *synchronized_by)
         : last_match_(nullptr), mu_(synchronized_by) {
       storage_.reserve(kInitialCapacity);
     }
     const char *GetOwnedCopy(const char *str);
 
    private:
-    static const usize kInitialCapacity = 1000;
+    static const uptr kInitialCapacity = 1000;
     InternalMmapVector<const char*> storage_;
     const char *last_match_;
 
-    BlockingMutex *mu_;
+    Mutex *mu_;
   } module_names_;
 
   /// Platform-specific function for creating a Symbolizer object.
   static Symbolizer *PlatformInit();
 
-  bool FindModuleNameAndOffsetForAddress(vaddr address, const char **module_name,
-                                         usize *module_offset,
+  bool FindModuleNameAndOffsetForAddress(uptr address, const char **module_name,
+                                         uptr *module_offset,
                                          ModuleArch *module_arch);
   ListOfModules modules_;
   ListOfModules fallback_modules_;
@@ -192,7 +196,7 @@ class Symbolizer final {
   // Mutex locked from public methods of |Symbolizer|, so that the internals
   // (including individual symbolizer tools and platform-specific methods) are
   // always synchronized.
-  BlockingMutex mu_;
+  Mutex mu_;
 
   IntrusiveList<SymbolizerTool> tools_;
 
@@ -209,9 +213,6 @@ class Symbolizer final {
    private:
     const Symbolizer *sym_;
   };
-
-  // Calls `LateInitialize()` on all items in `tools_`.
-  void LateInitializeTools();
 };
 
 #ifdef SANITIZER_WINDOWS

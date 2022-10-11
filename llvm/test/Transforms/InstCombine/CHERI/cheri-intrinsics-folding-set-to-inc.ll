@@ -92,8 +92,8 @@ define i8 addrspace(200)* @offset_get_set_sequence(i64 %x, i64 %y, i8 addrspace(
 ; CHECK-LABEL: define {{[^@]+}}@offset_get_set_sequence
 ; CHECK-SAME: (i64 [[X:%.*]], i64 [[Y:%.*]], i8 addrspace(200)* [[CAP:%.*]]) addrspace(200) #[[ATTR0]] {
 ; CHECK-NEXT:  entry:
-; CHECK-NEXT:    [[TMP11_IDX:%.*]] = add i64 [[Y]], [[X]]
-; CHECK-NEXT:    [[TMP11:%.*]] = getelementptr i8, i8 addrspace(200)* [[CAP]], i64 [[TMP11_IDX]]
+; CHECK-NEXT:    [[TMP5:%.*]] = getelementptr i8, i8 addrspace(200)* [[CAP]], i64 [[X]]
+; CHECK-NEXT:    [[TMP11:%.*]] = getelementptr i8, i8 addrspace(200)* [[TMP5]], i64 [[Y]]
 ; CHECK-NEXT:    ret i8 addrspace(200)* [[TMP11]]
 ;
 entry:
@@ -114,8 +114,8 @@ define i8 addrspace(200)* @offset_get_set_sequence_gep_null(i64 %x, i64 %y, i8 a
 ; CHECK-LABEL: define {{[^@]+}}@offset_get_set_sequence_gep_null
 ; CHECK-SAME: (i64 [[X:%.*]], i64 [[Y:%.*]], i8 addrspace(200)* [[CAP:%.*]]) addrspace(200) #[[ATTR0]] {
 ; CHECK-NEXT:  entry:
-; CHECK-NEXT:    [[TMP11_IDX:%.*]] = add i64 [[Y]], [[X]]
-; CHECK-NEXT:    [[TMP11:%.*]] = getelementptr i8, i8 addrspace(200)* [[CAP]], i64 [[TMP11_IDX]]
+; CHECK-NEXT:    [[TMP5:%.*]] = getelementptr i8, i8 addrspace(200)* [[CAP]], i64 [[X]]
+; CHECK-NEXT:    [[TMP11:%.*]] = getelementptr i8, i8 addrspace(200)* [[TMP5]], i64 [[Y]]
 ; CHECK-NEXT:    ret i8 addrspace(200)* [[TMP11]]
 ;
 entry:
@@ -132,8 +132,8 @@ define i8 addrspace(200)* @addr_get_set_sequence(i64 %x, i64 %y, i8 addrspace(20
 ; CHECK-LABEL: define {{[^@]+}}@addr_get_set_sequence
 ; CHECK-SAME: (i64 [[X:%.*]], i64 [[Y:%.*]], i8 addrspace(200)* [[CAP:%.*]]) addrspace(200) #[[ATTR0]] {
 ; CHECK-NEXT:  entry:
-; CHECK-NEXT:    [[TMP11_IDX:%.*]] = add i64 [[Y]], [[X]]
-; CHECK-NEXT:    [[TMP11:%.*]] = getelementptr i8, i8 addrspace(200)* [[CAP]], i64 [[TMP11_IDX]]
+; CHECK-NEXT:    [[TMP5:%.*]] = getelementptr i8, i8 addrspace(200)* [[CAP]], i64 [[X]]
+; CHECK-NEXT:    [[TMP11:%.*]] = getelementptr i8, i8 addrspace(200)* [[TMP5]], i64 [[Y]]
 ; CHECK-NEXT:    ret i8 addrspace(200)* [[TMP11]]
 ;
 entry:
@@ -154,8 +154,8 @@ define i8 addrspace(200)* @addr_get_set_sequence_gep_null(i64 %x, i64 %y, i8 add
 ; CHECK-LABEL: define {{[^@]+}}@addr_get_set_sequence_gep_null
 ; CHECK-SAME: (i64 [[X:%.*]], i64 [[Y:%.*]], i8 addrspace(200)* [[CAP:%.*]]) addrspace(200) #[[ATTR0]] {
 ; CHECK-NEXT:  entry:
-; CHECK-NEXT:    [[TMP11_IDX:%.*]] = add i64 [[Y]], [[X]]
-; CHECK-NEXT:    [[TMP11:%.*]] = getelementptr i8, i8 addrspace(200)* [[CAP]], i64 [[TMP11_IDX]]
+; CHECK-NEXT:    [[TMP5:%.*]] = getelementptr i8, i8 addrspace(200)* [[CAP]], i64 [[X]]
+; CHECK-NEXT:    [[TMP11:%.*]] = getelementptr i8, i8 addrspace(200)* [[TMP5]], i64 [[Y]]
 ; CHECK-NEXT:    ret i8 addrspace(200)* [[TMP11]]
 ;
 entry:

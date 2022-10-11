@@ -16,24 +16,24 @@
 // Should be the same other than some ELF flags:
 // RUN: diff -u %t-mips.s %t-hybrid.s
 
-int foo(int* i) { // CHECK-IR:  call void @llvm.dbg.declare(metadata i32{{( addrspace\(200\)\* addrspace\(200\)\*)|(\*\*)}} %i.addr, metadata !14, metadata !DIExpression()), !dbg !15
+int foo(int* i) { // CHECK-IR:  call void @llvm.dbg.declare(metadata ptr{{( addrspace\(200\))?}} %i.addr, metadata !14, metadata !DIExpression()), !dbg !15
 	if (i) {
-		int j = 2; // CHECK-IR: call void @llvm.dbg.declare(metadata i32{{( addrspace\(200\))?}}* %j, metadata !19, metadata !DIExpression()), !dbg !21
+		int j = 2; // CHECK-IR: call void @llvm.dbg.declare(metadata ptr{{( addrspace\(200\))?}} %j, metadata !19, metadata !DIExpression()), !dbg !21
 	}
 	else {
-		int j = 3;  // CHECK-IR: call void @llvm.dbg.declare(metadata i32{{( addrspace\(200\))?}}* %j1, metadata !23, metadata !DIExpression()), !dbg !25
+		int j = 3;  // CHECK-IR: call void @llvm.dbg.declare(metadata ptr{{( addrspace\(200\))?}} %j1, metadata !23, metadata !DIExpression()), !dbg !25
 	}
 	return (int)i;
 // CHECK-IR: ret i32 %{{.+}}, !dbg !28
 // Both MIPS and purecap should have the same number of metadata nodes:
-// CHECK-IR: !13 = !DIDerivedType(tag: DW_TAG_pointer_type, baseType: !4, size: {{64|128|256}})
-// CHECK-IR: !14 = !DILocalVariable(name: "i", arg: 1, scope: !9, file: !10, line: [[#FOO_DECL_LINE:]], type: !13)
+// CHECK-IR: !12 = !DIDerivedType(tag: DW_TAG_pointer_type, baseType: !3, size: {{64|128|256}})
+// CHECK-IR: !14 = !DILocalVariable(name: "i", arg: 1, scope: !8, file: !9, line: [[#FOO_DECL_LINE:]], type: !12)
 // check that we have both j variables listed:
-// CHECK-IR: !19 = !DILocalVariable(name: "j", scope: !20, file: !10, line: [[#FOO_DECL_LINE + 2]], type: !4)
-// CHECK-IR: !20 = distinct !DILexicalBlock(scope: !17, file: !10, line: [[#FOO_DECL_LINE + 1]], column: 9)
-// CHECK-IR: !23 = !DILocalVariable(name: "j", scope: !24, file: !10, line: [[#FOO_DECL_LINE + 5]], type: !4)
-// CHECK-IR: !24 = distinct !DILexicalBlock(scope: !17, file: !10, line: [[#FOO_DECL_LINE + 4]], column: 7)
-// CHECK-IR: !28 = !DILocation(line: [[#FOO_DECL_LINE + 7]], column: 2, scope: !9)
+// CHECK-IR: !19 = !DILocalVariable(name: "j", scope: !20, file: !9, line: [[#FOO_DECL_LINE + 2]], type: !3)
+// CHECK-IR: !20 = distinct !DILexicalBlock(scope: !17, file: !9, line: [[#FOO_DECL_LINE + 1]], column: 9)
+// CHECK-IR: !23 = !DILocalVariable(name: "j", scope: !24, file: !9, line: [[#FOO_DECL_LINE + 5]], type: !3)
+// CHECK-IR: !24 = distinct !DILexicalBlock(scope: !17, file: !9, line: [[#FOO_DECL_LINE + 4]], column: 7)
+// CHECK-IR: !28 = !DILocation(line: [[#FOO_DECL_LINE + 7]], column: 2, scope: !8)
 }
 
 // Previoulsy llvm-dwarfdump would not handle MIPS relocations for a CHERI triple:
@@ -84,7 +84,7 @@ int foo(int* i) { // CHECK-IR:  call void @llvm.dbg.declare(metadata i32{{( addr
 // DEBUG-INFO-NEXT:                   DW_AT_name	("i")
 // DEBUG-INFO-NEXT:                   DW_AT_decl_file	("{{.+}}/test/CodeGen/cheri/cheri-debug-info.c")
 // DEBUG-INFO-NEXT:                   DW_AT_decl_line	([[#FOO_DECL_LINE]])
-// DEBUG-INFO-NEXT:                   DW_AT_type	([[INTPTR_TYPE_INFO_ADDR:0x000.+]] "int*")
+// DEBUG-INFO-NEXT:                   DW_AT_type	([[INTPTR_TYPE_INFO_ADDR:0x000.+]] "int *")
 // DEBUG-INFO-EMPTY:
 // DEBUG-INFO-NEXT: DW_TAG_lexical_block
 // DEBUG-INFO-NEXT:                   DW_AT_low_pc	(0x00000000000000{{.+}})
@@ -169,7 +169,7 @@ int foo(int* i) { // CHECK-IR:  call void @llvm.dbg.declare(metadata i32{{( addr
 // DEBUG-INFO-OPT-NEXT:                         DW_AT_name	("i")
 // DEBUG-INFO-OPT-NEXT:                         DW_AT_decl_file	("{{.+}}cheri-debug-info.c")
 // DEBUG-INFO-OPT-NEXT:                         DW_AT_decl_line	([[#FOO_DECL_LINE]])
-// DEBUG-INFO-OPT-NEXT:                         DW_AT_type	([[INT_PTR_INFO_LOC:0x0000006(2|4)]] "int*")
+// DEBUG-INFO-OPT-NEXT:                         DW_AT_type	([[INT_PTR_INFO_LOC:0x0000006(2|4)]] "int *")
 // DEBUG-INFO-OPT-EMPTY:
 // DEBUG-INFO-OPT-NEXT: 0x000000{{.+}}:     NULL
 // DEBUG-INFO-OPT-EMPTY:
