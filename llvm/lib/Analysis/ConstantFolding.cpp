@@ -373,9 +373,7 @@ Constant *llvm::ConstantFoldLoadThroughBitcast(Constant *C, Type *DestTy,
     // in this IR-level transformation (the common NULL case is handled above).
     if (SrcSize == DestSize &&
         DL.isNonIntegralPointerType(SrcTy->getScalarType()) ==
-            DL.isNonIntegralPointerType(DestTy->getScalarType()) &&
-        DL.isFatPointer(SrcTy->getScalarType()) ==
-            DL.isFatPointer(DestTy->getScalarType())) {
+            DL.isNonIntegralPointerType(DestTy->getScalarType())) {
       Instruction::CastOps Cast = Instruction::BitCast;
       // If we are going from a pointer to int or vice versa, we spell the cast
       // differently.

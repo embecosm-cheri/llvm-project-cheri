@@ -3493,11 +3493,11 @@ bool CastInst::isBitOrNoopPointerCastable(Type *SrcTy, Type *DestTy,
   if (auto *PtrTy = dyn_cast<PointerType>(SrcTy))
     if (auto *IntTy = dyn_cast<IntegerType>(DestTy))
       return (IntTy->getBitWidth() == DL.getPointerTypeSizeInBits(PtrTy) &&
-              !DL.isNonIntegralPointerType(PtrTy) && !DL.isFatPointer(PtrTy));
+              !DL.isNonIntegralPointerType(PtrTy));
   if (auto *PtrTy = dyn_cast<PointerType>(DestTy))
     if (auto *IntTy = dyn_cast<IntegerType>(SrcTy))
       return (IntTy->getBitWidth() == DL.getPointerTypeSizeInBits(PtrTy) &&
-              !DL.isNonIntegralPointerType(PtrTy) && !DL.isFatPointer(PtrTy));
+              !DL.isNonIntegralPointerType(PtrTy));
 
   return isBitCastable(SrcTy, DestTy);
 }

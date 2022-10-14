@@ -1964,19 +1964,13 @@ static bool canConvertValue(const DataLayout &DL, Type *OldTy, Type *NewTy) {
 
     // We can convert integers to integral pointers, but not to non-integral
     // pointers.
-    if (OldTy->isIntegerTy()) {
-      if (DL.isFatPointer(NewTy))
-        return false;
+    if (OldTy->isIntegerTy())
       return !DL.isNonIntegralPointerType(NewTy);
-    }
 
     // We can convert integral pointers to integers, but non-integral pointers
     // need to remain pointers.
-    if (!DL.isNonIntegralPointerType(OldTy)) {
-      if (DL.isFatPointer(OldTy))
-        return false;
+    if (!DL.isNonIntegralPointerType(OldTy))
       return NewTy->isIntegerTy();
-    }
 
     return false;
   }
@@ -4981,7 +4975,7 @@ bool SROAPass::deleteDeadInstructions(
   bool Changed = false;
   while (!DeadInsts.empty()) {
     Instruction *I = dyn_cast_or_null<Instruction>(DeadInsts.pop_back_val());
-    if (!I) continue; 
+    if (!I) continue;
     LLVM_DEBUG(dbgs() << "Deleting dead instruction: " << *I << "\n");
 
     // If the instruction is an alloca, find the possible dbg.declare connected

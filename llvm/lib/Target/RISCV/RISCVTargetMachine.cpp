@@ -74,9 +74,9 @@ static std::string computeDataLayout(const Triple &TT, StringRef FS,
   StringRef PurecapOptions = "";
   if (FS.contains("+xcheri")) {
     if (TT.isArch64Bit())
-      CapTypes = "-pf200:128:128:128:64";
+      CapTypes = "-ni:200-pf200:128:128:128:64";
     else
-      CapTypes = "-pf200:64:64:64:32";
+      CapTypes = "-ni:200-pf200:64:64:64:32";
 
     RISCVABI::ABI ABI = RISCVABI::getTargetABI(Options.MCOptions.getABIName());
     if (ABI != RISCVABI::ABI_Unknown && RISCVABI::isCheriPureCapABI(ABI))

@@ -38,13 +38,13 @@ protected:
         ABI == "il32pc64" || ABI == "il32pc64f" || ABI == "il32pc64d" ||
         ABI == "il32pc64e") {
       if (ISAInfo->hasExtension("xcheri"))
-        Layout = "e-m:e-pf200:64:64:64:32-p:32:32-i64:64-n32-S128";
+        Layout = "e-m:e-ni:200-pf200:64:64:64:32-p:32:32-i64:64-n32-S128";
       else
         Layout = "e-m:e-p:32:32-i64:64-n32-S128";
     } else if (ABI == "lp64" || ABI == "lp64f" || ABI == "lp64d" ||
                ABI == "l64pc128" || ABI == "l64pc128f" || ABI == "l64pc128d") {
       if (ISAInfo->hasExtension("xcheri"))
-        Layout = "e-m:e-pf200:128:128:128:64-p:64:64-i64:64-i128:128-n64-S128";
+        Layout = "e-m:e-ni:200-pf200:128:128:128:64-p:64:64-i64:64-i128:128-n64-S128";
       else
         Layout = "e-m:e-p:64:64-i64:64-i128:128-n64-S128";
     } else

@@ -100,13 +100,13 @@ static std::string computeDataLayout(const Triple &TT, StringRef CPU,
   // For CHERI256 we need to ensure at least capability-aligned stacks
   unsigned MinStackAlignBits = 1;
   if (FS.find("+cheri128") != StringRef::npos) {
-    Ret += "-pf200:128:128:128:64";
+    Ret += "-ni:200-pf200:128:128:128:64";
     MinStackAlignBits = 128;
   } else if (FS.find("+cheri64") != StringRef::npos) {
-    Ret += "-pf200:64:64:64:32";
+    Ret += "-ni:200-pf200:64:64:64:32";
     MinStackAlignBits = 64;
   } else if (FS.find("+cheri256") != StringRef::npos) {
-    Ret += "-pf200:256:256:256:64";
+    Ret += "-ni:200-pf200:256:256:256:64";
     MinStackAlignBits = 256;
   }
 
