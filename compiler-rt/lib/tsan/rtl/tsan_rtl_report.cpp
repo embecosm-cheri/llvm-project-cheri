@@ -274,7 +274,7 @@ int ScopedReportBase::AddMutex(uptr addr, StackID creation_stack_id) {
   return rm->id;
 }
 
-void ScopedReportBase::AddLocation(uptr addr, usize size) {
+void ScopedReportBase::AddLocation(uptr addr, uptr size) {
   if (addr == 0)
     return;
 #if !SANITIZER_GO

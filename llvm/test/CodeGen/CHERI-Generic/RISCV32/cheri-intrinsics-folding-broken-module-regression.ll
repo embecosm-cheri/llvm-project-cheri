@@ -40,6 +40,7 @@ define void @g(i32 %x, i32 %y) addrspace(200) nounwind {
 ; CHECK-NEXT:    [[TMP11:%.*]] = tail call i8 addrspace(200)* @llvm.cheri.cap.offset.set.i32(i8 addrspace(200)* bitcast (i32 addrspace(200)* @d to i8 addrspace(200)*), i32 [[ADD1]])
 ; CHECK-NEXT:    store i8 addrspace(200)* [[TMP11]], i8 addrspace(200)* addrspace(200)* @e, align 32
 ; CHECK-NEXT:    ret void
+;
   %x.addr = alloca i32, align 4, addrspace(200)
   %y.addr = alloca i32, align 4, addrspace(200)
   store i32 %x, i32 addrspace(200)* %x.addr, align 4

@@ -401,8 +401,10 @@ static Address emitVoidPtrVAArg(CodeGenFunction &CGF, Address VAListAddr,
 
   // Cast the address we've calculated to the right type.
   llvm::Type *DirectTy = CGF.ConvertTypeForMem(ValueTy), *ElementTy = DirectTy;
-  if (IsIndirect)
-    DirectTy = DirectTy->getPointerTo(0);
+  if (IsIndirect) {
+    unsigned AllocaAS = CGF.CGM.getDataLayout().getAllocaAddrSpace();
+    DirectTy = DirectTy->getPointerTo(AllocaAS);
+  }
 
   Address Addr =
       emitVoidPtrDirectVAArg(CGF, VAListAddr, DirectTy, DirectSize, DirectAlign,
@@ -4347,7 +4349,8 @@ Address X86_64ABIInfo::EmitVAArg(CodeGenFunction &CGF, Address VAListAddr,
     // register save area.
     if (TyAlign.getQuantity() > 8) {
       Address Tmp = CGF.CreateMemTemp(Ty);
-      CGF.Builder.CreateMemCpy(Tmp, RegAddr, TySize, false);
+      CGF.Builder.CreateMemCpy(Tmp, RegAddr, TySize,
+                               llvm::PreserveCheriTags::TODO, false);
       RegAddr = Tmp;
     }
 

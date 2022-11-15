@@ -290,6 +290,13 @@ static StringRef substr(StringRef Str, uint64_t Len) {
   return Len >= Str.size() ? Str : Str.substr(0, Len);
 }
 
+static Value *mergeAttributesAndFlags(CallInst *NewCI, const CallInst &Old) {
+  NewCI->setAttributes(AttributeList::get(
+      NewCI->getContext(), {NewCI->getAttributes(), Old.getAttributes()}));
+  NewCI->removeRetAttrs(AttributeFuncs::typeIncompatible(NewCI->getType()));
+  return NewCI;
+}
+
 //===----------------------------------------------------------------------===//
 // String and Memory Library Call Optimizations
 //===----------------------------------------------------------------------===//
@@ -334,7 +341,8 @@ Value *LibCallSimplifier::emitStrLenMemCpy(Value *Src, Value *Dst, uint64_t Len,
                  ConstantInt::get(
                      DL.getIntPtrType(Src->getContext(),
                                       Src->getType()->getPointerAddressSpace()),
-                     Len + 1));
+                     Len + 1),
+                 PreserveCheriTags::Unnecessary);
   return Dst;
 }
 
@@ -660,6 +668,7 @@ Value *LibCallSimplifier::optimizeStrCpy(CallInst *CI, IRBuilderBase &B) {
   NewCI->setAttributes(CI->getAttributes());
   NewCI->removeRetAttrs(AttributeFuncs::typeIncompatible(NewCI->getType()));
   copyFlags(*CI, NewCI);
+  mergeAttributesAndFlags(NewCI, *CI);
   return Dst;
 }
 
@@ -694,6 +703,7 @@ Value *LibCallSimplifier::optimizeStpCpy(CallInst *CI, IRBuilderBase &B) {
   NewCI->setAttributes(CI->getAttributes());
   NewCI->removeRetAttrs(AttributeFuncs::typeIncompatible(NewCI->getType()));
   copyFlags(*CI, NewCI);
+  mergeAttributesAndFlags(NewCI, *CI);
   return DstEnd;
 }
 
@@ -758,6 +768,7 @@ Value *LibCallSimplifier::optimizeStrNCpy(CallInst *CI, IRBuilderBase &B) {
   NewCI->setAttributes(CI->getAttributes());
   NewCI->removeRetAttrs(AttributeFuncs::typeIncompatible(NewCI->getType()));
   copyFlags(*CI, NewCI);
+  mergeAttributesAndFlags(NewCI, *CI);
   return Dst;
 }
 
@@ -1451,6 +1462,7 @@ Value *LibCallSimplifier::optimizeMemCpy(CallInst *CI, IRBuilderBase &B) {
   NewCI->setAttributes(CI->getAttributes());
   NewCI->removeRetAttrs(AttributeFuncs::typeIncompatible(NewCI->getType()));
   copyFlags(*CI, NewCI);
+  mergeAttributesAndFlags(NewCI, *CI);
   return CI->getArgOperand(0);
 }
 
@@ -1480,7 +1492,8 @@ Value *LibCallSimplifier::optimizeMemCCpy(CallInst *CI, IRBuilderBase &B) {
   if (Pos == StringRef::npos) {
     if (N->getZExtValue() <= SrcStr.size()) {
       copyFlags(*CI, B.CreateMemCpy(Dst, Align(1), Src, Align(1),
-                                    CI->getArgOperand(3)));
+                                    CI->getArgOperand(3),
+                                    PreserveCheriTags::Unnecessary));
       return Constant::getNullValue(CI->getType());
     }
     return nullptr;
@@ -1489,7 +1502,8 @@ Value *LibCallSimplifier::optimizeMemCCpy(CallInst *CI, IRBuilderBase &B) {
   Value *NewN =
       ConstantInt::get(N->getType(), std::min(uint64_t(Pos + 1), N->getZExtValue()));
   // memccpy -> llvm.memcpy
-  copyFlags(*CI, B.CreateMemCpy(Dst, Align(1), Src, Align(1), NewN));
+  copyFlags(*CI, B.CreateMemCpy(Dst, Align(1), Src, Align(1), NewN,
+                                PreserveCheriTags::Unnecessary));
   return Pos + 1 <= N->getZExtValue()
              ? B.CreateInBoundsGEP(B.getInt8Ty(), Dst, NewN)
              : Constant::getNullValue(CI->getType());
@@ -1499,14 +1513,15 @@ Value *LibCallSimplifier::optimizeMemPCpy(CallInst *CI, IRBuilderBase &B) {
   Value *Dst = CI->getArgOperand(0);
   Value *N = CI->getArgOperand(2);
   // mempcpy(x, y, n) -> llvm.memcpy(align 1 x, align 1 y, n), x + n
-  CallInst *NewCI =
-      B.CreateMemCpy(Dst, Align(1), CI->getArgOperand(1), Align(1), N);
+  CallInst *NewCI = B.CreateMemCpy(Dst, Align(1), CI->getArgOperand(1),
+                                   Align(1), N, shouldPreserveTags(CI));
   // Propagate attributes, but memcpy has no return value, so make sure that
   // any return attributes are compliant.
   // TODO: Attach return value attributes to the 1st operand to preserve them?
   NewCI->setAttributes(CI->getAttributes());
   NewCI->removeRetAttrs(AttributeFuncs::typeIncompatible(NewCI->getType()));
   copyFlags(*CI, NewCI);
+  mergeAttributesAndFlags(NewCI, *CI);
   return B.CreateInBoundsGEP(B.getInt8Ty(), Dst, N);
 }
 
@@ -1522,6 +1537,7 @@ Value *LibCallSimplifier::optimizeMemMove(CallInst *CI, IRBuilderBase &B) {
   NewCI->setAttributes(CI->getAttributes());
   NewCI->removeRetAttrs(AttributeFuncs::typeIncompatible(NewCI->getType()));
   copyFlags(*CI, NewCI);
+  mergeAttributesAndFlags(NewCI, *CI);
   return CI->getArgOperand(0);
 }
 
@@ -1537,6 +1553,7 @@ Value *LibCallSimplifier::optimizeMemSet(CallInst *CI, IRBuilderBase &B) {
   NewCI->setAttributes(CI->getAttributes());
   NewCI->removeRetAttrs(AttributeFuncs::typeIncompatible(NewCI->getType()));
   copyFlags(*CI, NewCI);
+  mergeAttributesAndFlags(NewCI, *CI);
   return CI->getArgOperand(0);
 }
 
@@ -2817,7 +2834,8 @@ Value *LibCallSimplifier::optimizeSPrintFString(CallInst *CI,
             DL.getIntPtrType(
                 CI->getContext(),
                 CI->getArgOperand(0)->getType()->getPointerAddressSpace()),
-            FormatStr.size() + 1)); // Copy the null byte.
+            FormatStr.size() + 1), // Copy the null byte.
+        PreserveCheriTags::Unnecessary);
     return ConstantInt::get(CI->getType(), FormatStr.size());
   }
 
@@ -2852,7 +2870,8 @@ Value *LibCallSimplifier::optimizeSPrintFString(CallInst *CI,
 
     uint64_t SrcLen = GetStringLength(CI->getArgOperand(2));
     if (SrcLen) {
-      B.CreateMemCpy(Dest, Align(1), CI->getArgOperand(2), Align(1), SrcLen);
+      B.CreateMemCpy(Dest, Align(1), CI->getArgOperand(2), Align(1), SrcLen,
+                     PreserveCheriTags::Unnecessary);
       // Returns total number of characters written without null-character.
       return ConstantInt::get(CI->getType(), SrcLen - 1);
     } else if (Value *V = emitStpCpy(Dest, CI->getArgOperand(2), B, TLI)) {
@@ -2875,7 +2894,8 @@ Value *LibCallSimplifier::optimizeSPrintFString(CallInst *CI,
       return nullptr;
     Value *IncLen =
         B.CreateAdd(Len, ConstantInt::get(Len->getType(), 1), "leninc");
-    B.CreateMemCpy(Dest, Align(1), CI->getArgOperand(2), Align(1), IncLen);
+    B.CreateMemCpy(Dest, Align(1), CI->getArgOperand(2), Align(1), IncLen,
+                   PreserveCheriTags::Unnecessary);
 
     // The sprintf result is the unincremented number of bytes in the string.
     return B.CreateIntCast(Len, CI->getType(), false);
@@ -2951,7 +2971,8 @@ Value *LibCallSimplifier::optimizeSnPrintFString(CallInst *CI,
         B.CreateMemCpy(
             CI->getArgOperand(0), Align(1), CI->getArgOperand(2), Align(1),
             ConstantInt::get(DL.getIntPtrType(CI->getContext(), CI->getArgOperand(0)->getType()->getPointerAddressSpace()),
-                             FormatStr.size() + 1))); // Copy the null byte.
+                             FormatStr.size() + 1), // Copy the null byte.
+            PreserveCheriTags::Unnecessary));
     return ConstantInt::get(CI->getType(), FormatStr.size());
   }
 
@@ -2992,7 +3013,8 @@ Value *LibCallSimplifier::optimizeSnPrintFString(CallInst *CI,
       copyFlags(
           *CI, B.CreateMemCpy(CI->getArgOperand(0), Align(1),
                               CI->getArgOperand(3), Align(1),
-                              ConstantInt::get(CI->getType(), Str.size() + 1)));
+                              ConstantInt::get(CI->getType(), Str.size() + 1),
+                              PreserveCheriTags::Unnecessary));
 
       // The snprintf result is the unincremented number of bytes in the string.
       return ConstantInt::get(CI->getType(), Str.size());
@@ -3171,7 +3193,8 @@ Value *LibCallSimplifier::optimizeBCopy(CallInst *CI, IRBuilderBase &B) {
   // bcopy(src, dst, n) -> llvm.memmove(dst, src, n)
   return copyFlags(*CI, B.CreateMemMove(CI->getArgOperand(1), Align(1),
                                         CI->getArgOperand(0), Align(1),
-                                        CI->getArgOperand(2)));
+                                        CI->getArgOperand(2),
+                                        shouldPreserveTags(CI)));
 }
 
 bool LibCallSimplifier::hasFloatVersion(const Module *M, StringRef FuncName) {
@@ -3619,6 +3642,7 @@ Value *FortifiedLibCallSimplifier::optimizeMemCpyChk(CallInst *CI,
     NewCI->setAttributes(CI->getAttributes());
     NewCI->removeRetAttrs(AttributeFuncs::typeIncompatible(NewCI->getType()));
     copyFlags(*CI, NewCI);
+    mergeAttributesAndFlags(NewCI, *CI);
     return CI->getArgOperand(0);
   }
   return nullptr;
@@ -3633,6 +3657,7 @@ Value *FortifiedLibCallSimplifier::optimizeMemMoveChk(CallInst *CI,
     NewCI->setAttributes(CI->getAttributes());
     NewCI->removeRetAttrs(AttributeFuncs::typeIncompatible(NewCI->getType()));
     copyFlags(*CI, NewCI);
+    mergeAttributesAndFlags(NewCI, *CI);
     return CI->getArgOperand(0);
   }
   return nullptr;
@@ -3647,6 +3672,7 @@ Value *FortifiedLibCallSimplifier::optimizeMemSetChk(CallInst *CI,
     NewCI->setAttributes(CI->getAttributes());
     NewCI->removeRetAttrs(AttributeFuncs::typeIncompatible(NewCI->getType()));
     copyFlags(*CI, NewCI);
+    mergeAttributesAndFlags(NewCI, *CI);
     return CI->getArgOperand(0);
   }
   return nullptr;
@@ -3662,6 +3688,7 @@ Value *FortifiedLibCallSimplifier::optimizeMemPCpyChk(CallInst *CI,
       NewCI->setAttributes(CI->getAttributes());
       NewCI->removeRetAttrs(AttributeFuncs::typeIncompatible(NewCI->getType()));
       return copyFlags(*CI, NewCI);
+      return mergeAttributesAndFlags(cast<CallInst>(Call), *CI);
     }
   return nullptr;
 }

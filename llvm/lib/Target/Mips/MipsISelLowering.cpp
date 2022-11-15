@@ -5694,7 +5694,10 @@ EVT MipsTargetLowering::getOptimalMemOpType(
       // memcpy/memmove call (by returning MVT::isVoid), since it could still
       // contain a capability if sufficiently aligned at runtime. Zeroing
       // memsets can fall back on non-capability loads/stores.
-      return MVT::isVoid;
+      // Note: We can still inline the memcpy if the frontend has marked the
+      // copy as not requiring tag preserving behaviour.
+      if (Op.PreserveTags != PreserveCheriTags::Unnecessary)
+        return MVT::isVoid;
     }
     if (Subtarget.isGP64bit() && Op.isAligned(Align(8)))
       return MVT::i64;
@@ -5887,8 +5890,7 @@ void MipsTargetLowering::passByValArg(
   Chain = DAG.getMemcpy(Chain, DL, Dst, Src,
                         DAG.getIntPtrConstant(MemCpySize, DL), Alignment,
                         /*isVolatile=*/false, /*AlwaysInline=*/false,
-                        /*isTailCall=*/false,
-                        /*MustPreserveCheriCapabilities=*/false,
+                        /*isTailCall=*/false, llvm::PreserveCheriTags::Unknown,
                         MachinePointerInfo(), MachinePointerInfo());
   MemOpChains.push_back(Chain);
 }

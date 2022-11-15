@@ -8965,7 +8965,7 @@ bool PointerExprEvaluator::VisitCastExpr(const CastExpr *E) {
       // Casts from __(u)intcap_t propagate the null-derived status
       Result.MustBeNullDerivedCap = Value.mustBeNullDerivedCap();
     } else {
-      assert(SubExpr->getType()->isIntegerType());
+      assert(SubExpr->getType()->isIntegralOrEnumerationType());
       // In purecap mode this expression can only be provenance-carrying if
       // it came from a valid __(u)_intcap_t. In hybrid mode casting from
       // integer to pointer can result in a valid tagged capability.
@@ -13556,15 +13556,10 @@ bool IntExprEvaluator::VisitCastExpr(const CastExpr *E) {
     if (!Visit(SubExpr))
       return false;
 
-    // CHERI: If we are doing an integer cast from a capability, then extract
-    // the int value
-    if (SrcType->isIntCapType()) {
-      APSInt IntValue;
-      if (!EvaluateInteger(SubExpr, IntValue, Info))
-        return false;
-      IntValue.setIsUnsigned(SrcType->isUnsignedIntegerOrEnumerationType());
-      Result = APValue(IntValue);
-    }
+    // CHERI: If we are doing an integer cast to a capability from a plain
+    // integer then make sure we don't reintroduce provenance.
+    if (DestType->isIntCapType() && !SrcType->isIntCapType())
+      Result.setMustBeNullDerivedCap(true);
 
     if (!Result.isInt()) {
       // Allow casts of address-of-label differences if they are no-ops

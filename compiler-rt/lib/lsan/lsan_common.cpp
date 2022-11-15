@@ -961,7 +961,7 @@ void __lsan_ignore_object(const void *p) {
 }
 
 SANITIZER_INTERFACE_ATTRIBUTE
-void __lsan_register_root_region(const void *begin, usize size) {
+void __lsan_register_root_region(const void *begin, uptr size) {
 #if CAN_SANITIZE_LEAKS
   Lock l(&global_mutex);
   RootRegion region = {reinterpret_cast<uptr>(begin), size};
@@ -971,7 +971,7 @@ void __lsan_register_root_region(const void *begin, usize size) {
 }
 
 SANITIZER_INTERFACE_ATTRIBUTE
-void __lsan_unregister_root_region(const void *begin, usize size) {
+void __lsan_unregister_root_region(const void *begin, uptr size) {
 #if CAN_SANITIZE_LEAKS
   Lock l(&global_mutex);
   bool removed = false;

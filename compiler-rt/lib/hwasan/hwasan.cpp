@@ -387,7 +387,7 @@ void __hwasan_library_unloaded(ElfW(Addr) base, const ElfW(Phdr) * phdr,
       TagMemory(base + phdr->p_vaddr, phdr->p_memsz, 0);
 }
 
-void __hwasan_print_shadow(const void *p, usize sz) {
+void __hwasan_print_shadow(const void *p, uptr sz) {
   uptr ptr_raw = UntagAddr(reinterpret_cast<uptr>(p));
   uptr shadow_first = MemToShadow(ptr_raw);
   uptr shadow_last = MemToShadow(ptr_raw + sz - 1);
@@ -404,7 +404,7 @@ void __hwasan_print_shadow(const void *p, usize sz) {
   }
 }
 
-sptr __hwasan_test_shadow(const void *p, usize sz) {
+sptr __hwasan_test_shadow(const void *p, uptr sz) {
   if (sz == 0)
     return -1;
   tag_t ptr_tag = GetTagFromPointer((uptr)p);
@@ -438,7 +438,7 @@ void __sanitizer_unaligned_store64(uu64 *p, u64 x) {
   *p = x;
 }
 
-void __hwasan_loadN(uptr p, usize sz) {
+void __hwasan_loadN(uptr p, uptr sz) {
   CheckAddressSized<ErrorAction::Abort, AccessType::Load>(p, sz);
 }
 void __hwasan_load1(uptr p) {
@@ -457,7 +457,7 @@ void __hwasan_load16(uptr p) {
   CheckAddress<ErrorAction::Abort, AccessType::Load, 4>(p);
 }
 
-void __hwasan_loadN_noabort(uptr p, usize sz) {
+void __hwasan_loadN_noabort(uptr p, uptr sz) {
   CheckAddressSized<ErrorAction::Recover, AccessType::Load>(p, sz);
 }
 void __hwasan_load1_noabort(uptr p) {
@@ -476,7 +476,7 @@ void __hwasan_load16_noabort(uptr p) {
   CheckAddress<ErrorAction::Recover, AccessType::Load, 4>(p);
 }
 
-void __hwasan_storeN(uptr p, usize sz) {
+void __hwasan_storeN(uptr p, uptr sz) {
   CheckAddressSized<ErrorAction::Abort, AccessType::Store>(p, sz);
 }
 void __hwasan_store1(uptr p) {
@@ -495,7 +495,7 @@ void __hwasan_store16(uptr p) {
   CheckAddress<ErrorAction::Abort, AccessType::Store, 4>(p);
 }
 
-void __hwasan_storeN_noabort(uptr p, usize sz) {
+void __hwasan_storeN_noabort(uptr p, uptr sz) {
   CheckAddressSized<ErrorAction::Recover, AccessType::Store>(p, sz);
 }
 void __hwasan_store1_noabort(uptr p) {
@@ -514,7 +514,7 @@ void __hwasan_store16_noabort(uptr p) {
   CheckAddress<ErrorAction::Recover, AccessType::Store, 4>(p);
 }
 
-void __hwasan_tag_memory(uptr p, u8 tag, usize sz) {
+void __hwasan_tag_memory(uptr p, u8 tag, uptr sz) {
   TagMemoryAligned(p, sz, tag);
 }
 

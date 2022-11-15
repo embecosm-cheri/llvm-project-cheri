@@ -1392,11 +1392,10 @@ SDValue XCoreTargetLowering::LowerCCCArguments(
       int FI = MFI.CreateStackObject(Size, Alignment, false);
       SDValue FIN = DAG.getFrameIndex(FI, MVT::i32);
       InVals.push_back(FIN);
-      MemOps.push_back(DAG.getMemcpy(Chain, dl, FIN, ArgDI->SDV,
-                                     DAG.getConstant(Size, dl, MVT::i32),
-                                     Alignment, false, false, false, false,
-                                     MachinePointerInfo(),
-                                     MachinePointerInfo()));
+      MemOps.push_back(DAG.getMemcpy(
+          Chain, dl, FIN, ArgDI->SDV, DAG.getConstant(Size, dl, MVT::i32),
+          Alignment, false, false, false, PreserveCheriTags::TODO,
+          MachinePointerInfo(), MachinePointerInfo()));
     } else {
       InVals.push_back(ArgDI->SDV);
     }
@@ -1798,7 +1797,7 @@ SDValue XCoreTargetLowering::PerformDAGCombine(SDNode *N,
         bool isTail = isInTailCallPosition(DAG, ST, Chain);
         return DAG.getMemmove(Chain, dl, ST->getBasePtr(), LD->getBasePtr(),
                               DAG.getConstant(StoreBits / 8, dl, MVT::i32),
-                              Alignment, false, isTail, false,
+                              Alignment, false, isTail, PreserveCheriTags::TODO,
                               ST->getPointerInfo(), LD->getPointerInfo());
       }
     }

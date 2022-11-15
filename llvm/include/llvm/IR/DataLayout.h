@@ -122,6 +122,7 @@ public:
 private:
   /// Defaults to false.
   bool BigEndian;
+  bool HasCheriCapabilities = false;
 
   unsigned AllocaAddrSpace;
   MaybeAlign StackNaturalAlign;
@@ -226,6 +227,7 @@ public:
     Alignments = DL.Alignments;
     Pointers = DL.Pointers;
     NonIntegralAddressSpaces = DL.NonIntegralAddressSpaces;
+    HasCheriCapabilities = DL.HasCheriCapabilities;
     return *this;
   }
 
@@ -392,6 +394,8 @@ public:
   unsigned isFatPointer(const Type *Ty) const {
     return Ty->isPointerTy() && isFatPointer(Ty->getPointerAddressSpace());
   }
+
+  bool hasCheriCapabilities() const { return HasCheriCapabilities; }
 
   unsigned getPointerAddrSizeInBits(unsigned AS) const {
     // For CHERI the address range is the same as the IndexSize.

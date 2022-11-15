@@ -551,6 +551,7 @@ void DataLayout::init(const Module *M) { *this = M->getDataLayout(); }
 
 bool DataLayout::operator==(const DataLayout &Other) const {
   bool Ret = BigEndian == Other.BigEndian &&
+             HasCheriCapabilities == Other.HasCheriCapabilities &&
              AllocaAddrSpace == Other.AllocaAddrSpace &&
              StackNaturalAlign == Other.StackNaturalAlign &&
              ProgramAddrSpace == Other.ProgramAddrSpace &&
@@ -632,12 +633,16 @@ Error DataLayout::setPointerAlignmentInBits(uint32_t AddrSpace, Align ABIAlign,
     Pointers.insert(I,
                     PointerAlignElem::getInBits(AddrSpace, ABIAlign, PrefAlign,
                                                 TypeBitWidth, IndexBitWidth, IsFatPointer));
+    HasCheriCapabilities = HasCheriCapabilities || IsFatPointer;
   } else {
     I->ABIAlign = ABIAlign;
     I->PrefAlign = PrefAlign;
     I->TypeBitWidth = TypeBitWidth;
     I->IndexBitWidth = IndexBitWidth;
     I->IsFatPointer = IsFatPointer;
+    // Value was replaced, re-calculate HasCheriCapabilities
+    HasCheriCapabilities = any_of(
+        Pointers, [](const PointerAlignElem &P) { return P.IsFatPointer; });
   }
   return Error::success();
 }

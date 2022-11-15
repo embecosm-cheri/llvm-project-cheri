@@ -984,7 +984,7 @@ namespace {
       emitMemcpyIR(
           Dest.isBitField() ? Dest.getBitFieldAddress() : Dest.getAddress(CGF),
           Src.isBitField() ? Src.getBitFieldAddress() : Src.getAddress(CGF),
-          MemcpySize);
+          MemcpySize, llvm::PreserveCheriTags::TODO);
       reset();
     }
 
@@ -997,10 +997,12 @@ namespace {
     const CXXRecordDecl *ClassDecl;
 
   private:
-    void emitMemcpyIR(Address DestPtr, Address SrcPtr, CharUnits Size) {
+    void emitMemcpyIR(Address DestPtr, Address SrcPtr, CharUnits Size,
+                      llvm::PreserveCheriTags PreserveTags) {
       DestPtr = CGF.Builder.CreateElementBitCast(DestPtr, CGF.Int8Ty);
       SrcPtr = CGF.Builder.CreateElementBitCast(SrcPtr, CGF.Int8Ty);
-      CGF.Builder.CreateMemCpy(DestPtr, SrcPtr, Size.getQuantity());
+      CGF.Builder.CreateMemCpy(DestPtr, SrcPtr, Size.getQuantity(),
+                               PreserveTags);
     }
 
     void addInitialField(FieldDecl *F) {

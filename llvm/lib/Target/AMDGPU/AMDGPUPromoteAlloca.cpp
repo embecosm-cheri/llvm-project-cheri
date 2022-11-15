@@ -1050,10 +1050,10 @@ bool AMDGPUPromoteAllocaImpl::handleAlloca(AllocaInst &I, bool SufficientLDS) {
     assert(ID == Intrinsic::memcpy || ID == Intrinsic::memmove);
 
     MemTransferInst *MI = cast<MemTransferInst>(Intr);
-    auto *B =
-      Builder.CreateMemTransferInst(ID, MI->getRawDest(), MI->getDestAlign(),
-                                    MI->getRawSource(), MI->getSourceAlign(),
-                                    MI->getLength(), MI->isVolatile());
+    auto *B = Builder.CreateMemTransferInst(
+        ID, MI->getRawDest(), MI->getDestAlign(), MI->getRawSource(),
+        MI->getSourceAlign(), MI->getLength(), MI->shouldPreserveCheriTags(),
+        MI->isVolatile());
 
     for (unsigned I = 0; I != 2; ++I) {
       if (uint64_t Bytes = Intr->getParamDereferenceableBytes(I)) {

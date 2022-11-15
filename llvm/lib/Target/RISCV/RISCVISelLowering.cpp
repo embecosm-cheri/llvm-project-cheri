@@ -427,6 +427,7 @@ RISCVTargetLowering::RISCVTargetLowering(const TargetMachine &TM,
     setOperationAction(ISD::GlobalAddress, CLenVT, Custom);
     setOperationAction(ISD::BlockAddress, CLenVT, Custom);
     setOperationAction(ISD::ConstantPool, CLenVT, Custom);
+    setOperationAction(ISD::JumpTable, CLenVT, Custom);
     setOperationAction(ISD::GlobalTLSAddress, CLenVT, Custom);
     setOperationAction(ISD::ADDRSPACECAST, CLenVT, Custom);
     setOperationAction(ISD::ADDRSPACECAST, XLenVT, Custom);
@@ -983,8 +984,7 @@ RISCVTargetLowering::RISCVTargetLowering(const TargetMachine &TM,
   setMinFunctionAlignment(FunctionAlignment);
   setPrefFunctionAlignment(FunctionAlignment);
 
-  // FIXME: Jump tables are not implemented yet for purecap.
-  setMinimumJumpTableEntries(RISCVABI::isCheriPureCapABI(ABI) ? UINT_MAX : 5);
+  setMinimumJumpTableEntries(5);
 
   // Jumps are expensive, compared to logic
   setJumpIsExpensive();
@@ -10131,33 +10131,67 @@ static MachineBasicBlock *emitReadCycleWidePseudo(MachineInstr &MI,
 
 static MachineBasicBlock *emitSplitF64Pseudo(MachineInstr &MI,
                                              MachineBasicBlock *BB) {
-  assert(MI.getOpcode() == RISCV::SplitF64Pseudo && "Unexpected instruction");
+  assert((MI.getOpcode() == RISCV::SplitF64Pseudo ||
+          MI.getOpcode() == RISCV::SplitStoreF64Pseudo ||
+          MI.getOpcode() == RISCV::CheriSplitStoreF64Pseudo) &&
+         "Unexpected instruction");
 
   MachineFunction &MF = *BB->getParent();
   DebugLoc DL = MI.getDebugLoc();
   const TargetInstrInfo &TII = *MF.getSubtarget().getInstrInfo();
   const TargetRegisterInfo *RI = MF.getSubtarget().getRegisterInfo();
   Register LoReg = MI.getOperand(0).getReg();
+  bool LoRegIsDead = MI.getOperand(0).isDead();
   Register HiReg = MI.getOperand(1).getReg();
-  Register SrcReg = MI.getOperand(2).getReg();
+  bool HiRegIsDead = MI.getOperand(1).isDead();
+  unsigned SrcOpNo = MI.getOpcode() == RISCV::SplitF64Pseudo ? 2 : 3;
+  Register SrcReg = MI.getOperand(SrcOpNo).getReg();
   const TargetRegisterClass *SrcRC = &RISCV::FPR64RegClass;
   int FI = MF.getInfo<RISCVMachineFunctionInfo>()->getMoveF64FrameIndex(MF);
 
-  TII.storeRegToStackSlot(*BB, MI, SrcReg, MI.getOperand(2).isKill(), FI, SrcRC,
-                          RI);
+  TII.storeRegToStackSlot(*BB, MI, SrcReg, MI.getOperand(SrcOpNo).isKill(),
+                          FI, SrcRC, RI);
   MachinePointerInfo MPI = MachinePointerInfo::getFixedStack(MF, FI);
   MachineMemOperand *MMOLo =
       MF.getMachineMemOperand(MPI, MachineMemOperand::MOLoad, 4, Align(8));
   MachineMemOperand *MMOHi = MF.getMachineMemOperand(
       MPI.getWithOffset(4), MachineMemOperand::MOLoad, 4, Align(8));
-  BuildMI(*BB, MI, DL, TII.get(RISCV::LW), LoReg)
+  RISCVABI::ABI ABI = MF.getSubtarget<RISCVSubtarget>().getTargetABI();
+  unsigned LoadOpcode =
+      RISCVABI::isCheriPureCapABI(ABI) ? RISCV::CLW : RISCV::LW;
+  BuildMI(*BB, MI, DL, TII.get(LoadOpcode), LoReg)
       .addFrameIndex(FI)
       .addImm(0)
       .addMemOperand(MMOLo);
-  BuildMI(*BB, MI, DL, TII.get(RISCV::LW), HiReg)
+  BuildMI(*BB, MI, DL, TII.get(LoadOpcode), HiReg)
       .addFrameIndex(FI)
       .addImm(4)
       .addMemOperand(MMOHi);
+
+  if (MI.getOpcode() == RISCV::SplitStoreF64Pseudo ||
+      MI.getOpcode() == RISCV::CheriSplitStoreF64Pseudo) {
+    unsigned StoreOpcode, AddOpcode;
+    if (MI.getOpcode() == RISCV::SplitStoreF64Pseudo) {
+      StoreOpcode = RISCV::SW_DDC;
+      AddOpcode = RISCV::ADDI;
+    } else {
+      StoreOpcode = RISCV::SW_CAP;
+      AddOpcode = RISCV::CIncOffsetImm;
+    }
+
+    Register TmpReg = MI.getOperand(2).getReg();
+    Register DstReg = MI.getOperand(4).getReg();
+    BuildMI(*BB, MI, DL, TII.get(StoreOpcode))
+        .addReg(LoReg, getKillRegState(LoRegIsDead))
+        .addReg(DstReg);
+    BuildMI(*BB, MI, DL, TII.get(AddOpcode), TmpReg)
+        .addReg(DstReg)
+        .addImm(4);
+    BuildMI(*BB, MI, DL, TII.get(StoreOpcode))
+        .addReg(HiReg, getKillRegState(HiRegIsDead))
+        .addReg(TmpReg);
+  }
+
   MI.eraseFromParent(); // The pseudo instruction is gone now.
   return BB;
 }
@@ -10182,12 +10216,15 @@ static MachineBasicBlock *emitBuildPairF64Pseudo(MachineInstr &MI,
       MF.getMachineMemOperand(MPI, MachineMemOperand::MOStore, 4, Align(8));
   MachineMemOperand *MMOHi = MF.getMachineMemOperand(
       MPI.getWithOffset(4), MachineMemOperand::MOStore, 4, Align(8));
-  BuildMI(*BB, MI, DL, TII.get(RISCV::SW))
+  RISCVABI::ABI ABI = MF.getSubtarget<RISCVSubtarget>().getTargetABI();
+  unsigned StoreOpcode =
+      RISCVABI::isCheriPureCapABI(ABI) ? RISCV::CSW : RISCV::SW;
+  BuildMI(*BB, MI, DL, TII.get(StoreOpcode))
       .addReg(LoReg, getKillRegState(MI.getOperand(1).isKill()))
       .addFrameIndex(FI)
       .addImm(0)
       .addMemOperand(MMOLo);
-  BuildMI(*BB, MI, DL, TII.get(RISCV::SW))
+  BuildMI(*BB, MI, DL, TII.get(StoreOpcode))
       .addReg(HiReg, getKillRegState(MI.getOperand(2).isKill()))
       .addFrameIndex(FI)
       .addImm(4)
@@ -10504,6 +10541,8 @@ RISCVTargetLowering::EmitInstrWithCustomInserter(MachineInstr &MI,
   case RISCV::BuildPairF64Pseudo:
     return emitBuildPairF64Pseudo(MI, BB);
   case RISCV::SplitF64Pseudo:
+  case RISCV::SplitStoreF64Pseudo:
+  case RISCV::CheriSplitStoreF64Pseudo:
     return emitSplitF64Pseudo(MI, BB);
   case RISCV::PseudoQuietFLE_H:
     return emitQuietFCMP(MI, BB, RISCV::FLE_H, RISCV::FEQ_H, Subtarget);
@@ -10749,15 +10788,16 @@ static bool CC_RISCV(const DataLayout &DL, RISCVABI::ABI ABI, unsigned ValNo,
          "PendingLocs and PendingArgFlags out of sync");
 
   // Handle passing f64 on RV32D with a soft float ABI or when floating point
-  // registers are exhausted.
-  if (UseGPRForF64 && XLen == 32 && ValVT == MVT::f64 && !IsPureCapVarArgs) {
+  // registers are exhausted. Also handle for pure capability varargs which are
+  // always passed on the stack.
+  if ((UseGPRForF64 || IsPureCapVarArgs) && XLen == 32 && ValVT == MVT::f64) {
     assert(!ArgFlags.isSplit() && PendingLocs.empty() &&
            "Can't lower f64 if it is split");
     // Depending on available argument GPRS, f64 may be passed in a pair of
     // GPRs, split between a GPR and the stack, or passed completely on the
     // stack. LowerCall/LowerFormalArguments/LowerReturn must recognise these
-    // cases.
-    Register Reg = State.AllocateReg(ArgGPRs);
+    // cases. Pure capability varargs are always passed on the stack.
+    Register Reg = IsPureCapVarArgs ? 0 : State.AllocateReg(ArgGPRs);
     LocVT = MVT::i32;
     if (!Reg) {
       unsigned StackOffset = State.AllocateStack(8, Align(8));
@@ -11072,7 +11112,8 @@ static SDValue unpackFromMemLoc(SelectionDAG &DAG, SDValue Chain,
 }
 
 static SDValue unpackF64OnRV32DSoftABI(SelectionDAG &DAG, SDValue Chain,
-                                       const CCValAssign &VA, const SDLoc &DL) {
+                                       const CCValAssign &VA, const SDLoc &DL,
+                                       EVT PtrVT) {
   assert(VA.getLocVT() == MVT::i32 && VA.getValVT() == MVT::f64 &&
          "Unexpected VA");
   MachineFunction &MF = DAG.getMachineFunction();
@@ -11083,7 +11124,7 @@ static SDValue unpackF64OnRV32DSoftABI(SelectionDAG &DAG, SDValue Chain,
     // f64 is passed on the stack.
     int FI =
         MFI.CreateFixedObject(8, VA.getLocMemOffset(), /*IsImmutable=*/true);
-    SDValue FIN = DAG.getFrameIndex(FI, MVT::i32);
+    SDValue FIN = DAG.getFrameIndex(FI, PtrVT);
     return DAG.getLoad(MVT::f64, DL, Chain, FIN,
                        MachinePointerInfo::getFixedStack(MF, FI));
   }
@@ -11097,7 +11138,7 @@ static SDValue unpackF64OnRV32DSoftABI(SelectionDAG &DAG, SDValue Chain,
   if (VA.getLocReg() == RISCV::X17) {
     // Second half of f64 is passed on the stack.
     int FI = MFI.CreateFixedObject(4, 0, /*IsImmutable=*/true);
-    SDValue FIN = DAG.getFrameIndex(FI, MVT::i32);
+    SDValue FIN = DAG.getFrameIndex(FI, PtrVT);
     Hi = DAG.getLoad(MVT::i32, DL, Chain, FIN,
                      MachinePointerInfo::getFixedStack(MF, FI));
   } else {
@@ -11334,7 +11375,7 @@ SDValue RISCVTargetLowering::LowerFormalArguments(
     // Passing f64 on RV32D with a soft float ABI must be handled as a special
     // case.
     if (VA.getLocVT() == MVT::i32 && VA.getValVT() == MVT::f64)
-      ArgValue = unpackF64OnRV32DSoftABI(DAG, Chain, VA, DL);
+      ArgValue = unpackF64OnRV32DSoftABI(DAG, Chain, VA, DL, PtrVT);
     else if (VA.isRegLoc())
       ArgValue = unpackFromRegLoc(DAG, Chain, VA, DL, *this);
     else
@@ -11580,8 +11621,8 @@ SDValue RISCVTargetLowering::LowerCall(CallLoweringInfo &CLI,
 
     Chain = DAG.getMemcpy(Chain, DL, FIPtr, Arg, SizeNode, Alignment,
                           /*IsVolatile=*/false,
-                          /*AlwaysInline=*/false,
-                          /*MustPreserveCheriCapabilities=*/false, IsTailCall,
+                          /*AlwaysInline=*/false, IsTailCall,
+                          llvm::PreserveCheriTags::Unknown,
                           MachinePointerInfo(), MachinePointerInfo());
     ByValArgs.push_back(FIPtr);
   }
@@ -12549,7 +12590,10 @@ EVT RISCVTargetLowering::getOptimalMemOpType(
         // memcpy/memmove call (by returning MVT::isVoid), since it could still
         // contain a capability if sufficiently aligned at runtime. Zeroing
         // memsets can fall back on non-capability loads/stores.
-        return MVT::isVoid;
+        // Note: We can still inline the memcpy if the frontend has marked the
+        // copy as not requiring tag preserving behaviour.
+        if (Op.PreserveTags != PreserveCheriTags::Unnecessary)
+          return MVT::isVoid;
       }
     }
   }
@@ -12756,6 +12800,9 @@ unsigned RISCVTargetLowering::getJumpTableEncoding() const {
       getTargetMachine().getCodeModel() == CodeModel::Small) {
     return MachineJumpTableInfo::EK_Custom32;
   }
+  if (RISCVABI::isCheriPureCapABI(Subtarget.getTargetABI()))
+    return MachineJumpTableInfo::EK_LabelDifference32;
+
   return TargetLowering::getJumpTableEncoding();
 }
 
@@ -12798,6 +12845,42 @@ bool RISCVTargetLowering::isFMAFasterThanFMulAndFAdd(const MachineFunction &MF,
   }
 
   return false;
+}
+
+bool RISCVTargetLowering::isJumpTableRelative() const {
+  if (!RISCVABI::isCheriPureCapABI(Subtarget.getTargetABI()))
+    return TargetLowering::isJumpTableRelative();
+
+  return true;
+}
+
+SDValue
+RISCVTargetLowering::getPICJumpTableRelocBase(SDValue Table,
+                                              SelectionDAG &DAG) const {
+  if (!RISCVABI::isCheriPureCapABI(Subtarget.getTargetABI()))
+    return TargetLowering::getPICJumpTableRelocBase(Table, DAG);
+
+  SDLoc DL(Table);
+  Function *Function = &DAG.getMachineFunction().getFunction();
+  MVT CLenVT = Subtarget.typeForCapabilities();
+  SDValue Addr = DAG.getTargetGlobalAddress(Function, DL, CLenVT, 0,
+                                            RISCVII::MO_JUMP_TABLE_BASE);
+  return SDValue(DAG.getMachineNode(RISCV::PseudoCLLC, DL, CLenVT, Addr), 0);
+}
+
+const MCExpr *
+RISCVTargetLowering::getPICJumpTableRelocBaseExpr(const MachineFunction *MF,
+                                                  unsigned JTI,
+                                                  MCContext &Ctx) const {
+  if (!RISCVABI::isCheriPureCapABI(Subtarget.getTargetABI()))
+    return TargetLowering::getPICJumpTableRelocBaseExpr(MF, JTI, Ctx);
+
+  const TargetMachine &TM = getTargetMachine();
+  const Function *Function = &MF->getFunction();
+  TargetLoweringObjectFile *TLOF = TM.getObjFileLowering();
+  MCSymbol *Sym =
+      TLOF->getSymbolWithGlobalValueBase(Function, "$jump_table_base", TM);
+  return MCSymbolRefExpr::create(Sym, Ctx);
 }
 
 Register RISCVTargetLowering::getExceptionPointerRegister(

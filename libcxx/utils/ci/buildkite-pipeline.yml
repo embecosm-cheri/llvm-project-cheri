@@ -618,6 +618,19 @@ steps:
             limit: 2
       timeout_in_minutes: 120
 
+  - label: "New standalone runtimes build"
+    command: "libcxx/utils/ci/run-buildbot new-standalone"
+    artifact_paths:
+      - "**/test-results.xml"
+    agents:
+      queue: "libcxx-builders"
+      os: "linux"
+    retry:
+      automatic:
+        - exit_status: -1  # Agent was lost
+          limit: 2
+    timeout_in_minutes: 120
+
     - label: "MinGW (DLL, i686)"
       command: "bash libcxx/utils/ci/run-buildbot mingw-dll-i686"
       artifact_paths:

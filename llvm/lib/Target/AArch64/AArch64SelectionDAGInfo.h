@@ -28,7 +28,7 @@ public:
   SDValue EmitTargetCodeForMemcpy(SelectionDAG &DAG, const SDLoc &dl,
                                   SDValue Chain, SDValue Dst, SDValue Src,
                                   SDValue Size, Align Alignment,
-                                  bool isVolatile, bool AlwaysInline, bool MustPreserveCheriCapabilities,
+                                  bool isVolatile, bool AlwaysInline, PreserveCheriTags PreserveTags,
                                   MachinePointerInfo DstPtrInfo,
                                   MachinePointerInfo SrcPtrInfo) const override;
   SDValue EmitTargetCodeForMemset(SelectionDAG &DAG, const SDLoc &dl,
@@ -39,7 +39,7 @@ public:
   SDValue
   EmitTargetCodeForMemmove(SelectionDAG &DAG, const SDLoc &dl, SDValue Chain,
                            SDValue Dst, SDValue Src, SDValue Size,
-                           Align Alignment, bool isVolatile, bool MustPreserveCheriCapabilities,
+                           Align Alignment, bool isVolatile, PreserveCheriTags PreserveTags,
                            MachinePointerInfo DstPtrInfo,
                            MachinePointerInfo SrcPtrInfo) const override;
 

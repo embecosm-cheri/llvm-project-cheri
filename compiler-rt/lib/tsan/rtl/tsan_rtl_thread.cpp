@@ -161,9 +161,9 @@ void ThreadStart(ThreadState *thr, Tid tid, tid_t os_id,
   Free(thr->tctx->sync);
 
   uptr stk_addr = 0;
-  usize stk_size = 0;
+  uptr stk_size = 0;
   uptr tls_addr = 0;
-  usize tls_size = 0;
+  uptr tls_size = 0;
 #if !SANITIZER_GO
   if (thread_type != ThreadType::Fiber)
     GetThreadStackAndTls(tid == kMainTid, &stk_addr, &stk_size, &tls_addr,

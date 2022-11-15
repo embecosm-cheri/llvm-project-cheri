@@ -22,6 +22,7 @@
 #include "llvm/CodeGen/MachineConstantPool.h"
 #include "llvm/CodeGen/MachineFunctionPass.h"
 #include "llvm/CodeGen/MachineInstr.h"
+#include "llvm/CodeGen/MachineJumpTableInfo.h"
 #include "llvm/CodeGen/MachineModuleInfo.h"
 #include "llvm/MC/MCAsmInfo.h"
 #include "llvm/MC/MCInst.h"
@@ -208,6 +209,14 @@ void RISCVAsmPrinter::emitFunctionEntryLabel() {
   RISCVTargetStreamer &RTS =
       static_cast<RISCVTargetStreamer &>(*OutStreamer->getTargetStreamer());
   RTS.setTargetABI(STI->getTargetABI());
+
+  const MachineJumpTableInfo *MJTI = MF->getJumpTableInfo();
+  if (RISCVABI::isCheriPureCapABI(STI->getTargetABI()) &&
+      MJTI && !MJTI->isEmpty()) {
+    MCSymbol *Sym = getSymbolWithGlobalValueBase(&MF->getFunction(),
+                                                 "$jump_table_base");
+    OutStreamer->emitLabel(Sym);
+  }
 }
 
 // Force static initialization.

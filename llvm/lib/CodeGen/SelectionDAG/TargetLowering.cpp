@@ -303,7 +303,8 @@ bool TargetLowering::findOptimalMemOpLowering(
     }
 
     // If we are preserving capabilities, the first VT must be a capability
-    if (Op.MustPreserveCheriCaps && MemOps.empty() && !VT.isFatPointer()) {
+    if (Op.PreserveTags == PreserveCheriTags::Required && MemOps.empty() &&
+        !VT.isFatPointer()) {
       return false;
     }
 
@@ -8446,7 +8447,7 @@ TargetLowering::expandUnalignedLoad(LoadSDNode *LD, SelectionDAG &DAG) const {
                                /*isVolatile=*/false,
                                /*AlwaysInline=*/false,
                                /*isTailCall=*/false,
-                               /*MustPreserveCheriCapabilities=*/true,
+                               PreserveCheriTags::Required,
                                TmpPtrInfo, LD->getPointerInfo(), AAMDNodes(),
                                /*AA=*/nullptr,
                                "!!<CHERI-NODIAG>!!");
@@ -8630,7 +8631,7 @@ SDValue TargetLowering::expandUnalignedStore(StoreSDNode *ST,
                                 /*isVolatile=*/false,
                                 /*AlwaysInline=*/false,
                                 /*isTailCall=*/false,
-                                /*MustPreserveCheriCapabilities=*/true,
+                                PreserveCheriTags::Required,
                                 ST->getPointerInfo(), TmpPtrInfo, AAMDNodes(),
                                 /*AA=*/nullptr,
                                 "!!<CHERI-NODIAG>!!");

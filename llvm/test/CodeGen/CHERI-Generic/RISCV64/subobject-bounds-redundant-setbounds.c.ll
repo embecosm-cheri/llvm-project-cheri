@@ -44,6 +44,7 @@ define void @use_inline(i32 addrspace(200)* nocapture %arg) local_unnamed_addr a
 ; CHECK-SAME: (i32 addrspace(200)* nocapture [[ARG:%.*]]) local_unnamed_addr addrspace(200) #[[ATTR0:[0-9]+]] {
 ; CHECK-NEXT:    store i32 2, i32 addrspace(200)* [[ARG]], align 4
 ; CHECK-NEXT:    ret void
+;
   store i32 2, i32 addrspace(200)* %arg, align 4
   ret void
 }
@@ -75,6 +76,7 @@ define signext i32 @stack_array() local_unnamed_addr addrspace(200) nounwind {
 ; CHECK-NEXT:    [[TMP4:%.*]] = load i32, i32 addrspace(200)* [[TMP3]], align 4
 ; CHECK-NEXT:    call void @llvm.lifetime.end.p200i8(i64 40, i8 addrspace(200)* nonnull [[TMP1]])
 ; CHECK-NEXT:    ret i32 [[TMP4]]
+;
   %array = alloca [10 x i32], align 4, addrspace(200)
   %1 = bitcast [10 x i32] addrspace(200)* %array to i8 addrspace(200)*
   call void @llvm.lifetime.start.p200i8(i64 40, i8 addrspace(200)* nonnull %1)
@@ -130,6 +132,7 @@ define signext i32 @stack_int() local_unnamed_addr addrspace(200) nounwind {
 ; CHECK-NEXT:    [[TMP3:%.*]] = load i32, i32 addrspace(200)* [[VALUE]], align 4
 ; CHECK-NEXT:    call void @llvm.lifetime.end.p200i8(i64 4, i8 addrspace(200)* nonnull [[TMP1]])
 ; CHECK-NEXT:    ret i32 [[TMP3]]
+;
   %value = alloca i32, align 4, addrspace(200)
   %1 = bitcast i32 addrspace(200)* %value to i8 addrspace(200)*
   call void @llvm.lifetime.start.p200i8(i64 4, i8 addrspace(200)* nonnull %1)
@@ -182,6 +185,7 @@ define signext i32 @stack_int_inlined() local_unnamed_addr addrspace(200) nounwi
 ; CHECK-NEXT:    [[TMP3:%.*]] = load i32, i32 addrspace(200)* [[VALUE]], align 4
 ; CHECK-NEXT:    call void @llvm.lifetime.end.p200i8(i64 4, i8 addrspace(200)* nonnull [[TMP1]])
 ; CHECK-NEXT:    ret i32 [[TMP3]]
+;
   %value = alloca i32, align 4, addrspace(200)
   %1 = bitcast i32 addrspace(200)* %value to i8 addrspace(200)*
   call void @llvm.lifetime.start.p200i8(i64 4, i8 addrspace(200)* nonnull %1)
@@ -234,6 +238,7 @@ define signext i32 @out_of_bounds_setbounds() local_unnamed_addr addrspace(200) 
 ; CHECK-NEXT:    store i32 2, i32 addrspace(200)* [[ADDRESS_WITH_BOUNDS]], align 4
 ; CHECK-NEXT:    [[TMP6:%.*]] = load i32, i32 addrspace(200)* [[VALUE]], align 4
 ; CHECK-NEXT:    ret i32 [[TMP6]]
+;
   %value = alloca i32, align 4, addrspace(200)
   ; TOO big, cannot elide the setbonds:
   %1 = bitcast i32 addrspace(200)* %value to i8 addrspace(200)*
@@ -280,6 +285,7 @@ define signext i32 @setbounds_escapes() local_unnamed_addr addrspace(200) nounwi
 ; CHECK-NEXT:    call void @use(i8 addrspace(200)* [[TMP2]])
 ; CHECK-NEXT:    [[TMP3:%.*]] = load i32, i32 addrspace(200)* [[VALUE]], align 4
 ; CHECK-NEXT:    ret i32 [[TMP3]]
+;
   %value = alloca i32, align 4, addrspace(200)
   ; Too big, cannot elide the setbonds:
   %1 = bitcast i32 addrspace(200)* %value to i8 addrspace(200)*
@@ -318,6 +324,7 @@ define void @assume_aligned() local_unnamed_addr addrspace(200) nounwind {
 ; CHECK-NEXT:    [[TMP2:%.*]] = bitcast [4 x i8] addrspace(200)* [[TMP1]] to i32 addrspace(200)*
 ; CHECK-NEXT:    store i32 1, i32 addrspace(200)* [[TMP2]], align 4
 ; CHECK-NEXT:    ret void
+;
   %1 = alloca [4 x i8], align 4, addrspace(200)
   call void @llvm.assume(i1 true) [ "align"([4 x i8] addrspace(200)* %1, i64 4) ]
   %2 = bitcast [4 x i8] addrspace(200)* %1 to i32 addrspace(200)*

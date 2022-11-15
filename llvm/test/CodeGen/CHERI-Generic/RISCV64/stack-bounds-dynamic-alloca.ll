@@ -81,6 +81,7 @@ define i32 @alloca_in_entry(i1 %arg) local_unnamed_addr addrspace(200) nounwind 
 ; CHECK-NEXT:    br label [[EXIT]]
 ; CHECK:       exit:
 ; CHECK-NEXT:    ret i32 123
+;
 entry:
   %alloca = alloca [16 x i8], align 16, addrspace(200)
   br i1 %arg, label %do_alloca, label %exit
@@ -188,6 +189,7 @@ define i32 @alloca_not_in_entry(i1 %arg) local_unnamed_addr addrspace(200) nounw
 ; CHECK-NEXT:    br label [[EXIT]]
 ; CHECK:       exit:
 ; CHECK-NEXT:    ret i32 123
+;
 entry:
   br i1 %arg, label %do_alloca, label %exit
 

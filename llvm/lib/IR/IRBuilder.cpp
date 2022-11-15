@@ -242,8 +242,9 @@ CallInst *IRBuilderBase::CreateElementUnorderedAtomicMemSet(
 
 CallInst *IRBuilderBase::CreateMemTransferInst(
     Intrinsic::ID IntrID, Value *Dst, MaybeAlign DstAlign, Value *Src,
-    MaybeAlign SrcAlign, Value *Size, bool isVolatile, MDNode *TBAATag,
-    MDNode *TBAAStructTag, MDNode *ScopeTag, MDNode *NoAliasTag) {
+    MaybeAlign SrcAlign, Value *Size, PreserveCheriTags PreserveTags,
+    bool isVolatile, MDNode *TBAATag, MDNode *TBAAStructTag, MDNode *ScopeTag,
+    MDNode *NoAliasTag) {
   Dst = getCastedInt8PtrValue(Dst);
   Src = getCastedInt8PtrValue(Src);
 
@@ -255,6 +256,8 @@ CallInst *IRBuilderBase::CreateMemTransferInst(
   CallInst *CI = createCallHelper(TheFn, Ops, this);
 
   auto* MCI = cast<MemTransferInst>(CI);
+  if (M->getDataLayout().hasCheriCapabilities())
+    MCI->setPreserveCheriTags(PreserveTags, M->getDataLayout());
   if (DstAlign)
     MCI->setDestAlignment(*DstAlign);
   if (SrcAlign)
@@ -279,8 +282,9 @@ CallInst *IRBuilderBase::CreateMemTransferInst(
 
 CallInst *IRBuilderBase::CreateMemCpyInline(
     Value *Dst, MaybeAlign DstAlign, Value *Src, MaybeAlign SrcAlign,
-    Value *Size, bool IsVolatile, MDNode *TBAATag, MDNode *TBAAStructTag,
-    MDNode *ScopeTag, MDNode *NoAliasTag) {
+    Value *Size, PreserveCheriTags PreserveTags, bool IsVolatile,
+    MDNode *TBAATag, MDNode *TBAAStructTag, MDNode *ScopeTag,
+    MDNode *NoAliasTag) {
   Dst = getCastedInt8PtrValue(Dst);
   Src = getCastedInt8PtrValue(Src);
 
@@ -293,6 +297,8 @@ CallInst *IRBuilderBase::CreateMemCpyInline(
   CallInst *CI = createCallHelper(TheFn, Ops, this);
 
   auto *MCI = cast<MemCpyInlineInst>(CI);
+  if (M->getDataLayout().hasCheriCapabilities())
+    MCI->setPreserveCheriTags(PreserveTags, M->getDataLayout());
   if (DstAlign)
     MCI->setDestAlignment(*DstAlign);
   if (SrcAlign)
@@ -317,8 +323,8 @@ CallInst *IRBuilderBase::CreateMemCpyInline(
 
 CallInst *IRBuilderBase::CreateElementUnorderedAtomicMemCpy(
     Value *Dst, Align DstAlign, Value *Src, Align SrcAlign, Value *Size,
-    uint32_t ElementSize, MDNode *TBAATag, MDNode *TBAAStructTag,
-    MDNode *ScopeTag, MDNode *NoAliasTag) {
+    uint32_t ElementSize, PreserveCheriTags PreserveTags, MDNode *TBAATag,
+    MDNode *TBAAStructTag, MDNode *ScopeTag, MDNode *NoAliasTag) {
   assert(DstAlign >= ElementSize &&
          "Pointer alignment must be at least element size");
   assert(SrcAlign >= ElementSize &&
@@ -336,6 +342,8 @@ CallInst *IRBuilderBase::CreateElementUnorderedAtomicMemCpy(
 
   // Set the alignment of the pointer args.
   auto *AMCI = cast<AtomicMemCpyInst>(CI);
+  if (M->getDataLayout().hasCheriCapabilities())
+    AMCI->setPreserveCheriTags(PreserveTags, M->getDataLayout());
   AMCI->setDestAlignment(DstAlign);
   AMCI->setSourceAlignment(SrcAlign);
 
@@ -358,9 +366,10 @@ CallInst *IRBuilderBase::CreateElementUnorderedAtomicMemCpy(
 
 CallInst *IRBuilderBase::CreateMemMove(Value *Dst, MaybeAlign DstAlign,
                                        Value *Src, MaybeAlign SrcAlign,
-                                       Value *Size, bool isVolatile,
-                                       MDNode *TBAATag, MDNode *ScopeTag,
-                                       MDNode *NoAliasTag) {
+                                       Value *Size,
+                                       PreserveCheriTags PreserveTags,
+                                       bool isVolatile, MDNode *TBAATag,
+                                       MDNode *ScopeTag, MDNode *NoAliasTag) {
   Dst = getCastedInt8PtrValue(Dst);
   Src = getCastedInt8PtrValue(Src);
 
@@ -376,6 +385,8 @@ CallInst *IRBuilderBase::CreateMemMove(Value *Dst, MaybeAlign DstAlign,
   CallInst *CI = createCallHelper(TheFn, Ops, this);
 
   auto *MMI = cast<MemMoveInst>(CI);
+  if (M->getDataLayout().hasCheriCapabilities())
+    MMI->setPreserveCheriTags(PreserveTags, M->getDataLayout());
   if (DstAlign)
     MMI->setDestAlignment(*DstAlign);
   if (SrcAlign)
@@ -396,8 +407,8 @@ CallInst *IRBuilderBase::CreateMemMove(Value *Dst, MaybeAlign DstAlign,
 
 CallInst *IRBuilderBase::CreateElementUnorderedAtomicMemMove(
     Value *Dst, Align DstAlign, Value *Src, Align SrcAlign, Value *Size,
-    uint32_t ElementSize, MDNode *TBAATag, MDNode *TBAAStructTag,
-    MDNode *ScopeTag, MDNode *NoAliasTag) {
+    uint32_t ElementSize, PreserveCheriTags PreserveTags, MDNode *TBAATag,
+    MDNode *TBAAStructTag, MDNode *ScopeTag, MDNode *NoAliasTag) {
   assert(DstAlign >= ElementSize &&
          "Pointer alignment must be at least element size");
   assert(SrcAlign >= ElementSize &&
@@ -412,6 +423,9 @@ CallInst *IRBuilderBase::CreateElementUnorderedAtomicMemMove(
       M, Intrinsic::memmove_element_unordered_atomic, Tys);
 
   CallInst *CI = createCallHelper(TheFn, Ops, this);
+  if (M->getDataLayout().hasCheriCapabilities())
+    cast<AtomicMemTransferInst>(CI)->setPreserveCheriTags(PreserveTags,
+                                                          M->getDataLayout());
 
   // Set the alignment of the pointer args.
   CI->addParamAttr(0, Attribute::getWithAlignment(CI->getContext(), DstAlign));

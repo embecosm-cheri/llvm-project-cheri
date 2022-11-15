@@ -13,14 +13,14 @@ struct test {
 
 void test_capptr_to_int(void* __capability a) {
   ptraddr_t v{a};
-  // hybrid-error@-1 {{type 'void * __capability' cannot be narrowed to 'ptraddr_t' (aka 'unsigned long') in initializer list}}
-  // purecap-error@-2 {{type 'void *' cannot be narrowed to 'ptraddr_t' (aka 'unsigned long') in initializer list}}
+  // hybrid-error@-1 {{cannot initialize a variable of type 'ptraddr_t' (aka 'unsigned long') with an lvalue of type 'void * __capability'}}
+  // purecap-error@-2 {{cannot initialize a variable of type 'ptraddr_t' (aka 'unsigned long') with an lvalue of type 'void *'}}
   v = ptraddr_t{a};
-  // hybrid-error@-1 {{type 'void * __capability' cannot be narrowed to 'ptraddr_t' (aka 'unsigned long') in initializer list}}
-  // purecap-error@-2 {{type 'void *' cannot be narrowed to 'ptraddr_t' (aka 'unsigned long') in initializer list}}
+  // hybrid-error@-1 {{cannot initialize a value of type 'ptraddr_t' (aka 'unsigned long') with an lvalue of type 'void * __capability'}}
+  // purecap-error@-2 {{cannot initialize a value of type 'ptraddr_t' (aka 'unsigned long') with an lvalue of type 'void *'}}
   ptraddr_t v2 = 0; v2 = {a};
-  // hybrid-error@-1 {{type 'void * __capability' cannot be narrowed to 'ptraddr_t' (aka 'unsigned long') in initializer list}}
-  // purecap-error@-2 {{type 'void *' cannot be narrowed to 'ptraddr_t' (aka 'unsigned long') in initializer list}}
+  // hybrid-error@-1 {{cannot initialize a value of type 'ptraddr_t' (aka 'unsigned long') with an lvalue of type 'void * __capability'}}
+  // purecap-error@-2 {{cannot initialize a value of type 'ptraddr_t' (aka 'unsigned long') with an lvalue of type 'void *'}}
 
   // NB: Compound literals are a GNU C++ extension so we need a single word alias
   using __uintcap = unsigned __intcap;
@@ -66,11 +66,11 @@ void test_capptr_to_int(void* __capability a) {
 }
 
 void test_uintcap_to_int(unsigned __intcap a) {
-  ptraddr_t v{a}; // expected-error {{'unsigned __intcap' cannot be narrowed to 'ptraddr_t'}} \
+  ptraddr_t v{a}; // expected-error {{non-constant-expression cannot be narrowed from type 'unsigned __intcap' to 'ptraddr_t' (aka 'unsigned long') in initializer list}} \
                 // expected-note {{insert an explicit cast to silence this issue}}
-  v = ptraddr_t{a}; // expected-error {{'unsigned __intcap' cannot be narrowed to 'ptraddr_t'}} \
+  v = ptraddr_t{a}; // expected-error {{non-constant-expression cannot be narrowed from type 'unsigned __intcap' to 'ptraddr_t' (aka 'unsigned long') in initializer list}} \
                   // expected-note {{insert an explicit cast to silence this issue}}
-  ptraddr_t v2 = 0; v2 = {a}; // expected-error {{'unsigned __intcap' cannot be narrowed to 'ptraddr_t'}} \
+  ptraddr_t v2 = 0; v2 = {a}; // expected-error {{non-constant-expression cannot be narrowed from type 'unsigned __intcap' to 'ptraddr_t' (aka 'unsigned long') in initializer list}} \
                             // expected-note {{insert an explicit cast to silence this issue}}
 
   long l{a}; // expected-error {{'unsigned __intcap' cannot be narrowed to 'long'}} \

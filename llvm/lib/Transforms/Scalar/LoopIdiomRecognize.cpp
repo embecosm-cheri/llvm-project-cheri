@@ -1469,11 +1469,13 @@ bool LoopIdiomRecognize::processLoopStoreOfLoopLoad(
     if (UseMemMove)
       NewCall = Builder.CreateMemMove(
           StoreBasePtr, StoreAlign, LoadBasePtr, LoadAlign, NumBytes,
-          /*isVolatile=*/false, AATags.TBAA, AATags.Scope, AATags.NoAlias);
+          PreserveCheriTags::TODO, /*isVolatile=*/false, AATags.TBAA,
+          AATags.Scope, AATags.NoAlias);
     else
       NewCall =
           Builder.CreateMemCpy(StoreBasePtr, StoreAlign, LoadBasePtr, LoadAlign,
-                               NumBytes, /*isVolatile=*/false, AATags.TBAA,
+                               NumBytes, PreserveCheriTags::TODO,
+                               /*isVolatile=*/false, AATags.TBAA,
                                AATags.TBAAStruct, AATags.Scope, AATags.NoAlias);
   } else {
     // For now don't support unordered atomic memmove.
@@ -1498,8 +1500,8 @@ bool LoopIdiomRecognize::processLoopStoreOfLoopLoad(
     // have an alignment but non-atomic loads/stores may not.
     NewCall = Builder.CreateElementUnorderedAtomicMemCpy(
         StoreBasePtr, StoreAlign.value(), LoadBasePtr, LoadAlign.value(),
-        NumBytes, StoreSize, AATags.TBAA, AATags.TBAAStruct, AATags.Scope,
-        AATags.NoAlias);
+        NumBytes, StoreSize, PreserveCheriTags::TODO, AATags.TBAA,
+        AATags.TBAAStruct, AATags.Scope, AATags.NoAlias);
   }
   NewCall->setDebugLoc(TheStore->getDebugLoc());
 

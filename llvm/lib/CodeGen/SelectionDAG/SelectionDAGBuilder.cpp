@@ -5908,12 +5908,14 @@ void SelectionDAGBuilder::visitIntrinsicCall(const CallInst &I,
     bool isTC = I.isTailCall() && isInTailCallPosition(I, DAG.getTarget());
     // FIXME: Support passing different dest/src alignments to the memcpy DAG
     // node.
-    Attribute CopyType = I.getFnAttr("frontend-memtransfer-type");
     SDValue Root = isVol ? getRoot() : getMemoryRoot();
-    SDValue MC = DAG.getMemcpy(
-        Root, sdl, Op1, Op2, Op3, Alignment, isVol,
-        /* AlwaysInline */ false, isTC, I.hasFnAttr(Attribute::MustPreserveCheriTags), MachinePointerInfo(I.getArgOperand(0)),
-        MachinePointerInfo(I.getArgOperand(1)), I.getAAMetadata(), AA, CopyType.getValueAsString());
+    SDValue MC = DAG.getMemcpy(Root, sdl, Op1, Op2, Op3, Alignment, isVol,
+                               /* AlwaysInline */ false, isTC,
+                               MCI.shouldPreserveCheriTags(),
+                               MachinePointerInfo(I.getArgOperand(0)),
+                               MachinePointerInfo(I.getArgOperand(1)),
+                               I.getAAMetadata(), AA,
+                               MCI.getFrontendCopyType());
     updateDAGForMaybeTailCall(MC);
     return;
   }
@@ -5931,12 +5933,13 @@ void SelectionDAGBuilder::visitIntrinsicCall(const CallInst &I,
     bool isTC = I.isTailCall() && isInTailCallPosition(I, DAG.getTarget());
     // FIXME: Support passing different dest/src alignments to the memcpy DAG
     // node.
-    Attribute CopyType = I.getFnAttr("frontend-memtransfer-type");
-    SDValue MC = DAG.getMemcpy(
-        getRoot(), sdl, Dst, Src, Size, Alignment, isVol,
-        /* AlwaysInline */ true, isTC, I.hasFnAttr(Attribute::MustPreserveCheriTags),
-        MachinePointerInfo(I.getArgOperand(0)),
-        MachinePointerInfo(I.getArgOperand(1)), I.getAAMetadata(), AA, CopyType.getValueAsString());
+    SDValue MC = DAG.getMemcpy(getRoot(), sdl, Dst, Src, Size, Alignment, isVol,
+                               /* AlwaysInline */ true, isTC,
+                               MCI.shouldPreserveCheriTags(),
+                               MachinePointerInfo(I.getArgOperand(0)),
+                               MachinePointerInfo(I.getArgOperand(1)),
+                               I.getAAMetadata(), AA,
+                               MCI.getFrontendCopyType());
     updateDAGForMaybeTailCall(MC);
     return;
   }
@@ -5985,15 +5988,15 @@ void SelectionDAGBuilder::visitIntrinsicCall(const CallInst &I,
     Align Alignment = std::min(DstAlign, SrcAlign);
     bool isVol = MMI.isVolatile();
     bool isTC = I.isTailCall() && isInTailCallPosition(I, DAG.getTarget());
-    Attribute MoveType = I.getFnAttr("frontend-memtransfer-type");
     // FIXME: Support passing different dest/src alignments to the memmove DAG
     // node.
     SDValue Root = isVol ? getRoot() : getMemoryRoot();
     SDValue MM = DAG.getMemmove(Root, sdl, Op1, Op2, Op3, Alignment, isVol,
-                                isTC, I.hasFnAttr(Attribute::MustPreserveCheriTags),
+                                isTC, MMI.shouldPreserveCheriTags(),
                                 MachinePointerInfo(I.getArgOperand(0)),
                                 MachinePointerInfo(I.getArgOperand(1)),
-                                I.getAAMetadata(), AA, MoveType.getValueAsString());
+                                I.getAAMetadata(), AA,
+                                MMI.getFrontendCopyType());
     updateDAGForMaybeTailCall(MM);
     return;
   }
@@ -8132,8 +8135,6 @@ bool SelectionDAGBuilder::visitMemPCpyCall(const CallInst &I) {
   bool isVol = false;
   SDLoc sdl = getCurSDLoc();
 
-  const bool MustPreserveCheriTags =
-      I.hasFnAttr(Attribute::MustPreserveCheriTags);
   Attribute CopyType =
       I.getFnAttr("frontend-memtransfer-type");
   // In the mempcpy context we need to pass in a false value for isTailCall
@@ -8141,7 +8142,7 @@ bool SelectionDAGBuilder::visitMemPCpyCall(const CallInst &I) {
   // the copied memory.
   SDValue Root = isVol ? getRoot() : getMemoryRoot();
   SDValue MC = DAG.getMemcpy(Root, sdl, Dst, Src, Size, Alignment, isVol, false,
-                             /*isTailCall=*/false, MustPreserveCheriTags,
+                             /*isTailCall=*/false, shouldPreserveTags(&I),
                              MachinePointerInfo(I.getArgOperand(0)),
                              MachinePointerInfo(I.getArgOperand(1)),
                              I.getAAMetadata(), AA, CopyType.getValueAsString());
