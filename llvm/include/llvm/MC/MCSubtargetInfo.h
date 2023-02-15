@@ -109,12 +109,16 @@ public:
   StringRef getCPU() const { return CPU; }
   StringRef getTuneCPU() const { return TuneCPU; }
 
+  ArrayRef<SubtargetSubTypeKV> getCPUTable() const { return ProcDesc; }
+
   const FeatureBitset& getFeatureBits() const { return FeatureBits; }
   void setFeatureBits(const FeatureBitset &FeatureBits_) {
     FeatureBits = FeatureBits_;
   }
 
   StringRef getFeatureString() const { return FeatureString; }
+
+  ArrayRef<SubtargetFeatureKV> getFeatureTable() const { return ProcFeatures; }
 
   bool hasFeature(unsigned Feature) const {
     return FeatureBits[Feature];
