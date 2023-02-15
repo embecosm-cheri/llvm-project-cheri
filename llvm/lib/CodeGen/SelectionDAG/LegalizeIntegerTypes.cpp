@@ -4264,7 +4264,8 @@ void DAGTypeLegalizer::ExpandIntRes_XMULO(SDNode *N,
 
   // Also pass the address of the overflow check.
   Entry.Node = Temp;
-  Entry.Ty = PtrTy->getPointerTo();
+  Entry.Ty =
+      PtrTy->getPointerTo(DAG.getDataLayout().getDefaultGlobalsAddressSpace());
   Entry.IsSExt = true;
   Entry.IsZExt = false;
   Args.push_back(Entry);
